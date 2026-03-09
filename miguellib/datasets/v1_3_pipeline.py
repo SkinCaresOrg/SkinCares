@@ -1,7 +1,7 @@
 from pathlib import Path
 import pandas as pd
 
-from .utils import (
+from .v1_utils import (
     clean_ingredients,
     ingredient_tokens,
     apply_synonyms_to_tokens,

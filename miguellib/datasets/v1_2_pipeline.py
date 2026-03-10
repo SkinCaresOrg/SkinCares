@@ -9,7 +9,7 @@ from .v1_utils import (
 )
 
 """
-This module implements the full preprocessing pipeline for the cosmetics dataset, including:
+This module implements the full preprocessing pipeline for the old dataset, including:
     1. Loading raw dataset
     2. Validating raw dataset
     3. Cleaning / standardizing ingredients
@@ -22,7 +22,7 @@ This module implements the full preprocessing pipeline for the cosmetics dataset
 
 def run_pipeline2(raw_path, processed_path=None, reviewed_path=None, flag_non_ingredients_rows=True):
     """
-    Full preprocessing pipeline for the cosmetics dataset.
+    Full preprocessing pipeline for the dataset.
     """
     # step 1
     df = load_df(raw_path)

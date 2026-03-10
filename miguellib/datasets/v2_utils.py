@@ -4,10 +4,14 @@ from typing import Optional
 def load_csv(path: str) -> pd.DataFrame:
     return pd.read_csv(path)
 
-def add_price_column(df: pd.DataFrame) -> pd.DataFrame:
-    if 'price' not in df.columns:
-        df['price'] = None
-    return df
+def add_price_column(products_df: pd.DataFrame, prices_df: pd.DataFrame) -> pd.DataFrame:
+    merged = products_df.merge(
+        prices_df[['brand', 'product_name', 'price']],
+        on=['brand', 'product_name'],
+        how='left'   
+    )
+
+    return merged
 
 def remove_duplicates(df: pd.DataFrame) -> pd.DataFrame:
     return df.drop_duplicates(subset=['brand', 'product_name'])
@@ -25,10 +29,10 @@ def standardize_data(df: pd.DataFrame) -> pd.DataFrame:
     df['product_name'] = df['product_name'].str.strip()
     return df
 
-def run_pipeline(df: pd.DataFrame) -> pd.DataFrame:
+def run_pipeline(df: pd.DataFrame, prices_df: pd.DataFrame) -> pd.DataFrame:
     """ simple pipeline to run all steps in sequence """
-    df = add_price_column(df)
+    df = add_price_column(df, prices_df)
     df = remove_duplicates(df)
     df = standardize_data(df)
-    
+
     return df

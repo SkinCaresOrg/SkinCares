@@ -261,6 +261,9 @@ def run_pipeline2(
     2. Apply synonym normalization
     3. Apply canonical ingredient mapping
     """
+    if "ingredients" not in df.columns:
+        raise ValueError("Input dataframe must contain an 'ingredients' column")
+
     df = df.copy()
 
     df["ingredient_tokens"] = df["ingredients"].apply(smart_split_ingredients)

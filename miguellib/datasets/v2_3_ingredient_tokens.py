@@ -1,3 +1,4 @@
+from pathlib import Path
 from v2_utils import (
     load_csv,
     load_synonyms,
@@ -6,10 +7,11 @@ from v2_utils import (
 )
 
 
-    
 def main():
-    df_processed = load_csv("data/products_dataset_processed.csv")
-    synonyms = load_synonyms("synonyms_v2.json")
+    base_dir = Path(__file__).resolve().parent
+
+    df_processed = load_csv(base_dir / "data" / "products_dataset_processed.csv")
+    synonyms = load_synonyms(base_dir / "synonyms_v2.json")
 
     df_clean = run_pipeline2(
         df_processed,
@@ -17,8 +19,9 @@ def main():
         CANON_RULES_SMALL_COMPILED
     )
 
-    df_clean.to_csv("data/products_dataset_clean_tokens.csv", index=False)
-    print("File saved as products_dataset_clean_tokens.csv")
+    output_path = base_dir / "data" / "products_dataset_clean_tokens.csv"
+    df_clean.to_csv(output_path, index=False)
+    print(f"File saved as {output_path.name}")
 
 
 if __name__ == "__main__":

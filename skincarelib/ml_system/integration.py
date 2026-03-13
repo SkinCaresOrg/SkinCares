@@ -4,10 +4,10 @@ from typing import Any, Dict
 
 import pandas as pd
 
-from miguellib.ml_system.artifacts import load_artifacts
-from miguellib.ml_system.candidate_source import get_candidates
-from miguellib.ml_system.feedback_update import UserState, compute_user_vector
-from miguellib.ml_system.reranker import rerank_candidates
+from skincarelib.ml_system.artifacts import load_artifacts
+from skincarelib.ml_system.candidate_source import get_candidates
+from skincarelib.ml_system.feedback_update import UserState, compute_user_vector
+from skincarelib.ml_system.reranker import rerank_candidates
 
 
 def recommend_with_feedback(

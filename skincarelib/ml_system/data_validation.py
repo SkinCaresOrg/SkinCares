@@ -52,8 +52,8 @@ def _assert_prices(series: pd.Series, issues: List[ValidationIssue]) -> None:
 
 
 def validate_artifact_inputs(root: Path) -> None:
-    data_products = root / "miguellib" / "datasets" / "datasets" / "products_clean.csv"
-    data_tokens = root / "miguellib" / "datasets" / "datasets" / "products_tokens.csv"
+    data_products = root / "skincarelib" / "datasets" / "datasets" / "products_clean.csv"
+    data_tokens = root / "skincarelib" / "datasets" / "datasets" / "products_tokens.csv"
     groups_path = root / "features" / "ingredient_groups.json"
 
     issues: List[ValidationIssue] = []

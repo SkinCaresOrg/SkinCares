@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 VECTORS_PATH = ROOT / "artifacts" / "product_vectors.npy"
 INDEX_PATH = ROOT / "artifacts" / "product_index.json"
-METADATA_PATH = ROOT / "miguellib" / "datasets" / "datasets" / "products_clean.csv"
+METADATA_PATH = ROOT / "skincarelib" / "datasets" / "datasets" / "products_clean.csv"
 
 
 # Load everything once

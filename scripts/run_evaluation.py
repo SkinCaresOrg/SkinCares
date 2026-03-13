@@ -1,4 +1,4 @@
-from miguellib.evaluation.evaluate import main
+from skincarelib.evaluation.evaluate import main
 
 
 if __name__ == "__main__":

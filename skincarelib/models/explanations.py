@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-import miguellib.models.user_profile as _up
+import skincarelib.models.user_profile as _up
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 

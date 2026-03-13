@@ -27,7 +27,7 @@ SkinCares/
 ├── data/                # Raw and processed datasets
 ├── docs/                # Project documentation
 ├── examples/            # EDA and experimentation notebooks
-├── miguellib/           # Core ML pipeline
+├── skincarelib/           # Core ML pipeline
 │   ├── features/        # Feature engineering
 │   ├── models/          # Recommendation models
 │   ├── evaluation/      # Model evaluation

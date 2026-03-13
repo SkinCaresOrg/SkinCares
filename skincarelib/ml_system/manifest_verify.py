@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List
 
-from miguellib.ml_system.artifacts import find_project_root
-from miguellib.ml_system.manifest import load_manifest
+from skincarelib.ml_system.artifacts import find_project_root
+from skincarelib.ml_system.manifest import load_manifest
 
 
 @dataclass(frozen=True)

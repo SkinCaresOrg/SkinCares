@@ -4,25 +4,25 @@ import argparse
 from pathlib import Path
 from typing import List
 
-from miguellib.ml_system.artifacts import find_project_root
-from miguellib.ml_system.data_validation import validate_artifact_inputs
-from miguellib.ml_system.manifest import build_manifest, write_manifest
-from miguellib.models import vectorizer
+from skincarelib.ml_system.artifacts import find_project_root
+from skincarelib.ml_system.data_validation import validate_artifact_inputs
+from skincarelib.ml_system.manifest import build_manifest, write_manifest
+from skincarelib.models import vectorizer
 
 
 def _default_data_paths(root: Path) -> List[Path]:
     return [
-        root / "miguellib" / "datasets" / "datasets" / "products_clean.csv",
-        root / "miguellib" / "datasets" / "datasets" / "products_tokens.csv",
+        root / "skincarelib" / "datasets" / "datasets" / "products_clean.csv",
+        root / "skincarelib" / "datasets" / "datasets" / "products_tokens.csv",
         root / "features" / "ingredient_groups.json",
     ]
 
 
 def _default_code_paths(root: Path) -> List[Path]:
     return [
-        root / "miguellib" / "models" / "vectorizer.py",
-        root / "miguellib" / "models" / "user_profile.py",
-        root / "miguellib" / "models" / "similarity.py",
+        root / "skincarelib" / "models" / "vectorizer.py",
+        root / "skincarelib" / "models" / "user_profile.py",
+        root / "skincarelib" / "models" / "similarity.py",
     ]
 
 

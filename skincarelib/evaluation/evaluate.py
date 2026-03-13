@@ -7,10 +7,10 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from miguellib.evaluation.metrics import summarize_metrics
-from miguellib.ml_system.artifacts import find_project_root
-from miguellib.models.recommender_ranker import load_artifacts, rank_products
-from miguellib.models.user_profile import build_user_vector
+from skincarelib.evaluation.metrics import summarize_metrics
+from skincarelib.ml_system.artifacts import find_project_root
+from skincarelib.models.recommender_ranker import load_artifacts, rank_products
+from skincarelib.models.user_profile import build_user_vector
 
 
 @dataclass(frozen=True)
@@ -23,7 +23,7 @@ class EvaluationScenario:
 
 
 def _load_tokens(root: Path) -> pd.DataFrame:
-    tokens_path = root / "miguellib" / "datasets" / "datasets" / "products_tokens.csv"
+    tokens_path = root / "skincarelib" / "datasets" / "datasets" / "products_tokens.csv"
     return pd.read_csv(tokens_path, dtype={"product_id": str})
 
 

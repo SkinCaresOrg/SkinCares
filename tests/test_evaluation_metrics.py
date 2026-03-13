@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from miguellib.evaluation.metrics import (
+from skincarelib.evaluation.metrics import (
     average_similarity,
     category_diversity_ratio,
     constraint_compliance_rate,

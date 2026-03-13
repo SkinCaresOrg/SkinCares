@@ -16,5 +16,5 @@ exclude = [
 select = ["F"]
 
 [lint.per-file-ignores]
-"miguellib/datasets/utils.py" = ["F401", "F811", "F821", "F841"]
-"miguellib/datasets/(2)pipeline.py" = ["F401"]
+"skincarelib/datasets/utils.py" = ["F401", "F811", "F821", "F841"]
+"skincarelib/datasets/(2)pipeline.py" = ["F401"]

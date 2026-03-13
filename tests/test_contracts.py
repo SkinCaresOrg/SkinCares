@@ -5,13 +5,13 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DATASETS_DIR = ROOT / "miguellib" / "datasets"
+DATASETS_DIR = ROOT / "skincarelib" / "datasets"
 FEATURES_DIR = ROOT / "features"
 
 
 def test_cosmetics_processed_schema():
     path = DATASETS_DIR / "cosmetics_processed.csv"
-    assert path.exists(), "Missing cosmetics_processed.csv in miguellib/datasets"
+    assert path.exists(), "Missing cosmetics_processed.csv in skincarelib/datasets"
 
     df = pd.read_csv(path, nrows=5)
     required = {"Label", "Brand", "Name", "Price", "Rank", "Ingredients"}
@@ -20,7 +20,7 @@ def test_cosmetics_processed_schema():
 
 def test_synonyms_json_is_dict():
     path = DATASETS_DIR / "synonyms.json"
-    assert path.exists(), "Missing synonyms.json in miguellib/datasets"
+    assert path.exists(), "Missing synonyms.json in skincarelib/datasets"
 
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)

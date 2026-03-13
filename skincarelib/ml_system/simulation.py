@@ -5,14 +5,14 @@ from typing import List, Dict, Any
 
 import pandas as pd
 
-from miguellib.ml_system.artifacts import load_artifacts, find_project_root
-from miguellib.ml_system.feedback_update import UserState, update_user_state, compute_user_vector
-from miguellib.ml_system.reranker import rerank_candidates
-from miguellib.models.recommender_ranker import rank_products
+from skincarelib.ml_system.artifacts import load_artifacts, find_project_root
+from skincarelib.ml_system.feedback_update import UserState, update_user_state, compute_user_vector
+from skincarelib.ml_system.reranker import rerank_candidates
+from skincarelib.models.recommender_ranker import rank_products
 
 
 def load_metadata(root) -> pd.DataFrame:
-    path = root / "miguellib" / "datasets" / "datasets" / "products_clean.csv"
+    path = root / "skincarelib" / "datasets" / "datasets" / "products_clean.csv"
     df = pd.read_csv(path, dtype={"product_id": str})
 
     for col in ["brand", "category", "price"]:
@@ -24,7 +24,7 @@ def load_metadata(root) -> pd.DataFrame:
 
 
 def load_tokens(root) -> pd.DataFrame:
-    path = root / "miguellib" / "datasets" / "datasets" / "products_tokens.csv"
+    path = root / "skincarelib" / "datasets" / "datasets" / "products_tokens.csv"
     return pd.read_csv(path, dtype={"product_id": str})
 
 

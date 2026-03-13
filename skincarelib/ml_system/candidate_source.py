@@ -5,8 +5,8 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from miguellib.ml_system.reranker import mock_candidates_similarity_seed
-from miguellib.models.recommender_ranker import rank_products
+from skincarelib.ml_system.reranker import mock_candidates_similarity_seed
+from skincarelib.models.recommender_ranker import rank_products
 
 
 def get_candidates_mock(

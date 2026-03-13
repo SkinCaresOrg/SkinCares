@@ -12,8 +12,8 @@ from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
-DATA_PRODUCTS = ROOT / "miguellib" / "datasets" / "datasets" / "products_clean.csv"
-DATA_TOKENS = ROOT / "miguellib" / "datasets" / "datasets" / "products_tokens.csv"
+DATA_PRODUCTS = ROOT / "skincarelib" / "datasets" / "datasets" / "products_clean.csv"
+DATA_TOKENS = ROOT / "skincarelib" / "datasets" / "datasets" / "products_tokens.csv"
 GROUPS_PATH = ROOT / "features" / "ingredient_groups.json"
 
 ARTIFACT_DIR = ROOT / "artifacts"

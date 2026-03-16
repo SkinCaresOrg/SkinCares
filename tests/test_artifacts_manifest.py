@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from miguellib.ml_system.manifest import build_manifest
+from skincarelib.ml_system.manifest import build_manifest
 
 
 def test_build_manifest_hashes(tmp_path: Path):

@@ -10,4 +10,4 @@ __pycache__/
 .DS_Store
 .ipynb_checkpoints/
 artifacts/evaluation_report.json
-miguellib.egg-info/
+skincarelib.egg-info/

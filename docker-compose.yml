@@ -7,5 +7,5 @@ services:
     volumes:
       - ./artifacts:/app/artifacts
       - ./features:/app/features
-      - ./miguellib:/app/miguellib
+      - ./skincarelib:/app/skincarelib
       - ./scripts:/app/scripts

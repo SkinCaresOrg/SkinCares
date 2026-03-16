@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 COPY setup.py /app/
-COPY miguellib /app/miguellib
+COPY skincarelib /app/skincarelib
 COPY features /app/features
 COPY artifacts /app/artifacts
 COPY scripts /app/scripts

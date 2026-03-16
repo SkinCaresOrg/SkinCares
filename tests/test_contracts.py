@@ -10,8 +10,8 @@ FEATURES_DIR = ROOT / "features"
 
 
 def test_cosmetics_processed_schema():
-    path = DATASETS_DIR / "cosmetics_processed.csv"
-    assert path.exists(), "Missing cosmetics_processed.csv in skincarelib/datasets"
+    path = Path("data/processed/cosmetics_processed.csv")
+    assert path.exists(), "Missing cosmetics_processed.csv in data/processed"
 
     df = pd.read_csv(path, nrows=5)
     required = {"Label", "Brand", "Name", "Price", "Rank", "Ingredients"}
@@ -19,8 +19,8 @@ def test_cosmetics_processed_schema():
 
 
 def test_synonyms_json_is_dict():
-    path = DATASETS_DIR / "synonyms.json"
-    assert path.exists(), "Missing synonyms.json in skincarelib/datasets"
+    path = Path("features/synonyms.json")
+    assert path.exists(), "Missing synonyms.json in features/"
 
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)

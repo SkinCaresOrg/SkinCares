@@ -1,8 +1,8 @@
 {
   "created_at": "2026-02-20T23:41:30.933521+00:00",
   "data_hashes": {
-    "skincarelib/datasets/datasets/products_clean.csv": "55b780bb63e54bef826434fc0cb2d815674cb370f5069934fc816fbbdb4773f4",
-    "skincarelib/datasets/datasets/products_tokens.csv": "ecbf6995168ad3bf002815426a1c70b2951b6f2a83c7e0b630aa97cccb294fb6",
+    "datasets/products_clean.csv": "55b780bb63e54bef826434fc0cb2d815674cb370f5069934fc816fbbdb4773f4",
+    "datasets/products_tokens.csv": "ecbf6995168ad3bf002815426a1c70b2951b6f2a83c7e0b630aa97cccb294fb6",
     "features/ingredient_groups.json": "3e3190438e0115ff1d4f7bb4258b9bb783d0512f364abea9e1ce6888378d0270"
   },
   "code_hashes": {

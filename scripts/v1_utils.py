@@ -1,7 +1,8 @@
 import pandas as pd
 import re
-from typing import List, Tuple, Pattern, Callable, Optional
-
+import json
+from pathlib import Path
+from typing import List, Tuple, Pattern, Callable, Optional, Dict
 def load_df(path):
     """To load a csv file and return a pandas DataFrame."""
     df = pd.read_csv(path)
@@ -226,11 +227,6 @@ def clean_ingredients(ing: Optional[str]) -> str:
 
     return ", ".join(cleaned)
 
-    from typing import List, Optional
-
-import re
-from typing import Optional
-
 def normalize_ingredient_token(token: Optional[str]) -> str:
     """
     Normalize a single ingredient token so matching/deduping works reliably.
@@ -284,11 +280,6 @@ def ingredient_tokens(ing: Optional[str]) -> List[str]:
             seen.add(t)
 
     return out
-
-    import json
-from pathlib import Path
-from typing import List, Dict, Optional, Callable
-
 def apply_synonyms_to_tokens(
     tokens: List[str],
     synonyms_path: str = "synonyms.json",

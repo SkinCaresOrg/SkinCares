@@ -5,7 +5,6 @@ import pytest
 
 @pytest.fixture
 def recommender_module(monkeypatch):
-    # --- fake data (small dimensional) ---
     vectors = np.array([
         [1, 0, 0],
         [0.9, 0.1, 0],
@@ -30,34 +29,29 @@ def recommender_module(monkeypatch):
         "ingredient_tokens": ["niacinamide", "niacinamide", "water"],
     })
 
-    # --- import module ---
     import skincarelib.models.recommender_ranker as recommender
 
-    # --- patch artifacts ---
     monkeypatch.setattr(
         recommender,
         "load_artifacts",
         lambda: (vectors, product_index, metadata),
     )
 
-    # --- patch tokens ---
     monkeypatch.setattr(
         recommender.pd,
         "read_csv",
         lambda *args, **kwargs: tokens,
     )
 
-    # --- 🔥 IMPORTANT: patch similarity ---
     monkeypatch.setattr(
         recommender,
         "score_similarity",
-        lambda user_vec, prod_vecs: np.array([0.9, 0.8][:len(prod_vecs)], dtype=np.float32),
+        lambda user_vec, prod_vecs, weights=None, dims_mask=None:
+            np.array([0.9] * len(prod_vecs), dtype=np.float32),
     )
 
     return recommender
 
-
-# ---------------- TESTS ----------------
 
 def test_recommend_returns_results(recommender_module):
     results = recommender_module.recommend(

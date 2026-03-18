@@ -6,61 +6,61 @@ sys.path.append(str(ROOT / "skincarelib" / "models"))
 
 import pytest
 import pandas as pd
+import numpy as np
+import importlib
 
 
-@pytest.fixture
-def mock_dupe_finder(monkeypatch):
-    import importlib
-
-    # fake index
+@pytest.fixture(scope="module")
+def dupe_module(monkeypatch):
+    # fake artifacts
+    fake_vectors = np.array([[1, 0], [0, 1]], dtype=np.float32)
     fake_index = {"test_id": 0}
+    fake_schema = {}
 
-    # fake dataframe
-    fake_df = pd.DataFrame({
+    fake_metadata = pd.DataFrame({
         "product_id": ["test_id"],
         "product_name": ["Test Product"],
         "brand": ["Test Brand"],
-        "category": ["Test Category"],
+        "category": ["serum"],
         "price": [10.0],
-        "dupe_score": [0.9],
-        "cosine_sim": [0.95],
-        "price_score": [0.8],
-        "ingredient_group_score": [0.85],
     })
 
-    # IMPORTANT: mock load_artifacts BEFORE import
-    def fake_load_artifacts():
-        return None, fake_index, None, None
+    # mock pandas BEFORE import
+    monkeypatch.setattr(
+        "pandas.read_csv",
+        lambda *args, **kwargs: fake_metadata
+    )
+
+    # mock np.load BEFORE import
+    monkeypatch.setattr(
+        "numpy.load",
+        lambda *args, **kwargs: fake_vectors
+    )
+
+    # mock json.load BEFORE import
+    monkeypatch.setattr(
+        "json.load",
+        lambda f: fake_index if "index" in str(f.name) else fake_schema
+    )
 
     import skincarelib.models.dupe_finder as df
-
-    monkeypatch.setattr(df, "load_artifacts", fake_load_artifacts)
-
-    # reload module so mock applies before globals execute
     importlib.reload(df)
 
-    def fake_find_dupes(product_id):
-        if product_id not in fake_index:
-            raise ValueError("invalid product id")
-        return fake_df
-
-    monkeypatch.setattr(df, "find_dupes", fake_find_dupes)
-
-    return fake_index, fake_df
+    return df
 
 
-def test_find_dupes_returns_dataframe(mock_dupe_finder):
-    from skincarelib.models.dupe_finder import find_dupes
+def test_find_dupes_returns_dataframe(dupe_module):
+    df = dupe_module
 
-    results = find_dupes("test_id")
+    results = df.find_dupes("test_id")
 
     assert isinstance(results, pd.DataFrame)
 
 
-def test_find_dupes_columns(mock_dupe_finder):
-    from skincarelib.models.dupe_finder import find_dupes
+def test_find_dupes_columns(dupe_module):
+    df = dupe_module
 
-    results = find_dupes("test_id")
+    results = df.find_dupes("test_id")
 
     expected_cols = {
         "product_id",
@@ -77,16 +77,16 @@ def test_find_dupes_columns(mock_dupe_finder):
     assert expected_cols.issubset(set(results.columns))
 
 
-def test_find_dupes_not_empty(mock_dupe_finder):
-    from skincarelib.models.dupe_finder import find_dupes
+def test_find_dupes_not_empty(dupe_module):
+    df = dupe_module
 
-    results = find_dupes("test_id")
+    results = df.find_dupes("test_id")
 
     assert results is not None
 
 
-def test_invalid_product_id(mock_dupe_finder):
-    from skincarelib.models.dupe_finder import find_dupes
+def test_invalid_product_id(dupe_module):
+    df = dupe_module
 
     with pytest.raises(ValueError):
-        find_dupes("invalid_id_123")
+        df.find_dupes("invalid_id_123")

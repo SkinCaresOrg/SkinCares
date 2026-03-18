@@ -1,9 +1,26 @@
+"""
+Feedback update module - backward compatible wrapper.
+
+This module now imports from ml_feedback_model for backward compatibility
+while providing access to both legacy and ML-based feedback models.
+"""
 
 import json
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Literal
 
 import numpy as np
+
+# Import new ML models
+from skincarelib.ml_system.ml_feedback_model import (
+    UserState,
+    update_user_state,
+    compute_user_vector,
+    LogisticRegressionFeedback,
+    RandomForestFeedback,
+    GradientBoostingFeedback,
+    ContextualBanditFeedback,
+)
 
 
 def find_project_root() -> Path:
@@ -32,116 +49,31 @@ def load_artifacts():
     return vectors, product_index, index_to_id, schema
 
 
-class UserState:
-    """Tracks user interactions and preferences."""
-
-    def __init__(self, dim: int):
-        self.dim = dim
-
-        
-        self.liked_vectors: List[np.ndarray] = []
-        self.disliked_vectors: List[np.ndarray] = []
-        self.irritation_vectors: List[np.ndarray] = []
-
-        
-        self.liked_reasons: List[str] = []
-        self.disliked_reasons: List[str] = []
-        self.irritation_reasons: List[str] = []
-
-        
-        self.interactions: int = 0
-        self.liked_count: int = 0
-        self.disliked_count: int = 0
-        self.irritation_count: int = 0
-
-    def add_liked(self, vec: np.ndarray, reasons: List[str]):
-        self.liked_vectors.append(vec)
-        self.liked_reasons.extend(reasons)
-        self.interactions += 1
-        self.liked_count += 1
-
-    def add_disliked(self, vec: np.ndarray, reasons: List[str]):
-        self.disliked_vectors.append(vec)
-        self.disliked_reasons.extend(reasons)
-        self.interactions += 1
-        self.disliked_count += 1
-
-    def add_irritation(self, vec: np.ndarray, reasons: List[str]):
-        self.irritation_vectors.append(vec)
-        self.irritation_reasons.extend(reasons)
-        self.interactions += 1
-        self.irritation_count += 1
-
-
-def update_user_state(
-    user: UserState,
-    reaction: str,
-    product_vec: np.ndarray,
-    reason_tags: Optional[List[str]] = None,
+def create_feedback_model(
+    model_type: Literal["logistic", "random_forest", "gradient_boosting", "contextual_bandit"] = "logistic",
+    dim: Optional[int] = None,
+    **kwargs
 ):
     """
-    Update user state based on a single interaction.
-
-    Design choice:
-    - "irritation" is treated as a strong negative, so we:
-        (1) record it in irritation_vectors (for stronger penalty in user vector)
-        (2) ALSO count it as a disliked interaction (so summaries + metrics match intuition)
+    Factory function to create feedback models.
+    
+    Args:
+        model_type: Type of model to create
+        dim: Required for contextual_bandit, ignored for others
+        **kwargs: Additional arguments for model constructors
+    
+    Returns:
+        Feedback model instance
     """
-    if reason_tags is None:
-        reason_tags = []
-
-    reaction = (reaction or "").lower().strip()
-
-    if reaction == "like":
-        user.add_liked(product_vec, reason_tags)
-
-    elif reaction == "dislike":
-        user.add_disliked(product_vec, reason_tags)
-
-    elif reaction == "irritation":
-        
-        user.add_disliked(product_vec, reason_tags)
-        user.add_irritation(product_vec, reason_tags)
-
+    if model_type == "logistic":
+        return LogisticRegressionFeedback(**kwargs)
+    elif model_type == "random_forest":
+        return RandomForestFeedback(**kwargs)
+    elif model_type == "gradient_boosting":
+        return GradientBoostingFeedback(**kwargs)
+    elif model_type == "contextual_bandit":
+        if dim is None:
+            raise ValueError("dim is required for contextual_bandit")
+        return ContextualBanditFeedback(dim=dim, **kwargs)
     else:
-        
-        return user
-
-    return user
-
-
-def compute_user_vector(user: UserState, schema: Optional[Dict] = None) -> np.ndarray:
-    """
-    Compute user preference vector from feedback.
-
-    Current weighting:
-      +2.0 * mean(liked vectors)
-      -1.0 * mean(disliked vectors)
-      -2.0 * mean(irritation vectors)
-
-    Note: Because irritation is also counted in disliked_vectors, it contributes to both
-    the general negative signal and the stronger irritation-specific penalty.
-    """
-    user_vec = np.zeros(user.dim, dtype=np.float32)
-
-    
-    if user.liked_vectors:
-        liked_avg = np.mean(user.liked_vectors, axis=0)
-        user_vec += 2.0 * liked_avg
-
-    
-    if user.disliked_vectors:
-        disliked_avg = np.mean(user.disliked_vectors, axis=0)
-        user_vec -= 1.0 * disliked_avg
-
-    
-    if user.irritation_vectors:
-        irritation_avg = np.mean(user.irritation_vectors, axis=0)
-        user_vec -= 2.0 * irritation_avg
-
-    
-    norm = np.linalg.norm(user_vec)
-    if norm > 1e-9:
-        user_vec = user_vec / norm
-
-    return user_vec
+        raise ValueError(f"Unknown model_type: {model_type}")

@@ -65,7 +65,7 @@ source .venv/bin/activate
 Install dependencies:
 
 ```bash
-pip install -e .
+pip install -e .[dev]
 ```
 
 ---
@@ -109,13 +109,19 @@ python scripts/train_model.py
 Run tests:
 
 ```bash
-pytest
+python -m pytest tests --disable-warnings --maxfail=1
 ```
 
 Lint code:
 
 ```bash
 ruff check .
+```
+
+Install pre-commit hooks:
+
+```bash
+pre-commit install
 ```
 
 ---

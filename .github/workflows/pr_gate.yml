@@ -3,11 +3,12 @@ name: PR gate
 on:
   push:
     branches:
+    - '**'
+    branches-ignore:
     - main
-    - MLOps
 
   pull_request:
-    # Only trigger the workflow with a PR to main
+    # Trigger checks on PRs to protected branches
     branches:
     - main
     - MLOps

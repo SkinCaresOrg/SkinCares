@@ -38,7 +38,7 @@ def explain_dupe(source_row, candidate_row):
     source_price = float(source_row.get("price", 0.0))
     cand_price   = float(candidate_row.get("price", 0.0))
 
-    if source_price > 0:
+    if source_price > 0 and (source_price - cand_price) >= 3.00:
         savings = (source_price - cand_price) / source_price
         parts.append(
             f"{_label(savings, _SAVINGS_LABELS).capitalize()} than the original "

@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 VECTORS_PATH  = ROOT / "artifacts" / "product_vectors.npy"
 INDEX_PATH    = ROOT / "artifacts" / "product_index.json"
 SCHEMA_PATH   = ROOT / "artifacts" / "feature_schema.json"
-METADATA_PATH = ROOT / "data" / "processed" / "products_dataset_processed.csv"
+METADATA_PATH = ROOT / "data" / "processed" / "products_dataset_clean_tokens.csv"
 
 
 def load_artifacts():

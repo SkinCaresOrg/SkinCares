@@ -219,7 +219,7 @@ def run_simulation(
         if hasattr(model, 'get_feature_importance'):
             imp = model.get_feature_importance()
             if len(imp) > 0:
-                print(f"\nTop feature importances:")
+                print("\nTop feature importances:")
                 top_indices = np.argsort(imp)[-5:][::-1]
                 for idx in top_indices:
                     print(f"  Feature {idx}: {imp[idx]:.4f}")
@@ -246,7 +246,7 @@ def run_model_comparison(
     meta_idx = meta_idx.set_index("product_id", drop=False)
 
     print(f"Loaded vectors: {product_vectors.shape}")
-    print(f"Comparing ML models...\n")
+    print("Comparing ML models...\n")
 
     # ---- Setup constraints ----
     constraints: Dict[str, Any] = {}

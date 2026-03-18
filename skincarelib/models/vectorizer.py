@@ -12,27 +12,25 @@ from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
-DATA_PRODUCTS = ROOT / "data" / "processed" / "products_dataset_processed.csv"
-DATA_TOKENS   = ROOT / "data" / "processed" / "products_tokens.csv"
+DATA_PRODUCTS = ROOT / "data" / "processed" / "products_dataset_clean_tokens.csv"
 GROUPS_PATH   = ROOT / "features" / "ingredient_groups.json"
 ARTIFACT_DIR  = ROOT / "artifacts"
 
 
 def load_data():
-    products = pd.read_csv(DATA_PRODUCTS)
-    tokens   = pd.read_csv(DATA_TOKENS)
+    df = pd.read_csv(DATA_PRODUCTS)
 
     # product_id is derived from row index so it stays consistent
     # with product_index.json and dupe_finder.py
-    products["product_id"] = products.index.astype(str)
-    tokens["product_id"]   = tokens.index.astype(str)
+    df["product_id"] = df.index.astype(str)
 
-    df = products.merge(tokens, on="product_id", how="inner")
-
-    required = ["product_id", "category", "price", "ingredient_tokens"]
+    required = ["product_id", "category", "price", "ingredient_tokens_clean"]
     for col in required:
         if col not in df.columns:
             raise ValueError(f"Missing column: {col}")
+
+    # use the clean tokens column as the ingredient text
+    df["ingredient_tokens"] = df["ingredient_tokens_clean"]
 
     return df.reset_index(drop=True)
 

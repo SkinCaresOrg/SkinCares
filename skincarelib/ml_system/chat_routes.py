@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from skincarelib.chatbot import handle_chat
+from skincarelib.ml_system.handler import handle_chat
 
 router = APIRouter()
 

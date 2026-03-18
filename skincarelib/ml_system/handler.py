@@ -1,8 +1,9 @@
-from skincarelib.chatbot.intent import detect_intent
-from skincarelib.chatbot.parser import extract_preferences
-
+from skincarelib.ml_system.intent import detect_intent
+from skincarelib.ml_system.parser import extract_preferences
 from skincarelib.models.dupe_finder import find_dupes
 from skincarelib.models.recommender_ranker import recommend_products
+
+
 
 
 def handle_chat(message: str) -> str:

@@ -1,12 +1,11 @@
-import pandas as pd
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[1]
 
-INPUT_PATH = ROOT / "miguellib" / "datasets" / "datasets" / "cosmetics_processed_clean_tokens.csv"
+INPUT_PATH = ROOT / "data" / "processed" / "cosmetics_processed_clean_tokens.csv"
 
-OUT_CLEAN  = ROOT / "miguellib" / "datasets" / "datasets" / "products_clean.csv"
-OUT_TOKENS = ROOT / "miguellib" / "datasets" / "datasets" / "products_tokens.csv"
+OUT_CLEAN  = ROOT / "data" / "processed" / "products_clean.csv"
+OUT_TOKENS = ROOT / "data" / "processed" / "products_tokens.csv"
 
 
 def run_preprocessing():

@@ -7,15 +7,12 @@ while providing access to both legacy and ML-based feedback models.
 
 import json
 from pathlib import Path
-from typing import List, Dict, Optional, Literal
+from typing import Optional, Literal
 
 import numpy as np
 
 # Import new ML models
 from skincarelib.ml_system.ml_feedback_model import (
-    UserState,
-    update_user_state,
-    compute_user_vector,
     LogisticRegressionFeedback,
     RandomForestFeedback,
     GradientBoostingFeedback,

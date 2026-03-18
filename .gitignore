@@ -131,3 +131,4 @@ dmypy.json
 
 # Processed data files
 data/processed/*.csv
+notebooks/data/

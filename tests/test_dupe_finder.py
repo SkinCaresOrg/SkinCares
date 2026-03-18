@@ -9,11 +9,13 @@ import pandas as pd
 
 
 @pytest.fixture
-def mock_data(monkeypatch):
-    # mock product index
+def mock_dupe_finder(monkeypatch):
+    import importlib
+
+    # fake index
     fake_index = {"test_id": 0}
 
-    # mock output dataframe
+    # fake dataframe
     fake_df = pd.DataFrame({
         "product_id": ["test_id"],
         "product_name": ["Test Product"],
@@ -26,9 +28,16 @@ def mock_data(monkeypatch):
         "ingredient_group_score": [0.85],
     })
 
+    # IMPORTANT: mock load_artifacts BEFORE import
+    def fake_load_artifacts():
+        return None, fake_index, None, None
+
     import skincarelib.models.dupe_finder as df
 
-    monkeypatch.setattr(df, "PRODUCT_INDEX", fake_index)
+    monkeypatch.setattr(df, "load_artifacts", fake_load_artifacts)
+
+    # reload module so mock applies before globals execute
+    importlib.reload(df)
 
     def fake_find_dupes(product_id):
         if product_id not in fake_index:
@@ -40,8 +49,7 @@ def mock_data(monkeypatch):
     return fake_index, fake_df
 
 
-def test_find_dupes_returns_dataframe(mock_data):
-    _, _ = mock_data
+def test_find_dupes_returns_dataframe(mock_dupe_finder):
     from skincarelib.models.dupe_finder import find_dupes
 
     results = find_dupes("test_id")
@@ -49,8 +57,7 @@ def test_find_dupes_returns_dataframe(mock_data):
     assert isinstance(results, pd.DataFrame)
 
 
-def test_find_dupes_columns(mock_data):
-    _, _ = mock_data
+def test_find_dupes_columns(mock_dupe_finder):
     from skincarelib.models.dupe_finder import find_dupes
 
     results = find_dupes("test_id")
@@ -70,8 +77,7 @@ def test_find_dupes_columns(mock_data):
     assert expected_cols.issubset(set(results.columns))
 
 
-def test_find_dupes_not_empty(mock_data):
-    _, _ = mock_data
+def test_find_dupes_not_empty(mock_dupe_finder):
     from skincarelib.models.dupe_finder import find_dupes
 
     results = find_dupes("test_id")
@@ -79,8 +85,7 @@ def test_find_dupes_not_empty(mock_data):
     assert results is not None
 
 
-def test_invalid_product_id(mock_data):
-    _, _ = mock_data
+def test_invalid_product_id(mock_dupe_finder):
     from skincarelib.models.dupe_finder import find_dupes
 
     with pytest.raises(ValueError):

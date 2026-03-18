@@ -36,7 +36,7 @@ jobs:
 
       - name: Validate artifact inputs
         run: |
-          python -c "from skincarelib.ml_system.data_validation import validate_artifact_inputs; from skincarelib.ml_system.artifacts import find_project_root; validate_artifact_inputs(find_project_root())"
+          python -c "from miguellib.ml_system.data_validation import validate_artifact_inputs; from miguellib.ml_system.artifacts import find_project_root; validate_artifact_inputs(find_project_root())"
 
       - name: Build artifacts
         run: |

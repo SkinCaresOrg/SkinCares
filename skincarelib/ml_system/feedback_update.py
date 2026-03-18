@@ -13,10 +13,13 @@ import numpy as np
 
 # Import new ML models
 from skincarelib.ml_system.ml_feedback_model import (
+    UserState,
     LogisticRegressionFeedback,
     RandomForestFeedback,
     GradientBoostingFeedback,
     ContextualBanditFeedback,
+    update_user_state,
+    compute_user_vector,
 )
 
 

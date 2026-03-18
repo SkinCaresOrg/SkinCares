@@ -29,6 +29,12 @@ def load_data():
         if col not in df.columns:
             raise ValueError(f"Missing column: {col}")
 
+    # warn if tokens look unparsed (still a plain string rather than a list)
+    sample = df["ingredient_tokens_clean"].dropna().iloc[0]
+    if not sample.strip().startswith("["):
+        import warnings
+        warnings.warn("ingredient_tokens_clean may not be in list format — check tokenization output")
+
     # use the clean tokens column as the ingredient text
     df["ingredient_tokens"] = df["ingredient_tokens_clean"]
 

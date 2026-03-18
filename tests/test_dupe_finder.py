@@ -12,18 +12,19 @@ import importlib
 
 @pytest.fixture
 def dupe_module(monkeypatch):
+    # IMPORTANT: product_id must match index "0"
     fake_vectors = np.array([[1, 0], [0, 1]], dtype=np.float32)
-    fake_index = {"test_id": 0}
+    fake_index = {"0": 0}   # <-- FIXED
     fake_schema = {}
 
     fake_metadata = pd.DataFrame({
-        "product_id": ["test_id"],
         "product_name": ["Test Product"],
         "brand": ["Test Brand"],
         "category": ["serum"],
         "price": [10.0],
     })
 
+    # mock BEFORE import
     monkeypatch.setattr(
         "pandas.read_csv",
         lambda *args, **kwargs: fake_metadata
@@ -46,12 +47,12 @@ def dupe_module(monkeypatch):
 
 
 def test_find_dupes_returns_dataframe(dupe_module):
-    results = dupe_module.find_dupes("test_id")
+    results = dupe_module.find_dupes("0")   # <-- FIXED
     assert isinstance(results, pd.DataFrame)
 
 
 def test_find_dupes_columns(dupe_module):
-    results = dupe_module.find_dupes("test_id")
+    results = dupe_module.find_dupes("0")
 
     expected_cols = {
         "product_id",
@@ -69,7 +70,7 @@ def test_find_dupes_columns(dupe_module):
 
 
 def test_find_dupes_not_empty(dupe_module):
-    results = dupe_module.find_dupes("test_id")
+    results = dupe_module.find_dupes("0")
     assert results is not None
 
 

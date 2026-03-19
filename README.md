@@ -121,8 +121,18 @@ ruff check .
 Install pre-commit hooks:
 
 ```bash
-pre-commit install
+pre-commit install --hook-type pre-commit --hook-type pre-push
+pre-commit install-hooks
 ```
+
+Run hooks manually (optional):
+
+```bash
+pre-commit run --all-files
+pre-commit run --hook-stage push --all-files
+```
+
+If Ruff auto-fixes files during commit, the commit will fail intentionally so you can re-stage the modified files and commit again.
 
 ---
 

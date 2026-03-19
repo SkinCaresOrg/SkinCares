@@ -1,8 +1,9 @@
-import json
 import re
 import unicodedata
 import pandas as pd
+from collections import Counter
 from typing import Optional, List, Tuple, Pattern
+from rapidfuzz import process, fuzz
 
 def load_csv(path: str) -> pd.DataFrame:
     return pd.read_csv(path)
@@ -91,24 +92,36 @@ def smart_split_ingredients(ingredients: Optional[str]) -> List[str]:
 
     return tokens
 
-def load_synonyms(path: str) -> dict:
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
 
-def apply_synonyms(tokens: List[str], synonym_map: dict) -> List[str]:
+def build_known_ingredients(df: pd.DataFrame, top_n: int = 500) -> List[str]:
     """
-    Replace tokens using a synonym dictionary and deduplicate
-    while preserving order.
+    Build a list of correctly-spelled ingredients by taking the
+    most frequent tokens across all products. High frequency = correct spelling.
+    """
+    counter = Counter()
+    for row in df["ingredients"]:
+        tokens = smart_split_ingredients(row)
+        counter.update(tokens)
+    return [ing for ing, count in counter.most_common(top_n)]
+
+def apply_fuzzy(tokens: List[str], known_ingredients: List[str], threshold: int = 90) -> List[str]:
+    """
+    Replace likely typos by fuzzy-matching each token against a list
+    of known correctly-spelled ingredients. Replaces apply_synonyms.
     """
     mapped = []
     seen = set()
 
     for t in tokens:
-        new = synonym_map.get(t, t)
+        # only try to fix short tokens - long ones are complex names not typos
+        if len(t.split()) <= 3:
+            result = process.extractOne(t, known_ingredients, scorer=fuzz.ratio)
+            if result and result[1] >= threshold:
+                t = result[0]
 
-        if new and new not in seen:
-            mapped.append(new)
-            seen.add(new)
+        if t and t not in seen:
+            mapped.append(t)
+            seen.add(t)
 
     return mapped
 
@@ -250,7 +263,7 @@ CANON_RULES_SMALL_COMPILED: List[Tuple[str, List[Pattern]]] = [
 
 def run_pipeline2(
     df: pd.DataFrame,
-    synonym_map: dict,
+    known_ingredients: List[str],
     canon_rules_compiled: List[Tuple[str, List[Pattern]]]
 ) -> pd.DataFrame:
     """
@@ -258,7 +271,7 @@ def run_pipeline2(
 
     Steps:
     1. Tokenize ingredient strings
-    2. Apply synonym normalization
+    2. Apply fuzzy matching to fix typos
     3. Apply canonical ingredient mapping
     """
     if "ingredients" not in df.columns:
@@ -268,7 +281,7 @@ def run_pipeline2(
 
     df["ingredient_tokens"] = df["ingredients"].apply(smart_split_ingredients)
     df["ingredient_tokens_syn"] = df["ingredient_tokens"].apply(
-        lambda toks: apply_synonyms(toks, synonym_map)
+        lambda toks: apply_fuzzy(toks, known_ingredients)
     )
     df["ingredient_tokens_clean"] = df["ingredient_tokens_syn"].apply(
         lambda toks: apply_canon_to_tokens(toks, canon_rules_compiled)

@@ -14,7 +14,6 @@ install_requires = [
     "scikit-learn>=1.2,<2",
     "scipy>=1.8,<2",
     "joblib>=1.2,<2",
-    "vowpalwabbit>=9.0,<10",
 ]
 
 extras_require = {
@@ -23,7 +22,10 @@ extras_require = {
         "ruff>=0.6,<1",
         "ipykernel>=6,<7",
         "jupyter>=1,<2",
-    ]
+    ],
+    "vw": [
+        "vowpalwabbit>=9.0,<10",
+    ],
 }
 
 setup(

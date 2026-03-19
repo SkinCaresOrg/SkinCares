@@ -3,7 +3,7 @@ name: PR gate
 on:
   push:
     branches-ignore:
-    - main
+      - main
 
   pull_request:
     # Trigger checks on PRs to protected branches

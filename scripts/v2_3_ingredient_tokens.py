@@ -1,5 +1,4 @@
 # Run this on products_dataset_processed.csv to generate the updated tokens.
-from rapidfuzz import process, fuzz
 from pathlib import Path
 from v2_utils import (
     load_csv,

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { getProducts } from "@/lib/api";
-import { Product, Category } from "@/lib/types";
+import { Product, Category, SortValue } from "@/lib/types";
 import ProductCard from "@/components/ProductCard";
 import ProductModal from "@/components/ProductModal";
 import FilterBar from "@/components/FilterBar";
@@ -12,7 +12,7 @@ const Catalog = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<Category | null>(null);
-  const [sort, setSort] = useState("");
+  const [sort, setSort] = useState<SortValue | "">("");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   useEffect(() => {

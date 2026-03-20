@@ -1,14 +1,45 @@
-import { Product, ProductDetail, RecommendedProduct, DupeProduct, OnboardingProfile, FeedbackRequest, Category } from "./types";
+import {
+  Product,
+  ProductDetail,
+  RecommendedProduct,
+  DupeProduct,
+  OnboardingProfile,
+  FeedbackRequest,
+  Category,
+  SortValue,
+} from "./types";
 import { MOCK_PRODUCTS, MOCK_PRODUCT_DETAIL, MOCK_RECOMMENDATIONS, MOCK_DUPES } from "./mockData";
 
 const BASE_URL = "http://localhost:8000/api";
+const FALLBACK_TO_MOCKS = false;
+
+export class ApiError extends Error {
+  status: number;
+  detail: string;
+
+  constructor(status: number, detail: string) {
+    super(`API error ${status}: ${detail}`);
+    this.name = "ApiError";
+    this.status = status;
+    this.detail = detail;
+  }
+}
 
 async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${url}`, {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  if (!res.ok) {
+    let detail = "Request failed";
+    try {
+      const payload = await res.json();
+      detail = payload?.detail || detail;
+    } catch {
+      detail = res.statusText || detail;
+    }
+    throw new ApiError(res.status, detail);
+  }
   return res.json();
 }
 
@@ -16,13 +47,14 @@ export async function submitOnboarding(profile: OnboardingProfile): Promise<{ us
   try {
     return await fetchApi("/onboarding", { method: "POST", body: JSON.stringify(profile) });
   } catch {
+    if (!FALLBACK_TO_MOCKS) throw new Error("Onboarding request failed");
     return { user_id: `user_${Date.now()}`, profile };
   }
 }
 
 export async function getProducts(params?: {
   category?: Category;
-  sort?: string;
+  sort?: SortValue;
   search?: string;
   min_price?: number;
   max_price?: number;
@@ -32,11 +64,16 @@ export async function getProducts(params?: {
     if (params?.category) query.set("category", params.category);
     if (params?.sort) query.set("sort", params.sort);
     if (params?.search) query.set("search", params.search);
-    if (params?.min_price) query.set("min_price", String(params.min_price));
-    if (params?.max_price) query.set("max_price", String(params.max_price));
+    if (params?.min_price !== undefined) {
+      query.set("min_price", String(params.min_price));
+    }
+    if (params?.max_price !== undefined) {
+      query.set("max_price", String(params.max_price));
+    }
     const qs = query.toString();
     return await fetchApi(`/products${qs ? `?${qs}` : ""}`);
   } catch {
+    if (!FALLBACK_TO_MOCKS) throw new Error("Products request failed");
     let filtered = [...MOCK_PRODUCTS];
     if (params?.category) filtered = filtered.filter((p) => p.category === params.category);
     if (params?.search) {
@@ -53,6 +90,7 @@ export async function getProductDetail(productId: number): Promise<ProductDetail
   try {
     return await fetchApi(`/products/${productId}`);
   } catch {
+    if (!FALLBACK_TO_MOCKS) throw new Error("Product detail request failed");
     const base = MOCK_PRODUCTS.find((p) => p.product_id === productId) || MOCK_PRODUCTS[0];
     return { ...MOCK_PRODUCT_DETAIL, ...base, product_id: productId };
   }
@@ -63,6 +101,7 @@ export async function getRecommendations(userId: string, category?: Category): P
     const qs = category ? `?category=${category}` : "";
     return await fetchApi(`/recommendations/${userId}${qs}`);
   } catch {
+    if (!FALLBACK_TO_MOCKS) throw new Error("Recommendations request failed");
     let recs = [...MOCK_RECOMMENDATIONS];
     if (category) recs = recs.filter((r) => r.category === category);
     return { products: recs };
@@ -73,6 +112,7 @@ export async function getDupes(productId: number): Promise<{ source_product_id: 
   try {
     return await fetchApi(`/dupes/${productId}`);
   } catch {
+    if (!FALLBACK_TO_MOCKS) throw new Error("Dupes request failed");
     return { source_product_id: productId, dupes: MOCK_DUPES };
   }
 }
@@ -81,6 +121,7 @@ export async function submitFeedback(feedback: FeedbackRequest): Promise<{ succe
   try {
     return await fetchApi("/feedback", { method: "POST", body: JSON.stringify(feedback) });
   } catch {
+    if (!FALLBACK_TO_MOCKS) throw new Error("Feedback request failed");
     return { success: true, message: "Feedback recorded" };
   }
 }

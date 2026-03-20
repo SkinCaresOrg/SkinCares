@@ -24,6 +24,10 @@ extras_require = {
         "ipykernel>=6,<7",
         "jupyter>=1,<2",
     ],
+    "api": [
+        "fastapi>=0.110,<1",
+        "uvicorn>=0.29,<1",
+    ],
     "scraping": [
         "requests>=2.31,<3",
         "beautifulsoup4>=4.12,<5",

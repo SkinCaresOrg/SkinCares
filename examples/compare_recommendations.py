@@ -25,6 +25,12 @@ def compare_recommendations_before_after():
         compare_recommendations_synthetic(bandit)
         return
     
+    # Convert tokens DataFrame into a mapping from product_id to feature vector
+    tokens_df = tokens
+    if "product_id" in tokens_df.columns:
+        tokens_df = tokens_df.set_index("product_id")
+    tokens_by_product = {prod_id: row.values for prod_id, row in tokens_df.iterrows()}
+    
     # Pick first 10 test products
     test_products = list(meta["product_id"].values)[:10]
     
@@ -33,8 +39,8 @@ def compare_recommendations_before_after():
     print("-" * 50)
     scores_before = {}
     for prod_id in test_products:
-        if prod_id in tokens:
-            score = bandit.predict_preference(tokens[prod_id])
+        if prod_id in tokens_by_product:
+            score = bandit.predict_preference(tokens_by_product[prod_id])
             scores_before[prod_id] = score
             product_data = meta[meta["product_id"] == prod_id].iloc[0]
             print(f"{product_data['product_name'][:30]:30} | Score: {score:.4f}")
@@ -43,10 +49,10 @@ def compare_recommendations_before_after():
     print("\n--- Learning Phase: User likes expensive products ---")
     expensive_count = 0
     for prod_id in list(meta["product_id"].values):
-        if prod_id in tokens:
+        if prod_id in tokens_by_product:
             price = float(meta[meta["product_id"] == prod_id]["price"].values[0])
             if price > 50 and expensive_count < 5:  # Expensive products
-                bandit.update(tokens[prod_id], reward=1)
+                bandit.update(tokens_by_product[prod_id], reward=1)
                 print(f"✓ Learned: User likes expensive products")
                 expensive_count += 1
     
@@ -55,8 +61,8 @@ def compare_recommendations_before_after():
     print("-" * 50)
     scores_after = {}
     for prod_id in test_products:
-        if prod_id in tokens and prod_id in scores_before:
-            score = bandit.predict_preference(tokens[prod_id])
+        if prod_id in tokens_by_product and prod_id in scores_before:
+            score = bandit.predict_preference(tokens_by_product[prod_id])
             scores_after[prod_id] = score
             product_data = meta[meta["product_id"] == prod_id].iloc[0]
             price = float(product_data["price"])

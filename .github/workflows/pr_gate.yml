@@ -2,8 +2,8 @@ name: PR gate
 
 on:
   push:
-    branches:
-    - MLOps
+    branches-ignore:
+      - main
 
   pull_request:
     # Trigger checks on PRs to protected branches

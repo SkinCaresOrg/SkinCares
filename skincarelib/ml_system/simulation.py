@@ -176,19 +176,19 @@ def run_simulation(
         model = create_feedback_model(model_type=model_type, dim=dim)
         if model.fit(user):
             # Score candidates with ML model
-            candidate_indices = [product_index[pid] for pid in candidate_ids if pid in product_index]
+            candidate_indices = []
+            valid_candidate_ids = []
+            for pid in candidate_ids:
+                if pid in product_index:
+                    candidate_indices.append(product_index[pid])
+                    valid_candidate_ids.append(pid)
             candidate_vectors = product_vectors[candidate_indices]
             scores = model.score_products(candidate_vectors)
-            
-            # Sort by score
-            order = np.argsort(scores)[::-1]
-            ranked_after = [candidate_ids[i] for i in np.argsort(np.array([product_index[pid] for pid in candidate_ids]))
-                           for j, i in enumerate(order[:top_n])]
-            
-            # Simpler way: create mapping and sort
-            pid_to_score = {candidate_ids[i]: scores[i] for i in range(len(candidate_ids))}
+
+            # Create mapping from valid candidate IDs to their scores and sort
+            pid_to_score = dict(zip(valid_candidate_ids, scores))
             ranked_after = sorted(
-                [pid for pid in candidate_ids if pid in product_index],
+                valid_candidate_ids,
                 key=lambda pid: pid_to_score.get(pid, 0),
                 reverse=True
             )[:top_n]

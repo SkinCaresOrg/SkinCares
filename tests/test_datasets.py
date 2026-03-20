@@ -1,6 +1,6 @@
-from skincarelib.datasets.dummy import dummy_dataset
+from importlib import import_module
 
 
-def test_dummy_dataset():
-    assert len(dummy_dataset()) == 4
-    assert dummy_dataset() == [1, 2, 3, 4]
+def test_datasets_package_importable():
+    module = import_module("skincarelib.datasets")
+    assert module is not None

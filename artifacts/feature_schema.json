@@ -60,7 +60,6 @@
     "annuus",
     "annuus sunflower",
     "anthemis",
-    "anthemis nobilis",
     "apple",
     "arginine",
     "ascorbate",
@@ -185,6 +184,7 @@
     "extract cucumis",
     "extract extrait",
     "extract hydrolyzed",
+    "extract laminaria",
     "extract lemon",
     "extract rosmarinus",
     "extract sodium",
@@ -513,17 +513,144 @@
     "zinc",
     "zinc gluconate"
   ],
-  "groups": [
-    "group_"
-  ],
+  "groups": {
+    "group_active": {
+      "start": 512,
+      "end": 513
+    },
+    "group_antioxidant": {
+      "start": 513,
+      "end": 514
+    },
+    "group_chelating_agent": {
+      "start": 514,
+      "end": 515
+    },
+    "group_colorant": {
+      "start": 515,
+      "end": 516
+    },
+    "group_emollient": {
+      "start": 516,
+      "end": 517
+    },
+    "group_exfoliant": {
+      "start": 517,
+      "end": 518
+    },
+    "group_humectant": {
+      "start": 518,
+      "end": 519
+    },
+    "group_irritant_flag": {
+      "start": 519,
+      "end": 520
+    },
+    "group_occlusive": {
+      "start": 520,
+      "end": 521
+    },
+    "group_ph_adjuster": {
+      "start": 521,
+      "end": 522
+    },
+    "group_preservative": {
+      "start": 522,
+      "end": 523
+    },
+    "group_solvent": {
+      "start": 523,
+      "end": 524
+    },
+    "group_soothing_agent": {
+      "start": 524,
+      "end": 525
+    },
+    "group_sunscreen_filter": {
+      "start": 525,
+      "end": 526
+    },
+    "group_texture_agent": {
+      "start": 526,
+      "end": 527
+    }
+  },
   "categories": [
-    "cat_Cleanser",
-    "cat_Eye cream",
-    "cat_Face Mask",
-    "cat_Moisturizer",
-    "cat_Sun protect",
-    "cat_Treatment"
+    "cat_Acne Care (OTC)",
+    "cat_Anti-Aging",
+    "cat_Anti-Aging/Anti-Wrinkle",
+    "cat_Anti-Wrinkle",
+    "cat_Anti-Wrinkle Treatments",
+    "cat_Balms",
+    "cat_Balms, Ointments & Salves",
+    "cat_Bar Soaps",
+    "cat_Body",
+    "cat_Body Wipes",
+    "cat_Butters",
+    "cat_Cleansers",
+    "cat_Creams",
+    "cat_Dark Circle Treatments",
+    "cat_Dark Spot Corrector & Pigment Corrector",
+    "cat_Daytime Moisturizers",
+    "cat_Essence",
+    "cat_Ethnic Creams, Lotions & Oils",
+    "cat_Exfoliators",
+    "cat_Exfoliators & Scrubs",
+    "cat_Eye Cream, Gel, Oils, & Serum",
+    "cat_Eye Masks & Pads",
+    "cat_Eyes",
+    "cat_Face",
+    "cat_Facial Cleansers",
+    "cat_Facial Cleansing Milks",
+    "cat_Facial Cleansing Oil",
+    "cat_Facial Foaming Cleansers",
+    "cat_Facial Gels",
+    "cat_Facial Masks",
+    "cat_Facial Scrubs",
+    "cat_Facial Washes",
+    "cat_Facial Wipes",
+    "cat_Firming Treatments",
+    "cat_Foaming Cleansers",
+    "cat_Foot Mask",
+    "cat_Gels",
+    "cat_Hand Masks",
+    "cat_Lash & Brow Growth",
+    "cat_Lip Balms, Gels, Moisturizers & Oils",
+    "cat_Lip Care",
+    "cat_Lip Exfoliators + Scrubs",
+    "cat_Lip Mask",
+    "cat_Lips",
+    "cat_Liquid Cleansers & Soaps",
+    "cat_Liquid or Cream Hand Soaps",
+    "cat_Lotions",
+    "cat_Micellar Water",
+    "cat_Mists",
+    "cat_Moisturizers",
+    "cat_Moisturizers with SPF",
+    "cat_Moisturizing Serums",
+    "cat_Neck & D\u00e9collet\u00e9",
+    "cat_Nighttime Moisturizers",
+    "cat_Oils",
+    "cat_Peels",
+    "cat_Polishes",
+    "cat_Pore Cleansing",
+    "cat_Pore Strips",
+    "cat_Pore Treatments",
+    "cat_Puffiness Treatments",
+    "cat_Retinol",
+    "cat_Scrubs",
+    "cat_Serum",
+    "cat_Serums",
+    "cat_Sets & Kits",
+    "cat_Skin Care",
+    "cat_Skin Lightening",
+    "cat_Skin Treatments",
+    "cat_Spot Treatments",
+    "cat_Spray Moisturizer",
+    "cat_Spray Moisturizers",
+    "cat_Tinted Moisturizers",
+    "cat_Toners"
   ],
-  "price_index": 519,
-  "total_features": 520
+  "price_index": 601,
+  "total_features": 602
 }

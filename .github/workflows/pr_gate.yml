@@ -2,19 +2,18 @@ name: PR gate
 
 on:
   push:
-    branches:
-    - main
-    - MLOps
+    branches-ignore:
+      - main
 
   pull_request:
-    # Only trigger the workflow with a PR to main
+    # Trigger checks on PRs to protected branches
     branches:
     - main
     - MLOps
 
   # Enable manual trigger
   workflow_dispatch:
-    input:
+    inputs:
       tags:
         description: 'Tags to label this manual run (optional)'
         default: 'Manual run'

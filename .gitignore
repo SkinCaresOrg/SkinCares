@@ -15,6 +15,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!frontend/src/lib/
 lib64/
 parts/
 sdist/
@@ -131,3 +132,4 @@ dmypy.json
 
 # Processed data files
 data/processed/*.csv
+notebooks/data/

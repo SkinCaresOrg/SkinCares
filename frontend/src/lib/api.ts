@@ -120,8 +120,8 @@ export async function getDupes(productId: number): Promise<{ source_product_id: 
 export async function submitFeedback(feedback: FeedbackRequest): Promise<{ success: boolean; message: string }> {
   try {
     return await fetchApi("/feedback", { method: "POST", body: JSON.stringify(feedback) });
-  } catch {
-    if (!FALLBACK_TO_MOCKS) throw new Error("Feedback request failed");
+  } catch (error) {
+    if (!FALLBACK_TO_MOCKS) throw error;
     return { success: true, message: "Feedback recorded" };
   }
 }

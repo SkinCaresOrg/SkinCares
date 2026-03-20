@@ -385,16 +385,32 @@ class ContextualBanditFeedback:
         self.vw.save(str(path))
     
     def load(self, path: Path):
-        """Load bandit state from disk."""
-        with open(path, "rb") as f:
-            state = pickle.load(f)
-            self.weights = state["weights"]
-            self.feature_wins = state["feature_wins"]
-            self.feature_losses = state["feature_losses"]
-            self.feature_counts = state["feature_counts"]
-            self.total_updates = state["total_updates"]
-            self.learning_rate = state["learning_rate"]
-            self.explore_rate = state["explore_rate"]
+        """Load VW model from disk."""
+        if not VW_AVAILABLE:
+            raise RuntimeError("Vowpal Wabbit is not available; cannot load contextual bandit model.")
+        if not path.exists():
+            raise FileNotFoundError(f"VW model file not found: {path}")
+
+        # Clean up any existing VW workspace, if present
+        vw_obj = getattr(self, "vw", None)
+        if vw_obj is not None:
+            finish = getattr(vw_obj, "finish", None)
+            if callable(finish):
+                try:
+                    finish()
+                except Exception:
+                    # Ignore cleanup errors; we'll overwrite self.vw anyway
+                    pass
+
+        # Recreate VW workspace, loading the saved model.
+        # This is equivalent to passing "-i <model>" on the VW command line.
+        # We keep it quiet to avoid logging on load.
+        try:
+            self.vw = vw.Workspace(quiet=True, initial_regressor=str(path))
+        except TypeError:
+            # Fallback for older VW Python APIs that may not support Workspace
+            # or 'initial_regressor' kwarg; use argument string instead.
+            self.vw = vw.vw(f"-i {str(path)} --quiet")
 
 
 def update_user_state(

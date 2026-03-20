@@ -1,26 +1,11 @@
-"""
-Feedback update module - backward compatible wrapper.
-
-This module now imports from ml_feedback_model for backward compatibility
-while providing access to both legacy and ML-based feedback models.
-"""
 
 import json
 from pathlib import Path
-from typing import Optional, Literal
+from typing import List, Dict, Optional
 
 import numpy as np
 
-# Import new ML models and re-export legacy APIs for backward compatibility
-from skincarelib.ml_system.ml_feedback_model import (
-    LogisticRegressionFeedback,
-    RandomForestFeedback,
-    GradientBoostingFeedback,
-    ContextualBanditFeedback,
-    UserState,
-    update_user_state,
-    compute_user_vector,
-)
+from skincarelib.ml_system.feedback_lr_model import FeedbackLogisticRegression
 
 
 def find_project_root() -> Path:
@@ -49,48 +34,192 @@ def load_artifacts():
     return vectors, product_index, index_to_id, schema
 
 
-def create_feedback_model(
-    model_type: Literal["logistic", "random_forest", "gradient_boosting", "contextual_bandit"] = "logistic",
-    dim: Optional[int] = None,
-    **kwargs
+class UserState:
+    """Tracks user interactions and preferences."""
+
+    def __init__(self, dim: int):
+        self.dim = dim
+
+        
+        self.liked_vectors: List[np.ndarray] = []
+        self.disliked_vectors: List[np.ndarray] = []
+        self.irritation_vectors: List[np.ndarray] = []
+
+        
+        self.liked_reasons: List[str] = []
+        self.disliked_reasons: List[str] = []
+        self.irritation_reasons: List[str] = []
+
+        
+        self.interactions: int = 0
+        self.liked_count: int = 0
+        self.disliked_count: int = 0
+        self.irritation_count: int = 0
+
+    def add_liked(self, vec: np.ndarray, reasons: List[str]):
+        self.liked_vectors.append(vec)
+        self.liked_reasons.extend(reasons)
+        self.interactions += 1
+        self.liked_count += 1
+
+    def add_disliked(self, vec: np.ndarray, reasons: List[str]):
+        self.disliked_vectors.append(vec)
+        self.disliked_reasons.extend(reasons)
+        self.interactions += 1
+        self.disliked_count += 1
+
+    def add_irritation(self, vec: np.ndarray, reasons: List[str]):
+        self.irritation_vectors.append(vec)
+        self.irritation_reasons.extend(reasons)
+        self.interactions += 1
+        self.irritation_count += 1
+
+
+def update_user_state(
+    user: UserState,
+    reaction: str,
+    product_vec: np.ndarray,
+    reason_tags: Optional[List[str]] = None,
 ):
     """
-    Factory function to create feedback models.
+    Update user state based on a single interaction.
+
+    Design choice:
+    - "irritation" is treated as a strong negative, so we:
+        (1) record it in irritation_vectors (for stronger penalty in user vector)
+        (2) ALSO count it as a disliked interaction (so summaries + metrics match intuition)
+    """
+    if reason_tags is None:
+        reason_tags = []
+
+    reaction = (reaction or "").lower().strip()
+
+    if reaction == "like":
+        user.add_liked(product_vec, reason_tags)
+
+    elif reaction == "dislike":
+        user.add_disliked(product_vec, reason_tags)
+
+    elif reaction == "irritation":
+        
+        user.add_disliked(product_vec, reason_tags)
+        user.add_irritation(product_vec, reason_tags)
+
+    else:
+        
+        return user
+
+    return user
+
+
+def compute_user_vector(user: UserState, schema: Optional[Dict] = None) -> np.ndarray:
+    """
+    Compute user preference vector from feedback.
+
+    Current weighting:
+      +2.0 * mean(liked vectors)
+      -1.0 * mean(disliked vectors)
+      -2.0 * mean(irritation vectors)
+
+    Note: Because irritation is also counted in disliked_vectors, it contributes to both
+    the general negative signal and the stronger irritation-specific penalty.
+    """
+    user_vec = np.zeros(user.dim, dtype=np.float32)
+
+    
+    if user.liked_vectors:
+        liked_avg = np.mean(user.liked_vectors, axis=0)
+        user_vec += 2.0 * liked_avg
+
+    
+    if user.disliked_vectors:
+        disliked_avg = np.mean(user.disliked_vectors, axis=0)
+        user_vec -= 1.0 * disliked_avg
+
+    
+    if user.irritation_vectors:
+        irritation_avg = np.mean(user.irritation_vectors, axis=0)
+        user_vec -= 2.0 * irritation_avg
+
+    
+    norm = np.linalg.norm(user_vec)
+    if norm > 1e-9:
+        user_vec = user_vec / norm
+
+    return user_vec
+
+
+def compute_user_vector_lr(
+    user: UserState,
+    schema: Optional[Dict] = None,
+    use_cache: bool = True,
+) -> np.ndarray:
+    """
+    Compute user preference vector using Logistic Regression feedback learning.
+    
+    This is a machine learning approach that:
+    1. Trains a logistic regression classifier on feedback history
+    2. Uses the learned model to determine feature importance
+    3. Generates a preference vector from weighted average using learned importance
+    
+    Compared to compute_user_vector:
+    - Learns weights from feedback patterns instead of using fixed weights
+    - Scales better with more feedback (model converges with data)
+    - Handles preference intensity (strong vs weak likes/dislikes)
     
     Args:
-        model_type: Type of model to create
-        dim: Required for contextual_bandit, ignored for others
-        **kwargs: Additional arguments for model constructors
-    
+        user: UserState with interaction history
+        schema: Optional feature schema (unused, kept for API compatibility)
+        use_cache: Whether to cache model in-memory
+        
     Returns:
-        Feedback model instance
+        np.ndarray: Normalized user preference vector (shape: (dim,))
     """
-    if model_type == "logistic":
-        return LogisticRegressionFeedback(**kwargs)
-    elif model_type == "random_forest":
-        return RandomForestFeedback(**kwargs)
-    elif model_type == "gradient_boosting":
-        return GradientBoostingFeedback(**kwargs)
-    elif model_type == "contextual_bandit":
-        if dim is None:
-            raise ValueError("dim is required for contextual_bandit")
-        return ContextualBanditFeedback(dim=dim, **kwargs)
+    # Initialize logistic regression model
+    lr_model = FeedbackLogisticRegression(dim=user.dim)
+    
+    # Add all feedback interactions to the model
+    for vec in user.liked_vectors:
+        lr_model.add_feedback(vec, feedback_label=1)
+    for vec in user.disliked_vectors:
+        lr_model.add_feedback(vec, feedback_label=0)
+    for vec in user.irritation_vectors:
+        lr_model.add_feedback(vec, feedback_label=-1)
+    
+    # Train the model (requires min 3 samples)
+    if not lr_model.train(min_samples=3):
+        # Fallback to weighted average if not enough feedback
+        return compute_user_vector(user, schema)
+    
+    # Build user vector using learned preference weights
+    learned_weights = lr_model.get_learned_weights()  # shape: (dim,)
+    if learned_weights is None:
+        return compute_user_vector(user, schema)
+    
+    user_vec = np.zeros(user.dim, dtype=np.float32)
+    
+    # Weighted average using learned importance
+    if user.liked_vectors:
+        liked_avg = np.mean(user.liked_vectors, axis=0)
+        # Weight liked products by learned feature importance
+        user_vec += 1.5 * learned_weights * liked_avg
+    
+    if user.disliked_vectors:
+        disliked_avg = np.mean(user.disliked_vectors, axis=0)
+        # Negative weight for disliked
+        user_vec -= 0.8 * learned_weights * disliked_avg
+    
+    if user.irritation_vectors:
+        irritation_avg = np.mean(user.irritation_vectors, axis=0)
+        # Stronger negative weight for irritation
+        user_vec -= 2.0 * learned_weights * irritation_avg
+    
+    # Normalize
+    norm = np.linalg.norm(user_vec)
+    if norm > 1e-9:
+        user_vec = user_vec / norm
     else:
-        raise ValueError(f"Unknown model_type: {model_type}")
-
-
-__all__ = [
-    # Legacy / compatibility APIs
-    "UserState",
-    "update_user_state",
-    "compute_user_vector",
-    # Feedback model classes
-    "LogisticRegressionFeedback",
-    "RandomForestFeedback",
-    "GradientBoostingFeedback",
-    "ContextualBanditFeedback",
-    # Factory and helpers
-    "find_project_root",
-    "load_artifacts",
-    "create_feedback_model",
-]
+        # If result is zero vector, fallback to simple weighted average
+        return compute_user_vector(user, schema)
+    
+    return user_vec

@@ -25,7 +25,6 @@ const CONCERNS = [
   { value: "dullness", label: "Dullness" },
   { value: "large_pores", label: "Large Pores" },
   { value: "maintenance", label: "Maintenance" },
-  { value: "sensitivity_level", label: "Sensitivity" },
 ];
 
 const SENSITIVITY_LEVELS: { value: SensitivityLevel; label: string }[] = [

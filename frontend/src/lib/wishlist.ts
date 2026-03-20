@@ -28,3 +28,7 @@ export function getUserId(): string | null {
 export function setUserId(id: string): void {
   localStorage.setItem("skincares_user_id", id);
 }
+
+export function clearUserId(): void {
+  localStorage.removeItem("skincares_user_id");
+}

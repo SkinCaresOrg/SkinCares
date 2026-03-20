@@ -1,7 +1,8 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Category, Reaction, REACTION_TAGS, IRRITATION_TAGS, formatTagLabel } from "@/lib/types";
-import { submitFeedback } from "@/lib/api";
-import { getUserId } from "@/lib/wishlist";
+import { ApiError, submitFeedback } from "@/lib/api";
+import { clearUserId, getUserId } from "@/lib/wishlist";
 import { ThumbsUp, ThumbsDown, AlertTriangle, Check } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -13,19 +14,36 @@ interface FeedbackPanelProps {
 type Step = "initial" | "reaction" | "tags" | "done";
 
 const FeedbackPanel = ({ productId, category }: FeedbackPanelProps) => {
+  const navigate = useNavigate();
   const [step, setStep] = useState<Step>("initial");
   const [reaction, setReaction] = useState<Reaction | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [freeText, setFreeText] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const userId = getUserId() || "anonymous";
+  const userId = getUserId();
+
+  const goToOnboarding = () => {
+    clearUserId();
+    navigate("/onboarding");
+  };
 
   const handleNotTried = async () => {
+    if (!userId) {
+      goToOnboarding();
+      return;
+    }
     setSubmitting(true);
-    await submitFeedback({ user_id: userId, product_id: productId, has_tried: false });
-    setStep("done");
-    setSubmitting(false);
+    try {
+      await submitFeedback({ user_id: userId, product_id: productId, has_tried: false });
+      setStep("done");
+    } catch (error: unknown) {
+      if (error instanceof ApiError && error.status === 404) {
+        goToOnboarding();
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleReaction = (r: Reaction) => {
@@ -38,17 +56,28 @@ const FeedbackPanel = ({ productId, category }: FeedbackPanelProps) => {
   };
 
   const handleSubmitFeedback = async () => {
+    if (!userId) {
+      goToOnboarding();
+      return;
+    }
     setSubmitting(true);
-    await submitFeedback({
-      user_id: userId,
-      product_id: productId,
-      has_tried: true,
-      reaction: reaction!,
-      reason_tags: selectedTags,
-      free_text: freeText || undefined,
-    });
-    setStep("done");
-    setSubmitting(false);
+    try {
+      await submitFeedback({
+        user_id: userId,
+        product_id: productId,
+        has_tried: true,
+        reaction: reaction!,
+        reason_tags: selectedTags,
+        free_text: freeText || undefined,
+      });
+      setStep("done");
+    } catch (error: unknown) {
+      if (error instanceof ApiError && error.status === 404) {
+        goToOnboarding();
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const getTags = (): string[] => {

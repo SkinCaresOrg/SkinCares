@@ -20,11 +20,16 @@ extras_require = {
     "dev": [
         "pytest>=7.0,<9",
         "ruff>=0.6,<1",
+        "pre-commit>=3.7,<5",
         "ipykernel>=6,<7",
         "jupyter>=1,<2",
     ],
     "vw": [
         "vowpalwabbit>=9.0,<10",
+    "scraping": [
+        "requests>=2.31,<3",
+        "beautifulsoup4>=4.12,<5",
+        "urllib3>=2,<3",
     ],
 }
 

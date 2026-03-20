@@ -11,12 +11,15 @@ from typing import Optional, Literal
 
 import numpy as np
 
-# Import new ML models
+# Import new ML models and re-export legacy APIs for backward compatibility
 from skincarelib.ml_system.ml_feedback_model import (
     LogisticRegressionFeedback,
     RandomForestFeedback,
     GradientBoostingFeedback,
     ContextualBanditFeedback,
+    UserState,
+    update_user_state,
+    compute_user_vector,
 )
 
 
@@ -74,3 +77,20 @@ def create_feedback_model(
         return ContextualBanditFeedback(dim=dim, **kwargs)
     else:
         raise ValueError(f"Unknown model_type: {model_type}")
+
+
+__all__ = [
+    # Legacy / compatibility APIs
+    "UserState",
+    "update_user_state",
+    "compute_user_vector",
+    # Feedback model classes
+    "LogisticRegressionFeedback",
+    "RandomForestFeedback",
+    "GradientBoostingFeedback",
+    "ContextualBanditFeedback",
+    # Factory and helpers
+    "find_project_root",
+    "load_artifacts",
+    "create_feedback_model",
+]

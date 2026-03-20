@@ -21,3 +21,21 @@ docker run --rm skincares:latest
 ## Notes
 - This is a lightweight skeleton for midterm readiness.
 - Add an API server and logging before production deployment.
+
+## API Contract Server (local)
+
+Install API dependencies:
+
+```bash
+pip install -e .[api]
+```
+
+Run server:
+
+```bash
+uvicorn deployment.api:app --reload --host 0.0.0.0 --port 8000
+```
+
+Open docs:
+- `http://localhost:8000/docs`
+- `http://localhost:8000/openapi.json`

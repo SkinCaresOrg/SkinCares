@@ -93,7 +93,7 @@ class UserState:
             X_list.append(vec)
             y_list.append(0)
         
-        # Irritation samples are also disliked (label=0) with stronger weight
+        # Irritation samples are also treated as disliked (label=0)
         for vec in self.irritation_vectors:
             X_list.append(vec)
             y_list.append(0)

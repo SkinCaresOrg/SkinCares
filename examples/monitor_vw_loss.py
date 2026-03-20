@@ -60,15 +60,6 @@ def monitor_learning_loss():
         return False
 
 
-if __name__ == "__main__":
-    try:
-        import matplotlib.pyplot as plt
-        monitor_learning_loss_with_plot()
-    except ImportError:
-        print("matplotlib not installed. Running without plot visualization.\n")
-        monitor_learning_loss()
-
-
 def monitor_learning_loss_with_plot():
     """Monitor loss with optional matplotlib visualization."""
     
@@ -124,3 +115,12 @@ def monitor_learning_loss_with_plot():
         print("\n✅ MODEL IS LEARNING - Loss decreased!")
     else:
         print("\n⚠️  Loss did not decrease")
+
+
+if __name__ == "__main__":
+    try:
+        import matplotlib.pyplot as plt
+        monitor_learning_loss_with_plot()
+    except ImportError:
+        print("matplotlib not installed. Running without plot visualization.\n")
+        monitor_learning_loss()

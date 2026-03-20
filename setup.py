@@ -27,6 +27,7 @@ extras_require = {
     ],
     "vw": [
         "vowpalwabbit>=9.0,<10",
+    ],
     "scraping": [
         "requests>=2.31,<3",
         "beautifulsoup4>=4.12,<5",

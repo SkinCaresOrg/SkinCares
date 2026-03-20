@@ -21,6 +21,7 @@ extras_require = {
         "pytest>=7.0,<9",
         "ruff>=0.6,<1",
         "pre-commit>=3.7,<5",
+        "fastapi>=0.110,<1",
         "ipykernel>=6,<7",
         "jupyter>=1,<2",
     ],

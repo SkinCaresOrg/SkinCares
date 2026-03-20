@@ -65,7 +65,7 @@ source .venv/bin/activate
 Install dependencies:
 
 ```bash
-pip install -e .
+pip install -e .[dev]
 ```
 
 ---
@@ -109,7 +109,7 @@ python scripts/train_model.py
 Run tests:
 
 ```bash
-pytest
+python -m pytest tests --disable-warnings --maxfail=1
 ```
 
 Lint code:
@@ -117,6 +117,22 @@ Lint code:
 ```bash
 ruff check .
 ```
+
+Install pre-commit hooks:
+
+```bash
+pre-commit install --hook-type pre-commit --hook-type pre-push
+pre-commit install-hooks
+```
+
+Run hooks manually (optional):
+
+```bash
+pre-commit run --all-files
+pre-commit run --hook-stage push --all-files
+```
+
+If Ruff auto-fixes files during commit, the commit will fail intentionally so you can re-stage the modified files and commit again.
 
 ---
 

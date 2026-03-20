@@ -23,16 +23,17 @@ extras_require = {
         "ruff>=0.6,<1",
         "pre-commit>=3.7,<5",
         "fastapi>=0.110,<1",
+        "httpx>=0.24,<1",
         "ipykernel>=6,<7",
         "jupyter>=1,<2",
     ],
     "api": [
         "fastapi>=0.110,<1",
+        "httpx>=0.24,<1",
         "uvicorn>=0.29,<1",
     ],
     "vw": [
         "vowpalwabbit>=9.0,<10",
-    ],
     ],
     "scraping": [
         "requests>=2.31,<3",

@@ -276,13 +276,23 @@ def run_model_comparison(
     candidate_ids = candidates_df["product_id"].astype(str).tolist()
 
     # ---- Fixed interaction sequence ----
-    interaction_plan = [
-        ("like", candidate_ids[0], ["hydrated_well"]),
-        ("like", candidate_ids[3], ["absorbed_quickly"]),
-        ("dislike", candidate_ids[10], ["too_greasy"]),
-        ("irritation", candidate_ids[15], ["irritated_my_skin"]),
-        ("like", candidate_ids[25], ["good_price_to_quality"]),
+    # Define desired interactions by candidate index, then filter based on availability.
+    base_interactions = [
+        ("like", 0, ["hydrated_well"]),
+        ("like", 3, ["absorbed_quickly"]),
+        ("dislike", 10, ["too_greasy"]),
+        ("irritation", 15, ["irritated_my_skin"]),
+        ("like", 25, ["good_price_to_quality"]),
     ]
+
+    interaction_plan = []
+    for reaction, idx, reasons in base_interactions:
+        if idx < len(candidate_ids):
+            interaction_plan.append((reaction, candidate_ids[idx], reasons))
+
+    if not interaction_plan:
+        print("Not enough candidates to build interaction plan for comparison.")
+        return
 
     print("Fixed interaction sequence:")
     for reaction, pid, reasons in interaction_plan:

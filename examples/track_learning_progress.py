@@ -37,9 +37,12 @@ def track_learning_sessions():
             vector = vector / np.linalg.norm(vector)
             bandit.update(vector, reward=reward)
             
-            # Get predictions on test vectors
-            test_vectors = [np.random.randn(602) / np.linalg.norm(np.random.randn(602)) 
-                           for _ in range(5)]
+            # Get predictions on properly normalized test vectors
+            test_vectors = []
+            for _ in range(5):
+                v = np.random.randn(602)
+                v = v / np.linalg.norm(v)
+                test_vectors.append(v)
             preds = [bandit.predict_preference(v) for v in test_vectors]
             predictions.extend(preds)
         

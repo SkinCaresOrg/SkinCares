@@ -1,10 +1,12 @@
 export type Category = "cleanser" | "moisturizer" | "sunscreen" | "treatment" | "face_mask" | "eye_cream";
 export type Reaction = "like" | "dislike" | "irritation";
+export type SortValue = "price_asc" | "price_desc";
 export type SkinType = "normal" | "dry" | "oily" | "combination" | "sensitive" | "not_sure";
-export type Concern = "acne" | "dryness" | "oiliness" | "redness" | "dark_spots" | "fine_lines" | "dullness" | "large_pores" | "maintenance" | "sensitivity_level";
+export type Concern = "acne" | "dryness" | "oiliness" | "redness" | "dark_spots" | "fine_lines" | "dullness" | "large_pores" | "maintenance";
 export type SensitivityLevel = "very_sensitive" | "somewhat_sensitive" | "rarely_sensitive" | "not_sensitive" | "not_sure";
 export type PriceRange = "budget" | "affordable" | "mid_range" | "premium" | "no_preference";
 export type RoutineSize = "minimal" | "basic" | "moderate" | "extensive";
+export type IngredientExclusion = "fragrance" | "alcohol" | "essential_oils" | "sulfates" | "parabens";
 
 export interface Product {
   product_id: number;
@@ -21,8 +23,8 @@ export interface Product {
 export interface ProductDetail extends Product {
   ingredients: string[];
   ingredient_highlights?: string[];
-  concerns_targeted?: string[];
-  skin_types_supported?: string[];
+  concerns_targeted?: Concern[];
+  skin_types_supported?: SkinType[];
 }
 
 export interface RecommendedProduct extends Product {
@@ -37,9 +39,9 @@ export interface DupeProduct extends Product {
 
 export interface OnboardingProfile {
   skin_type: SkinType;
-  concerns: string[];
+  concerns: Concern[];
   sensitivity_level: SensitivityLevel;
-  ingredient_exclusions: string[];
+  ingredient_exclusions: IngredientExclusion[];
   price_range: PriceRange;
   routine_size: RoutineSize;
   product_interests: Category[];

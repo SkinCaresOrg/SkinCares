@@ -322,8 +322,9 @@ class ContextualBanditFeedback:
         self.learning_rate = learning_rate
         self.explore_rate = explore_rate
         
-        # Initialize Vowpal Wabbit model
-        self.vw = vw.Workspace("--loss_function logistic --link logistic --adaptive --quiet")
+        # Initialize Vowpal Wabbit model with configured learning rate
+        vw_args = f"--loss_function logistic --link logistic --adaptive --quiet --learning_rate {self.learning_rate}"
+        self.vw = vw.Workspace(vw_args)
         self.total_updates = 0
     
     def fit(self, user_state: UserState) -> bool:
@@ -342,13 +343,18 @@ class ContextualBanditFeedback:
         return self.vw.predict(example)
     
     def score_products(self, product_vectors: np.ndarray) -> np.ndarray:
-        """Score multiple products using VW."""
+        """Score multiple products using VW, with optional exploration noise."""
         scores = []
         for vec in product_vectors:
             example = " | " + " ".join(f"{i}:{v}" for i, v in enumerate(vec) if v != 0)
             score = self.vw.predict(example)
             scores.append(score)
-        return np.array(scores, dtype=np.float32)
+        scores_array = np.array(scores, dtype=np.float32)
+        # Simple epsilon-style exploration: blend predictions with random noise
+        if self.explore_rate > 0.0:
+            noise = np.random.uniform(low=0.0, high=1.0, size=scores_array.shape).astype(np.float32)
+            scores_array = (1.0 - self.explore_rate) * scores_array + self.explore_rate * noise
+        return scores_array
     
     def update(self, product_vector: np.ndarray, reward: int):
         """

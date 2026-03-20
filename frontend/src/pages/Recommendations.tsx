@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { getRecommendations } from "@/lib/api";
+import { ApiError, getRecommendations } from "@/lib/api";
 import { RecommendedProduct, Category, Product } from "@/lib/types";
-import { getUserId } from "@/lib/wishlist";
+import { clearUserId, getUserId } from "@/lib/wishlist";
 import ProductCard from "@/components/ProductCard";
 import ProductModal from "@/components/ProductModal";
 import Navigation from "@/components/Navigation";
@@ -24,10 +24,19 @@ const Recommendations = () => {
       return;
     }
     setLoading(true);
-    getRecommendations(userId, category || undefined).then((res) => {
-      setProducts(res.products);
-      setLoading(false);
-    });
+    getRecommendations(userId, category || undefined)
+      .then((res) => {
+        setProducts(res.products);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof ApiError && error.status === 404) {
+          clearUserId();
+          navigate("/onboarding");
+        }
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   }, [userId, category, navigate]);
 
   return (

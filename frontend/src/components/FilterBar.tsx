@@ -1,13 +1,13 @@
 import { Search, ChevronDown } from "lucide-react";
-import { Category, CATEGORIES, CATEGORY_LABELS } from "@/lib/types";
+import { Category, CATEGORIES, CATEGORY_LABELS, SortValue } from "@/lib/types";
 
 interface FilterBarProps {
   search: string;
   onSearchChange: (v: string) => void;
   selectedCategory: Category | null;
   onCategoryChange: (c: Category | null) => void;
-  sort: string;
-  onSortChange: (s: string) => void;
+  sort: SortValue | "";
+  onSortChange: (s: SortValue | "") => void;
 }
 
 const FilterBar = ({ search, onSearchChange, selectedCategory, onCategoryChange, sort, onSortChange }: FilterBarProps) => {

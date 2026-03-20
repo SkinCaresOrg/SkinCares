@@ -13,4 +13,4 @@ repos:
         entry: python -m pytest tests --disable-warnings --maxfail=1
         language: system
         pass_filenames: false
-        stages: [push]
+        stages: [pre-push]

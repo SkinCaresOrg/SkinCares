@@ -1,7 +1,6 @@
 import re
 import unicodedata
 import pandas as pd
-from collections import Counter
 from typing import Optional, List, Tuple, Pattern
 from rapidfuzz import process, fuzz
 

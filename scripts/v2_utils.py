@@ -93,35 +93,34 @@ def smart_split_ingredients(ingredients: Optional[str]) -> List[str]:
     return tokens
 
 
-def build_known_ingredients(df: pd.DataFrame, top_n: int = 500) -> List[str]:
+def load_cosing_ingredients(path: str) -> List[str]:
     """
-    Build a list of correctly-spelled ingredients by taking the
-    most frequent tokens across all products. High frequency = correct spelling.
+    Load official INCI ingredient names from the CosIng database.
+    These are the canonical correctly-spelled ingredient names used
+    as the reference list for fuzzy matching.
     """
-    counter = Counter()
-    for row in df["ingredients"]:
-        tokens = smart_split_ingredients(row)
-        counter.update(tokens)
-    return [ing for ing, count in counter.most_common(top_n)]
+    df = pd.read_csv(path, sep=None, engine='python')
+    names = df['INCI name'].dropna().str.strip().str.lower().tolist()
+    return names
 
 def apply_fuzzy(tokens: List[str], known_ingredients: List[str], threshold: int = 90) -> List[str]:
-    """
-    Replace likely typos by fuzzy-matching each token against a list
-    of known correctly-spelled ingredients. Replaces apply_synonyms.
-    """
+    known_set = set(known_ingredients)
     mapped = []
     seen = set()
 
     for t in tokens:
-        # only try to fix short tokens - long ones are complex names not typos
-        if len(t.split()) <= 3:
-            result = process.extractOne(t, known_ingredients, scorer=fuzz.ratio)
-            if result and result[1] >= threshold:
-                t = result[0]
+        if t in known_set:
+            # already correct, skip fuzzy matching entirely
+            final = t
+        elif len(t.split()) <= 3:
+            result = process.extractOne(t, known_ingredients, scorer=fuzz.ratio, score_cutoff=threshold)
+            final = result[0] if result else t
+        else:
+            final = t
 
-        if t and t not in seen:
-            mapped.append(t)
-            seen.add(t)
+        if final and final not in seen:
+            mapped.append(final)
+            seen.add(final)
 
     return mapped
 

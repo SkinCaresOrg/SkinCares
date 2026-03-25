@@ -7,11 +7,16 @@ from v2_utils import (
     CANON_RULES_SMALL_COMPILED,
 )
 
+
 def main():
     project_root = Path(__file__).resolve().parents[1]
 
-    processed_data_path = project_root / "data" / "processed" / "products_dataset_processed.csv"
-    output_path = project_root / "data" / "processed" / "products_dataset_clean_tokens.csv"
+    processed_data_path = (
+        project_root / "data" / "processed" / "products_dataset_processed.csv"
+    )
+    output_path = (
+        project_root / "data" / "processed" / "products_dataset_clean_tokens.csv"
+    )
 
     df_processed = load_csv(processed_data_path)
     known_ingredients = build_known_ingredients(df_processed)
@@ -24,6 +29,7 @@ def main():
 
     df_clean.to_csv(output_path, index=False)
     print(f"File saved as {output_path}")
+
 
 if __name__ == "__main__":
     main()

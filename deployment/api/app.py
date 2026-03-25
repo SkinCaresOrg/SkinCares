@@ -1,4 +1,6 @@
+import csv
 from itertools import count
+from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
 from fastapi import FastAPI, HTTPException, Query
@@ -153,67 +155,93 @@ app = FastAPI(title="SkinCares API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:8080",
-        "http://127.0.0.1:8080",
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
 
-PRODUCTS: Dict[int, ProductDetail] = {
-    101: ProductDetail(
-        product_id=101,
-        product_name="Daily Barrier Cream",
-        brand="CeraVe",
-        category="moisturizer",
-        price=18.99,
-        image_url="/images/101.jpg",
-        short_description="Barrier-supporting daily moisturizer",
-        rating_count=124,
-        wishlist_supported=True,
-        ingredients=["ceramides", "glycerin", "cholesterol"],
-        ingredient_highlights=["ceramides", "glycerin"],
-        concerns_targeted=["dryness", "redness"],
-        skin_types_supported=["dry", "sensitive", "combination"],
-    ),
-    220: ProductDetail(
-        product_id=220,
-        product_name="Invisible Daily SPF 50",
-        brand="Beauty of Joseon",
-        category="sunscreen",
-        price=17.50,
-        image_url="/images/220.jpg",
-        short_description="Lightweight SPF for daily wear",
-        rating_count=216,
-        wishlist_supported=True,
-        ingredients=["rice extract", "niacinamide", "uv filters"],
-        ingredient_highlights=["niacinamide"],
-        concerns_targeted=["oiliness", "redness", "maintenance"],
-        skin_types_supported=["oily", "combination", "sensitive"],
-    ),
-    305: ProductDetail(
-        product_id=305,
-        product_name="Light Gel SPF 50",
-        brand="Isntree",
-        category="sunscreen",
-        price=15.00,
-        image_url="/images/305.jpg",
-        short_description="Hydrating gel sunscreen",
-        rating_count=89,
-        wishlist_supported=True,
-        ingredients=["hyaluronic acid", "uv filters"],
-        ingredient_highlights=["hyaluronic acid"],
-        concerns_targeted=["dryness", "maintenance"],
-        skin_types_supported=["normal", "dry", "combination"],
-    ),
-}
+def normalize_category(raw_category: str) -> Category:
+    """Map raw category strings from CSV to Category enum."""
+    if not raw_category:
+        return "treatment"
+    lower = raw_category.lower().strip()
+    if "clean" in lower:
+        return "cleanser"
+    elif "moisturiz" in lower:
+        return "moisturizer"
+    elif "sunscreen" in lower or "spf" in lower:
+        return "sunscreen"
+    elif "mask" in lower:
+        return "face_mask"
+    elif "eye" in lower:
+        return "eye_cream"
+    return "treatment"
+
+
+def load_products_from_csv() -> Dict[int, ProductDetail]:
+    """Load products from CSV file."""
+    products = {}
+    csv_path = Path(__file__).parent.parent.parent / "data" / "processed" / "products_dataset_processed.csv"
+    
+    if not csv_path.exists():
+        print(f"Warning: CSV file not found at {csv_path}")
+        return products
+    
+    try:
+        with open(csv_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for idx, row in enumerate(reader, start=1):
+                product_name = row.get("product_name", "").strip()
+                brand = row.get("brand", "").strip()
+                
+                # Clean product name: remove brand prefix and trim at first comma
+                if brand and product_name.lower().startswith(brand.lower()):
+                    product_name = product_name[len(brand):].strip()
+                
+                if "," in product_name:
+                    product_name = product_name.split(",")[0].strip()
+                
+                try:
+                    price = float(row.get("price", 0))
+                except ValueError:
+                    price = 0.0
+                
+                category_raw = row.get("usage_type", row.get("category", "treatment"))
+                category = normalize_category(category_raw)
+                
+                image_url = row.get("image_url", "").strip()
+                
+                ingredients = []
+                if "ingredients" in row:
+                    ing_str = row.get("ingredients", "").strip()
+                    if ing_str:
+                        ingredients = [ing.strip() for ing in ing_str.split(",") if ing.strip()]
+                
+                product = ProductDetail(
+                    product_id=idx,
+                    product_name=product_name,
+                    brand=brand,
+                    category=category,
+                    price=price,
+                    image_url=image_url,
+                    short_description="",
+                    rating_count=0,
+                    wishlist_supported=True,
+                    ingredients=ingredients[:5],  # First 5 ingredients
+                    ingredient_highlights=ingredients[:2],  # First 2 as highlights
+                    concerns_targeted=[],
+                    skin_types_supported=[],
+                )
+                products[idx] = product
+    except Exception as e:
+        print(f"Error loading CSV: {e}")
+    
+    return products
+
+
+PRODUCTS = load_products_from_csv()
 
 USER_PROFILES: Dict[str, OnboardingRequest] = {}
 USER_ID_COUNTER = count(start=1)
@@ -222,6 +250,21 @@ USER_FEEDBACK: List[FeedbackRequest] = []
 
 def _product_to_card(product: ProductDetail) -> ProductCard:
     return ProductCard(**product.model_dump())
+
+
+@app.options("/api/onboarding")
+def options_onboarding():
+    return {"detail": "OK"}
+
+
+@app.options("/api/products")
+def options_products():
+    return {"detail": "OK"}
+
+
+@app.options("/api/feedback")
+def options_feedback():
+    return {"detail": "OK"}
 
 
 @app.post("/api/onboarding", response_model=OnboardingResponse)

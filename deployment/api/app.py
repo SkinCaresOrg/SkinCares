@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 
 from deployment.api.auth import routes as auth_routes
-from deployment.api.db.session import get_db
+# from deployment.api.db.session import get_db
 
 Category = Literal[
     "cleanser",

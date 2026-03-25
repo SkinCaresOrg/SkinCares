@@ -216,10 +216,21 @@ const Swiping = () => {
 
                 {/* Product card */}
                 <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-lg">
-                  <div className={`flex h-48 items-center justify-center bg-gradient-to-br ${CATEGORY_GRADIENTS[currentProduct.category]}`}>
-                    <span className="font-display text-4xl font-bold text-foreground/10">
-                      {CATEGORY_LABELS[currentProduct.category]}
-                    </span>
+                  <div className={`relative flex h-48 items-center justify-center bg-gradient-to-br ${CATEGORY_GRADIENTS[currentProduct.category]} overflow-hidden`}>
+                    {currentProduct.image_url && currentProduct.image_url.trim().length > 0 ? (
+                      <img
+                        src={currentProduct.image_url}
+                        alt={currentProduct.product_name}
+                        className="h-full w-full object-cover object-center"
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none";
+                        }}
+                      />
+                    ) : (
+                      <span className="font-display text-4xl font-bold text-foreground/10">
+                        {CATEGORY_LABELS[currentProduct.category]}
+                      </span>
+                    )}
                   </div>
                   <div className="flex flex-col gap-2 p-5">
                     <div className="flex items-start justify-between gap-3">

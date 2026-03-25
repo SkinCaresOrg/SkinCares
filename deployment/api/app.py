@@ -7,6 +7,9 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 
+from deployment.api.auth import routes as auth_routes
+from deployment.api.db.session import get_db
+
 Category = Literal[
     "cleanser",
     "moisturizer",
@@ -383,3 +386,5 @@ def submit_feedback(payload: FeedbackRequest) -> FeedbackResponse:
     USER_FEEDBACK.append(payload)
 
     return FeedbackResponse(success=True, message="Feedback recorded")
+
+app.include_router(auth_routes.router, prefix="/api", tags=["auth"])

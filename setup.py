@@ -15,6 +15,7 @@ install_requires = [
     "scipy>=1.8,<2",
     "joblib>=1.2,<2",
     "SQLAlchemy>=2.0,<3",
+    "pydantic[email]>=2.0,<3",
 ]
 
 extras_require = {
@@ -31,7 +32,6 @@ extras_require = {
         "uvicorn>=0.29,<1",
         "python-jose[cryptography]>=3.3,<4",
         "passlib>=1.7,<2",
-        "pydantic[email]>=2.0,<3",
         "python-dotenv>=0.21,<1",
     ],
     "scraping": [

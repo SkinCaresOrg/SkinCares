@@ -69,8 +69,19 @@ const ProductModal = ({ product, onClose }: ProductModalProps) => {
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header image */}
-          <div className={`relative flex h-52 items-center justify-center bg-gradient-to-br ${CATEGORY_GRADIENTS[product.category]}`}>
-            <span className="font-display text-5xl font-bold text-foreground/10">{CATEGORY_LABELS[product.category]}</span>
+          <div className={`relative flex h-52 items-center justify-center bg-gradient-to-br ${CATEGORY_GRADIENTS[product.category]} overflow-hidden`}>
+            {product.image_url && product.image_url.trim().length > 0 ? (
+              <img
+                src={product.image_url}
+                alt={product.product_name}
+                className="h-full w-full object-cover object-center"
+                onError={(e) => {
+                  e.currentTarget.style.display = "none";
+                }}
+              />
+            ) : (
+              <span className="font-display text-5xl font-bold text-foreground/10">{CATEGORY_LABELS[product.category]}</span>
+            )}
             <button onClick={onClose} className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-xl bg-card/80 text-foreground backdrop-blur-sm transition-colors hover:bg-card">
               <X className="h-4 w-4" />
             </button>

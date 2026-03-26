@@ -6,7 +6,11 @@ from typing import List, Dict, Any
 import pandas as pd
 
 from skincarelib.ml_system.artifacts import load_artifacts, find_project_root
-from skincarelib.ml_system.feedback_update import UserState, update_user_state, compute_user_vector
+from skincarelib.ml_system.feedback_update import (
+    UserState,
+    update_user_state,
+    compute_user_vector,
+)
 from skincarelib.ml_system.reranker import rerank_candidates
 from skincarelib.models.recommender_ranker import rank_products
 
@@ -35,12 +39,15 @@ def format_product(pid: str, meta_indexed: pd.DataFrame) -> str:
     row = meta_indexed.loc[pid]
     price = row.get("price", None)
     price_str = f"${price:.2f}" if pd.notna(price) else "NA"
-    return f"{pid} | {row.get('brand','')} | {row.get('category','')} | {price_str}"
+    return f"{pid} | {row.get('brand', '')} | {row.get('category', '')} | {price_str}"
 
 
 def pretty_list(product_ids: List[str], meta_indexed: pd.DataFrame, n: int = 10) -> str:
     return "\n".join(
-        [f"{i:>2}. {format_product(pid, meta_indexed)}" for i, pid in enumerate(product_ids[:n], start=1)]
+        [
+            f"{i:>2}. {format_product(pid, meta_indexed)}"
+            for i, pid in enumerate(product_ids[:n], start=1)
+        ]
     )
 
 
@@ -63,7 +70,9 @@ def run_simulation(
     meta_idx["product_id"] = meta_idx["product_id"].astype(str)
     meta_idx = meta_idx.set_index("product_id", drop=False)
 
-    print(f"Loaded vectors: {product_vectors.shape} (products={product_vectors.shape[0]}, dim={dim})")
+    print(
+        f"Loaded vectors: {product_vectors.shape} (products={product_vectors.shape[0]}, dim={dim})"
+    )
 
     # ---- Initialize user ----
     user = UserState(dim=dim)
@@ -121,7 +130,9 @@ def run_simulation(
 
     print("\nApplied interactions:")
     for reaction, pid, reasons in interaction_plan:
-        print(f"  - {reaction.upper():<10} {format_product(pid, meta_idx)} | reasons={reasons}")
+        print(
+            f"  - {reaction.upper():<10} {format_product(pid, meta_idx)} | reasons={reasons}"
+        )
 
     # ---- Apply interactions ----
     for reaction, pid, reasons in interaction_plan:
@@ -136,8 +147,7 @@ def run_simulation(
 
     # ---- Exclude liked products from AFTER recommendations ----
     liked_ids = {
-        str(pid) for reaction, pid, _ in interaction_plan
-        if reaction.lower() == "like"
+        str(pid) for reaction, pid, _ in interaction_plan if reaction.lower() == "like"
     }
 
     candidate_ids_after = [pid for pid in candidate_ids if str(pid) not in liked_ids]
@@ -166,7 +176,9 @@ def run_simulation(
 
 
 def main():
-    p = argparse.ArgumentParser(description="Model 3 simulation using Diana candidate generation (no mock).")
+    p = argparse.ArgumentParser(
+        description="Model 3 simulation using Diana candidate generation (no mock)."
+    )
     p.add_argument("--top_n", type=int, default=10)
     p.add_argument("--candidate_k", type=int, default=200)
     p.add_argument("--budget", type=float, default=100.0)

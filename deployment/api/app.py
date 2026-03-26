@@ -7,7 +7,8 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 
-from deployment.api.auth import routes as auth_routes
+from deployment.api.auth.routes import router as auth_router
+
 # from deployment.api.db.session import get_db
 
 Category = Literal[
@@ -186,42 +187,49 @@ def normalize_category(raw_category: str) -> Category:
 def load_products_from_csv() -> Dict[int, ProductDetail]:
     """Load products from CSV file."""
     products = {}
-    csv_path = Path(__file__).parent.parent.parent / "data" / "processed" / "products_dataset_processed.csv"
-    
+    csv_path = (
+        Path(__file__).parent.parent.parent
+        / "data"
+        / "processed"
+        / "products_dataset_processed.csv"
+    )
+
     if not csv_path.exists():
         print(f"Warning: CSV file not found at {csv_path}")
         return products
-    
+
     try:
         with open(csv_path, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for idx, row in enumerate(reader, start=1):
                 product_name = row.get("product_name", "").strip()
                 brand = row.get("brand", "").strip()
-                
+
                 # Clean product name: remove brand prefix and trim at first comma
                 if brand and product_name.lower().startswith(brand.lower()):
-                    product_name = product_name[len(brand):].strip()
-                
+                    product_name = product_name[len(brand) :].strip()
+
                 if "," in product_name:
                     product_name = product_name.split(",")[0].strip()
-                
+
                 try:
                     price = float(row.get("price", 0))
                 except ValueError:
                     price = 0.0
-                
+
                 category_raw = row.get("usage_type", row.get("category", "treatment"))
                 category = normalize_category(category_raw)
-                
+
                 image_url = row.get("image_url", "").strip()
-                
+
                 ingredients = []
                 if "ingredients" in row:
                     ing_str = row.get("ingredients", "").strip()
                     if ing_str:
-                        ingredients = [ing.strip() for ing in ing_str.split(",") if ing.strip()]
-                
+                        ingredients = [
+                            ing.strip() for ing in ing_str.split(",") if ing.strip()
+                        ]
+
                 product = ProductDetail(
                     product_id=idx,
                     product_name=product_name,
@@ -240,7 +248,7 @@ def load_products_from_csv() -> Dict[int, ProductDetail]:
                 products[idx] = product
     except Exception as e:
         print(f"Error loading CSV: {e}")
-    
+
     return products
 
 
@@ -387,4 +395,5 @@ def submit_feedback(payload: FeedbackRequest) -> FeedbackResponse:
 
     return FeedbackResponse(success=True, message="Feedback recorded")
 
-app.include_router(auth_routes.router, prefix="/api", tags=["auth"])
+
+app.include_router(auth_router, prefix="/api", tags=["auth"])

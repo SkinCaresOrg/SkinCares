@@ -4,8 +4,6 @@ from skincarelib.models.dupe_finder import find_dupes
 from skincarelib.models.recommender_ranker import recommend_products
 
 
-
-
 def handle_chat(message: str) -> str:
     intent = detect_intent(message)
 
@@ -20,7 +18,9 @@ def handle_chat(message: str) -> str:
 
 
 def handle_dupe(message: str) -> str:
-    product_name = message.replace("dupe", "").strip() # Basic extraction (need to improve)
+    product_name = message.replace(
+        "dupe", ""
+    ).strip()  # Basic extraction (need to improve)
 
     results = find_dupes(product_name)
 
@@ -40,7 +40,7 @@ def handle_recommend(message: str) -> str:
     results = recommend_products(
         skin_type=prefs["skin_type"],
         concern=prefs["concern"],
-        price_pref=prefs["price"]
+        price_pref=prefs["price"],
     )
 
     if not results:

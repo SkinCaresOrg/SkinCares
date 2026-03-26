@@ -19,7 +19,6 @@ def rerank_candidates(
     scores = cosine_similarity(user_vector.reshape(1, -1), X).flatten()
     order = np.argsort(scores)[::-1]
 
-    
     valid_candidate_ids = [pid for pid in candidate_ids if pid in product_index]
     return [valid_candidate_ids[i] for i in order[: min(top_n, len(order))]]
 

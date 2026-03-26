@@ -5,11 +5,14 @@ import pytest
 
 @pytest.fixture
 def recommender_module(monkeypatch):
-    vectors = np.array([
-        [1, 0, 0],
-        [0.9, 0.1, 0],
-        [0, 1, 0],
-    ], dtype=np.float32)
+    vectors = np.array(
+        [
+            [1, 0, 0],
+            [0.9, 0.1, 0],
+            [0, 1, 0],
+        ],
+        dtype=np.float32,
+    )
 
     product_index = {
         "p1": 0,
@@ -17,17 +20,21 @@ def recommender_module(monkeypatch):
         "p3": 2,
     }
 
-    metadata = pd.DataFrame({
-        "product_id": ["p1", "p2", "p3"],
-        "brand": ["A", "B", "C"],
-        "category": ["serum", "serum", "cleanser"],
-        "price": [50, 30, 20],
-    })
+    metadata = pd.DataFrame(
+        {
+            "product_id": ["p1", "p2", "p3"],
+            "brand": ["A", "B", "C"],
+            "category": ["serum", "serum", "cleanser"],
+            "price": [50, 30, 20],
+        }
+    )
 
-    tokens = pd.DataFrame({
-        "product_id": ["p1", "p2", "p3"],
-        "ingredient_tokens": ["niacinamide", "niacinamide", "water"],
-    })
+    tokens = pd.DataFrame(
+        {
+            "product_id": ["p1", "p2", "p3"],
+            "ingredient_tokens": ["niacinamide", "niacinamide", "water"],
+        }
+    )
 
     import skincarelib.models.recommender_ranker as recommender
 
@@ -46,8 +53,9 @@ def recommender_module(monkeypatch):
     monkeypatch.setattr(
         recommender,
         "score_similarity",
-        lambda user_vec, prod_vecs, weights=None, dims_mask=None:
-            np.array([0.9] * len(prod_vecs), dtype=np.float32),
+        lambda user_vec, prod_vecs, weights=None, dims_mask=None: np.array(
+            [0.9] * len(prod_vecs), dtype=np.float32
+        ),
     )
 
     return recommender

@@ -28,7 +28,7 @@ def recommend_with_feedback(
 
     user_vec = compute_user_vector(user_state, schema=schema)
     candidates = get_candidates(
-        user_vector=user_vec,   
+        user_vector=user_vec,
         product_vectors=product_vectors,
         metadata_df=metadata_df,
         constraints=constraints,
@@ -38,7 +38,9 @@ def recommend_with_feedback(
     )
 
     if not candidates:
-        return pd.DataFrame(columns=["product_id", "brand", "category", "price", "similarity"])
+        return pd.DataFrame(
+            columns=["product_id", "brand", "category", "price", "similarity"]
+        )
 
     reranked_ids = rerank_candidates(
         user_vector=user_vec,
@@ -48,7 +50,6 @@ def recommend_with_feedback(
         top_n=top_n,
     )
 
-    
     out = metadata_df[metadata_df["product_id"].astype(str).isin(reranked_ids)].copy()
     out["product_id"] = out["product_id"].astype(str)
     out = out.set_index("product_id").loc[reranked_ids].reset_index()

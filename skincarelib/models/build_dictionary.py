@@ -11,10 +11,11 @@ TOKENS_PATH = ROOT / "skincarelib" / "datasets" / "datasets" / "products_tokens.
 FREQ_OUTPUT = ROOT / "artifacts" / "top_ingredients.csv"
 DICT_OUTPUT = ROOT / "features" / "ingredient_groups.json"
 
-TOP_K = 80   # how many frequent ingredients to inspect
+TOP_K = 80  # how many frequent ingredients to inspect
 
 
 # Load tokens
+
 
 def load_ingredient_tokens():
     if not TOKENS_PATH.exists():
@@ -40,6 +41,7 @@ def load_ingredient_tokens():
 
 # Frequency extraction
 
+
 def build_frequency_table(ingredients):
     counter = Counter(ingredients)
     most_common = counter.most_common(TOP_K)
@@ -49,6 +51,7 @@ def build_frequency_table(ingredients):
 
 
 # Save outputs
+
 
 def save_frequency_csv(freq_df):
     FREQ_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
@@ -68,6 +71,7 @@ def create_dictionary_template(freq_df):
 
 
 # Main helper pipeline
+
 
 def run_dictionary_builder():
     print("Loading ingredient tokens...")

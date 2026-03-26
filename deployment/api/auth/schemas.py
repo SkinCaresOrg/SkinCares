@@ -1,17 +1,24 @@
 from pydantic import BaseModel, EmailStr, Field
+from uuid import UUID
+
+"""pydantic models for validating and serializing user data"""
+
 
 class UserCreate(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=6)
+    password: str = Field(min_length=8, max_length=128)
+
 
 class UserRead(BaseModel):
-    id: str
+    id: UUID
     email: EmailStr
 
-    class Config:
-        orm_mode = True
 
 class UserLogin(BaseModel):
     email: EmailStr
-    password: str 
-    
+    password: str
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"

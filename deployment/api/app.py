@@ -1,5 +1,6 @@
 import csv
 from itertools import count
+import os
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
@@ -153,10 +154,27 @@ class FeedbackResponse(BaseModel):
 
 app = FastAPI(title="SkinCares API", version="1.0.0")
 
+DEFAULT_CORS_ALLOW_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://skinscares.es",
+    "https://www.skinscares.es",
+]
+
+raw_cors_origins = os.getenv("CORS_ALLOW_ORIGINS", "")
+cors_allow_origins = (
+    [origin.strip() for origin in raw_cors_origins.split(",") if origin.strip()]
+    if raw_cors_origins
+    else DEFAULT_CORS_ALLOW_ORIGINS
+)
+allow_all_origins = "*" in cors_allow_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["*"] if allow_all_origins else cors_allow_origins,
+    allow_credentials=not allow_all_origins,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
@@ -183,42 +201,49 @@ def normalize_category(raw_category: str) -> Category:
 def load_products_from_csv() -> Dict[int, ProductDetail]:
     """Load products from CSV file."""
     products = {}
-    csv_path = Path(__file__).parent.parent.parent / "data" / "processed" / "products_dataset_processed.csv"
-    
+    csv_path = (
+        Path(__file__).parent.parent.parent
+        / "data"
+        / "processed"
+        / "products_dataset_processed.csv"
+    )
+
     if not csv_path.exists():
         print(f"Warning: CSV file not found at {csv_path}")
         return products
-    
+
     try:
         with open(csv_path, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for idx, row in enumerate(reader, start=1):
                 product_name = row.get("product_name", "").strip()
                 brand = row.get("brand", "").strip()
-                
+
                 # Clean product name: remove brand prefix and trim at first comma
                 if brand and product_name.lower().startswith(brand.lower()):
-                    product_name = product_name[len(brand):].strip()
-                
+                    product_name = product_name[len(brand) :].strip()
+
                 if "," in product_name:
                     product_name = product_name.split(",")[0].strip()
-                
+
                 try:
                     price = float(row.get("price", 0))
                 except ValueError:
                     price = 0.0
-                
+
                 category_raw = row.get("usage_type", row.get("category", "treatment"))
                 category = normalize_category(category_raw)
-                
+
                 image_url = row.get("image_url", "").strip()
-                
+
                 ingredients = []
                 if "ingredients" in row:
                     ing_str = row.get("ingredients", "").strip()
                     if ing_str:
-                        ingredients = [ing.strip() for ing in ing_str.split(",") if ing.strip()]
-                
+                        ingredients = [
+                            ing.strip() for ing in ing_str.split(",") if ing.strip()
+                        ]
+
                 product = ProductDetail(
                     product_id=idx,
                     product_name=product_name,
@@ -237,7 +262,7 @@ def load_products_from_csv() -> Dict[int, ProductDetail]:
                 products[idx] = product
     except Exception as e:
         print(f"Error loading CSV: {e}")
-    
+
     return products
 
 

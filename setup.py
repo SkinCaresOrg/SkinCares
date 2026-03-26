@@ -16,6 +16,11 @@ install_requires = [
     "joblib>=1.2,<2",
     "SQLAlchemy>=2.0,<3",
     "pydantic[email]>=2.0,<3",
+    "fastapi>=0.110,<1",
+    "uvicorn>=0.29,<1",
+    "python-jose[cryptography]>=3.3,<4",
+    "passlib>=1.7,<2",
+    "python-dotenv>=0.21,<1",
 ]
 
 extras_require = {
@@ -27,13 +32,7 @@ extras_require = {
         "ipykernel>=6,<7",
         "jupyter>=1,<2",
     ],
-    "api": [
-        "fastapi>=0.110,<1",
-        "uvicorn>=0.29,<1",
-        "python-jose[cryptography]>=3.3,<4",
-        "passlib>=1.7,<2",
-        "python-dotenv>=0.21,<1",
-    ],
+
     "scraping": [
         "requests>=2.31,<3",
         "beautifulsoup4>=4.12,<5",

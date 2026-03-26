@@ -1,10 +1,31 @@
 from fastapi import Depends, HTTPException
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+import uuid
+
 from deployment.api.db.session import get_db
 from .service import get_user_by_id
+from .security import decode_access_token
 
-def get_current_user(user_id: str, db: Session = Depends(get_db)):
-    user = get_user_by_id(db, user_id)
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+
+def get_current_user(
+    db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)
+):
+    """this extracts the user back from the token and returns the user object"""
+    payload = decode_access_token(token)
+    user_id_str = payload.get("sub")
+    if not user_id_str:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    try:
+        user_id = uuid.UUID(user_id_str)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user ID")
+
+    user = get_user_by_id(db, user_id)  # queries db for user with that id
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user

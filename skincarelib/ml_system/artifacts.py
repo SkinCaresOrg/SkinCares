@@ -9,7 +9,9 @@ def find_project_root() -> Path:
     for p in [here] + list(here.parents):
         if (p / "artifacts").exists():
             return p
-    raise FileNotFoundError("Could not find project root (folder containing 'artifacts/').")
+    raise FileNotFoundError(
+        "Could not find project root (folder containing 'artifacts/')."
+    )
 
 
 def load_artifacts():

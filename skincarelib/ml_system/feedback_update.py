@@ -1,4 +1,3 @@
-
 import json
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -11,7 +10,9 @@ def find_project_root() -> Path:
     for p in [here] + list(here.parents):
         if (p / "artifacts").exists():
             return p
-    raise FileNotFoundError("Could not find project root (folder containing 'artifacts/').")
+    raise FileNotFoundError(
+        "Could not find project root (folder containing 'artifacts/')."
+    )
 
 
 def load_artifacts():
@@ -38,17 +39,14 @@ class UserState:
     def __init__(self, dim: int):
         self.dim = dim
 
-        
         self.liked_vectors: List[np.ndarray] = []
         self.disliked_vectors: List[np.ndarray] = []
         self.irritation_vectors: List[np.ndarray] = []
 
-        
         self.liked_reasons: List[str] = []
         self.disliked_reasons: List[str] = []
         self.irritation_reasons: List[str] = []
 
-        
         self.interactions: int = 0
         self.liked_count: int = 0
         self.disliked_count: int = 0
@@ -99,12 +97,10 @@ def update_user_state(
         user.add_disliked(product_vec, reason_tags)
 
     elif reaction == "irritation":
-        
         user.add_disliked(product_vec, reason_tags)
         user.add_irritation(product_vec, reason_tags)
 
     else:
-        
         return user
 
     return user
@@ -124,22 +120,18 @@ def compute_user_vector(user: UserState, schema: Optional[Dict] = None) -> np.nd
     """
     user_vec = np.zeros(user.dim, dtype=np.float32)
 
-    
     if user.liked_vectors:
         liked_avg = np.mean(user.liked_vectors, axis=0)
         user_vec += 2.0 * liked_avg
 
-    
     if user.disliked_vectors:
         disliked_avg = np.mean(user.disliked_vectors, axis=0)
         user_vec -= 1.0 * disliked_avg
 
-    
     if user.irritation_vectors:
         irritation_avg = np.mean(user.irritation_vectors, axis=0)
         user_vec -= 2.0 * irritation_avg
 
-    
     norm = np.linalg.norm(user_vec)
     if norm > 1e-9:
         user_vec = user_vec / norm

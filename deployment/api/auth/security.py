@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta
+from typing import Optional
+
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from deployment.api.db.session import SECRET_KEY
@@ -22,7 +24,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def create_access_token(data: dict, expires_delta: int | None = None) -> str:
+def create_access_token(data: dict, expires_delta: Optional[int] = None) -> str:
     """creates a JWT token with the given data and expiration time (in minutes)"""
     to_encode = data.copy()
 

@@ -104,7 +104,94 @@ class SwipeSession:
         )
         
         self.session_started = True
+        
+        # Pre-seed models with onboarding data (cold-start boost)
+        self._seed_models_from_onboarding(skin_type, skin_concerns)
+        
         return profile
+    
+    def _seed_models_from_onboarding(self, skin_type: str, skin_concerns: List[str]):
+        """
+        Pre-train models with pseudo-feedback derived from onboarding answers.
+        
+        Improves cold-start: models learn from skin type + concerns BEFORE first swipe.
+        
+        Strategy:
+        1. Find products suitable for user's skin type & concerns
+        2. Add them as pseudo-likes (strength: 50% of real like)
+        3. Find products NOT suitable (opposite profile)
+        4. Add them as pseudo-dislikes
+        5. This gives models initial training data for better Day 1 recommendations
+        
+        Args:
+            skin_type: User's skin type (Dry, Oily, Sensitive, etc.)
+            skin_concerns: List of user's skin concerns (Acne, Dryness, etc.)
+        """
+        if self.product_metadata.empty:
+            return  # No metadata to work with
+        
+        user_context = self.questionnaire.get_context_features()
+        skin_type_lower = skin_type.lower()
+        concerns_lower = [c.lower() for c in skin_concerns]
+        
+        # Score products based on metadata match
+        suited_products = []  # Good for this user
+        unsuited_products = []  # Bad for this user
+        
+        for idx, row in self.product_metadata.iterrows():
+            product_id = str(row.get("product_id", ""))
+            if product_id not in self.product_index:
+                continue
+            
+            # Check if product metadata mentions skin type or concerns
+            product_name = str(row.get("name", "")).lower()
+            product_category = str(row.get("category", "")).lower()
+            product_description = str(row.get("description", "")).lower()
+            product_text = f"{product_name} {product_category} {product_description}"
+            
+            # Match score: how many keywords match
+            match_count = sum(1 for concern in concerns_lower if concern in product_text)
+            match_count += sum(1 for concern in concerns_lower if any(
+                keyword in product_text for keyword in 
+                ["acne", "oil control", "hydrat", "moistur", "sensitive", "gentle", "anti-aging", "wrinkle"]
+            ))
+            
+            if match_count > 0:
+                suited_products.append((product_id, match_count))
+            else:
+                unsuited_products.append(product_id)
+        
+        # Add top-matched products as pseudo-likes (to seed the model)
+        if suited_products:
+            # Sort by match count and take top 30%
+            suited_products.sort(key=lambda x: x[1], reverse=True)
+            top_count = max(1, len(suited_products) // 3)
+            
+            for product_id, _ in suited_products[:top_count]:
+                if product_id in self.product_index:
+                    idx = self.product_index[product_id]
+                    vec = self.product_vectors[idx]
+                    
+                    # Add as pseudo-like to online learner (seed VW model)
+                    self.online_learner.learn_from_interaction(
+                        product_vec=vec,
+                        label=1,  # Like
+                        user_context=user_context,
+                    )
+        
+        # Add unsuitable products as pseudo-dislikes
+        if unsuited_products:
+            dislike_count = max(1, len(unsuited_products) // 4)
+            for product_id in unsuited_products[:dislike_count]:
+                if product_id in self.product_index:
+                    idx = self.product_index[product_id]
+                    vec = self.product_vectors[idx]
+                    
+                    self.online_learner.learn_from_interaction(
+                        product_vec=vec,
+                        label=-1,  # Dislike
+                        user_context=user_context,
+                    )
     
     def get_next_product(self) -> Optional[Tuple[str, Dict]]:
         """

@@ -1,3 +1,5 @@
+from typing import Optional
+
 from sqlalchemy.orm import Session
 from .models import User
 from .security import hash_password, verify_password
@@ -24,7 +26,7 @@ def create_user(db: Session, email: str, password: str) -> User:
         raise
 
 
-def authenticate_user(db: Session, email: str, password: str) -> User | None:
+def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
     """authenticates a user by checking if the email exists and the password matches the hashed password in the db"""
     email = email.lower().strip()
     user = db.query(User).filter(User.email == email).first()
@@ -36,6 +38,6 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
     return user
 
 
-def get_user_by_id(db: Session, user_id: str) -> User | None:
+def get_user_by_id(db: Session, user_id: str) -> Optional[User]:
     """querie db with user id and returns the user object if found, otherwise returns None"""
     return db.query(User).filter(User.id == user_id).first()

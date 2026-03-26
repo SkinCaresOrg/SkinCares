@@ -33,8 +33,19 @@ const DupeList = ({ dupes, loading }: DupeListProps) => {
     <div className="flex flex-col gap-3">
       {dupes.map((dupe) => (
         <div key={dupe.product_id} className="flex items-center gap-4 rounded-2xl border border-border bg-muted/30 p-3">
-          <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${CATEGORY_GRADIENTS[dupe.category]}`}>
-            <span className="text-[10px] font-bold text-foreground/10">{CATEGORY_LABELS[dupe.category]}</span>
+          <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${CATEGORY_GRADIENTS[dupe.category]} overflow-hidden`}>
+            {dupe.image_url && dupe.image_url.trim().length > 0 ? (
+              <img
+                src={dupe.image_url}
+                alt={dupe.product_name}
+                className="h-full w-full object-cover object-center"
+                onError={(e) => {
+                  e.currentTarget.style.display = "none";
+                }}
+              />
+            ) : (
+              <span className="text-[10px] font-bold text-foreground/10">{CATEGORY_LABELS[dupe.category]}</span>
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate font-display text-sm font-semibold text-foreground">{dupe.product_name}</p>

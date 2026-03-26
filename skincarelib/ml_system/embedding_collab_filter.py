@@ -1,9 +1,11 @@
 """
-Embedding-based collaborative filtering for product recommendation.
+Embedding-based user-preference ranking for product recommendation.
 
 Uses product embeddings (vectors) combined with user interaction patterns
-to perform collaborative filtering without requiring explicit user-user or
-item-item similarities. Instead, learns implicit preferences from:
+to rank products without explicit user-user or item-item matrices.
+This behaves as an implicit user-profile embedding approach and is not
+classical neighborhood/matrix-factorization collaborative filtering.
+It learns preferences from:
 1. Product feature embeddings (already available)
 2. User feedback patterns aggregated into embeddings
 3. Similarity between user preference embedding and product embeddings
@@ -17,11 +19,16 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 class EmbeddingCollaborativeFilter:
     """
-    Collaborative filtering using product and user embeddings.
+        User-profile embedding ranker using product and user embeddings.
     
-    Key innovation: Builds a user embedding from their feedback history
+        Note:
+        - This class keeps its historical name for backward compatibility.
+        - Methodologically, this is an embedding-based user profile model
+            (content + feedback), not classical cross-user collaborative filtering.
+
+        Key behavior: Builds a user embedding from their feedback history
     by aggregating product embeddings with learned preference weights.
-    Then uses this user embedding to find collaboratively similar products.
+        Then uses this user embedding to find products with high cosine similarity.
     """
     
     def __init__(self, product_vectors: np.ndarray, product_index: Dict[str, int]):

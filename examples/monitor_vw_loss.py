@@ -8,9 +8,22 @@ from skincarelib.ml_system.ml_feedback_model import ContextualBanditFeedback
 import numpy as np
 
 
-def monitor_learning_loss():
+def _synthetic_example(i: int, dim: int, rng: np.random.Generator) -> tuple[np.ndarray, int]:
+    """Create deterministic synthetic examples with a stable label-feature relationship."""
+    positive_center = np.ones(dim, dtype=np.float32)
+    negative_center = -np.ones(dim, dtype=np.float32)
+
+    reward = 1 if i % 3 == 0 else 0
+    center = positive_center if reward == 1 else negative_center
+    noise = rng.normal(loc=0.0, scale=0.15, size=dim).astype(np.float32)
+    vector = center + noise
+    vector = vector / (np.linalg.norm(vector) + 1e-9)
+    return vector, reward
+
+
+def monitor_learning_loss(seed: int = 42):
     """Track VW's loss function to verify learning."""
-    
+    rng = np.random.default_rng(seed)
     bandit = ContextualBanditFeedback(dim=602)
     
     losses = []
@@ -21,12 +34,7 @@ def monitor_learning_loss():
     print("-" * 42)
     
     for i in range(num_iterations):
-        # Generate synthetic interaction
-        vector = np.random.randn(602)
-        vector = vector / np.linalg.norm(vector)
-        
-        # Alternate between likes and dislikes to create pattern
-        reward = 1 if i % 3 == 0 else 0
+        vector, reward = _synthetic_example(i, dim=602, rng=rng)
         
         # Get prediction before update
         pred = bandit.predict_preference(vector)
@@ -60,9 +68,9 @@ def monitor_learning_loss():
         return False
 
 
-def monitor_learning_loss_with_plot():
+def monitor_learning_loss_with_plot(seed: int = 42):
     """Monitor loss with optional matplotlib visualization."""
-    
+    rng = np.random.default_rng(seed)
     bandit = ContextualBanditFeedback(dim=602)
     
     losses = []
@@ -71,9 +79,7 @@ def monitor_learning_loss_with_plot():
     print("Monitoring VW Loss Function with Visualization\n")
     
     for i in range(num_iterations):
-        vector = np.random.randn(602)
-        vector = vector / np.linalg.norm(vector)
-        reward = 1 if i % 3 == 0 else 0
+        vector, reward = _synthetic_example(i, dim=602, rng=rng)
         
         pred = bandit.predict_preference(vector)
         loss = (pred - reward) ** 2

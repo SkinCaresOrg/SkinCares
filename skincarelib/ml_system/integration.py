@@ -9,6 +9,7 @@ from skincarelib.ml_system.artifacts import load_artifacts
 from skincarelib.ml_system.candidate_source import get_candidates
 from skincarelib.ml_system.feedback_update import UserState, compute_user_vector, compute_user_vector_lr
 from skincarelib.ml_system.embedding_collab_filter import EmbeddingCollaborativeFilter
+from skincarelib.ml_system.feedback_lr_model import FeedbackLogisticRegression
 from skincarelib.ml_system.reranker import rerank_candidates
 
 
@@ -67,12 +68,12 @@ def recommend_with_lr_feedback(
     candidate_k: int = 200,
 ) -> pd.DataFrame:
     """
-    Recommendation pipeline using Logistic Regression for feedback learning.
+    Recommendation pipeline using direct Logistic Regression scoring.
     
     Improvement over recommend_with_feedback:
-    - Uses compute_user_vector_lr instead of simple weighted average
-    - Learns feature importance from feedback history
-    - Better scales with more user interactions
+    - Trains a logistic model from user feedback
+    - Scores candidate products via model probabilities directly
+    - Falls back to vector-based reranking when data is insufficient
     
     Pipeline:
       1) Learn feature weights using logistic regression from feedback
@@ -94,7 +95,18 @@ def recommend_with_lr_feedback(
     """
     product_vectors, product_index, _, schema = load_artifacts()
 
-    # Use logistic regression to learn feedback weights
+    # Use logistic regression to train per-user model.
+    lr_model = FeedbackLogisticRegression(dim=user_state.dim)
+    lr_model.bind_user("session_user")
+    for vec in user_state.liked_vectors:
+        lr_model.add_feedback(vec, feedback_label=1)
+    for vec in user_state.disliked_vectors:
+        lr_model.add_feedback(vec, feedback_label=0)
+    for vec in user_state.irritation_vectors:
+        lr_model.add_feedback(vec, feedback_label=-1)
+    has_trained_model = lr_model.train(min_samples=3)
+
+    # Candidate generation still needs a user vector, so we keep this for retrieval.
     user_vec = compute_user_vector_lr(user_state, schema=schema)
     
     candidates = get_candidates(
@@ -110,13 +122,30 @@ def recommend_with_lr_feedback(
     if not candidates:
         return pd.DataFrame(columns=["product_id", "brand", "category", "price", "similarity"])
 
-    reranked_ids = rerank_candidates(
-        user_vector=user_vec,
-        candidate_ids=candidates,
-        product_vectors=product_vectors,
-        product_index=product_index,
-        top_n=top_n,
-    )
+    if has_trained_model:
+        scored_ids = []
+        scored_values = []
+        for pid in candidates:
+            idx = product_index.get(str(pid))
+            if idx is None:
+                continue
+            score = lr_model.predict_preference_score(product_vectors[idx])
+            scored_ids.append(str(pid))
+            scored_values.append(score)
+
+        if not scored_ids:
+            reranked_ids = []
+        else:
+            order = np.argsort(np.array(scored_values))[::-1][:top_n]
+            reranked_ids = [scored_ids[i] for i in order]
+    else:
+        reranked_ids = rerank_candidates(
+            user_vector=user_vec,
+            candidate_ids=candidates,
+            product_vectors=product_vectors,
+            product_index=product_index,
+            top_n=top_n,
+        )
 
     
     out = metadata_df[metadata_df["product_id"].astype(str).isin(reranked_ids)].copy()
@@ -136,22 +165,22 @@ def recommend_with_collaborative_filtering(
     collab_weight: float = 0.5,
 ) -> pd.DataFrame:
     """
-    Advanced recommendation using embedding-based collaborative filtering.
+    Advanced recommendation using embedding-based user profile ranking.
     
-    Combines content-based and collaborative filtering:
+        Combines content-based and embedding-profile ranking:
     - Builds user embedding from interaction history
-    - Uses collaborative similarity between user and products
-    - Blends with content-based ranking for better diversity
+        - Uses cosine similarity between user and products
+        - Returns rank list from this implicit-profile signal
     
-    This is a true advanced method that goes beyond simple content-based filtering
-    by learning implicit user preferences through collaborative embeddings.
+        Note:
+        - Despite legacy function naming, this is not classical cross-user
+            collaborative filtering; it is a user-profile embedding approach.
     
     Pipeline:
       1) Initialize collaborative filter with product embeddings
       2) Record user's feedback interactions
-      3) Build user embedding from collaborative patterns
-      4) Rank products by collaborative similarity
-      5) Optionally blend with content-based scores
+    3) Build user embedding from interaction patterns
+    4) Rank products by cosine similarity
       6) Return filtered and ranked results
     
     Args:
@@ -161,11 +190,10 @@ def recommend_with_collaborative_filtering(
         tokens_df: Product ingredient tokens
         constraints: Budget, category, ingredient filters
         top_n: Number of recommendations to return
-        collab_weight: How much to weight collaborative signal (0-1)
-                      0.0 = pure content-based, 1.0 = pure collaborative
+        collab_weight: Kept for backward compatibility; not used currently.
         
     Returns:
-        DataFrame with product recommendations, including collaboration score
+        DataFrame with product recommendations, including collab_score
     """
     product_vectors, product_index, _, schema = load_artifacts()
     

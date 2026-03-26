@@ -42,9 +42,28 @@ class FeedbackLogisticRegression:
             dim: Feature dimension (should match product vector dimension)
         """
         self.dim = dim
+        self.user_id: Optional[str] = None
         self.model: Optional[LogisticRegression] = None
         self.scaler: Optional[StandardScaler] = None
         self.feedback_history: List[Tuple[np.ndarray, int]] = []
+        self.is_trained = False
+
+    def bind_user(self, user_id: str):
+        """Bind this model instance to a specific user to avoid cross-user leakage."""
+        if self.user_id is None:
+            self.user_id = str(user_id)
+            return
+        if self.user_id != str(user_id):
+            raise ValueError(
+                f"FeedbackLogisticRegression is already bound to user '{self.user_id}'. "
+                f"Create a new instance for user '{user_id}'."
+            )
+
+    def reset_feedback_history(self):
+        """Clear in-memory training history and reset fitted state."""
+        self.feedback_history = []
+        self.model = None
+        self.scaler = None
         self.is_trained = False
         
     def add_feedback(self, product_vec: np.ndarray, feedback_label: int):
@@ -57,6 +76,8 @@ class FeedbackLogisticRegression:
         """
         if len(product_vec) != self.dim:
             raise ValueError(f"Expected vector dim {self.dim}, got {len(product_vec)}")
+        if feedback_label not in {1, 0, -1}:
+            raise ValueError(f"feedback_label must be one of {{1, 0, -1}}, got {feedback_label}")
         self.feedback_history.append((product_vec.copy(), feedback_label))
     
     def train(self, min_samples: int = 3) -> bool:
@@ -171,6 +192,7 @@ class FeedbackLogisticRegression:
             'model': self.model,
             'scaler': self.scaler,
             'dim': self.dim,
+            'user_id': self.user_id,
             'is_trained': self.is_trained,
             'feedback_history': self.feedback_history,
         }
@@ -181,6 +203,7 @@ class FeedbackLogisticRegression:
         """Load a previously trained model from disk."""
         artifacts = joblib.load(path)
         instance = cls(dim=artifacts['dim'])
+        instance.user_id = artifacts.get('user_id')
         instance.model = artifacts['model']
         instance.scaler = artifacts['scaler']
         instance.is_trained = artifacts['is_trained']

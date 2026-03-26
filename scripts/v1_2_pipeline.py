@@ -1,10 +1,11 @@
 from pathlib import Path
+
 from .v1_utils import (
     load_df,
     validate_data,
     standardize_data,
     flag_non_ingredients,
-    apply_review_actions
+    apply_review_actions,
 )
 
 """
@@ -19,24 +20,27 @@ This module implements the full preprocessing pipeline for the old dataset, incl
     8. Saving the processed dataset to a new file 
 """
 
-def run_pipeline2(raw_path, processed_path=None, reviewed_path=None, flag_non_ingredients_rows=True):
+
+def run_pipeline2(
+    raw_path, processed_path=None, reviewed_path=None, flag_non_ingredients_rows=True
+):
     """
     Full preprocessing pipeline for the dataset.
     """
     # step 1
     df = load_df(raw_path)
-    
+
     # step 2
     validate_data(df)
-    
+
     # step 3
     df = standardize_data(df)
-    
+
     # step 4
     flagged = None
     if flag_non_ingredients_rows:
         flagged = flag_non_ingredients(df)
-    
+
     # step 5
     if reviewed_path is not None:
         df = apply_review_actions(df, reviewed_path)
@@ -47,12 +51,12 @@ def run_pipeline2(raw_path, processed_path=None, reviewed_path=None, flag_non_in
 
     # step 7
     validate_data(df)
-    
+
     # step 8
     if processed_path is None:
         processed_path = Path(raw_path).parent / "cosmetics_processed.csv"
 
     df.to_csv(processed_path, index=False)
     print(f"Processed dataset saved to: {processed_path}")
-    
+
     return df, flagged

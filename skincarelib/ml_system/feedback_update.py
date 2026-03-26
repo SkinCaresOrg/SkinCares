@@ -80,14 +80,14 @@ def update_user_state(
     reaction: str,
     product_vec: np.ndarray,
     reason_tags: Optional[List[str]] = None,
+    irritation_counts_as_dislike: bool = True,
 ):
     """
     Update user state based on a single interaction.
 
-    Design choice:
-    - "irritation" is treated as a strong negative, so we:
-        (1) record it in irritation_vectors (for stronger penalty in user vector)
-        (2) ALSO count it as a disliked interaction (so summaries + metrics match intuition)
+        Design choice:
+        - "irritation" is treated as a strong negative and can optionally also be counted
+            as a dislike to preserve legacy behavior in summaries and metrics.
     """
     if reason_tags is None:
         reason_tags = []
@@ -101,8 +101,8 @@ def update_user_state(
         user.add_disliked(product_vec, reason_tags)
 
     elif reaction == "irritation":
-        
-        user.add_disliked(product_vec, reason_tags)
+        if irritation_counts_as_dislike:
+            user.add_disliked(product_vec, reason_tags)
         user.add_irritation(product_vec, reason_tags)
 
     else:
@@ -153,6 +153,7 @@ def compute_user_vector_lr(
     user: UserState,
     schema: Optional[Dict] = None,
     use_cache: bool = True,
+    model_user_id: Optional[str] = None,
 ) -> np.ndarray:
     """
     Compute user preference vector using Logistic Regression feedback learning.
@@ -177,6 +178,8 @@ def compute_user_vector_lr(
     """
     # Initialize logistic regression model
     lr_model = FeedbackLogisticRegression(dim=user.dim)
+    if model_user_id:
+        lr_model.bind_user(model_user_id)
     
     # Add all feedback interactions to the model
     for vec in user.liked_vectors:

@@ -67,3 +67,21 @@ This repo is ready for:
 
 - Point `@` and `www` to Vercel (values shown in Vercel domains setup).
 - Point `api` to your Render backend host (CNAME).
+
+## Continuous deployment from `main`
+
+This repo includes `.github/workflows/cd_main.yml` to auto-deploy on every push to `main`.
+
+### Required GitHub repository secrets
+
+- `VERCEL_DEPLOY_HOOK_URL`
+- `RENDER_DEPLOY_HOOK_URL`
+
+### Where to get deploy hook URLs
+
+- Vercel: Project -> Settings -> Git -> Deploy Hooks
+- Render: Service -> Settings -> Deploy Hook
+
+After adding both secrets, every push to `main` triggers:
+1. Frontend deploy on Vercel
+2. API deploy on Render

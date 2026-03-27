@@ -10,18 +10,52 @@ def rerank_candidates(
     product_vectors: np.ndarray,
     product_index: Dict[str, int],
     top_n: int = 10,
+    lambda_mult: float = 0.7,
 ) -> List[str]:
-    idxs = [product_index[pid] for pid in candidate_ids if pid in product_index]
-    if not idxs:
+    """
+    Rerank candidates using Maximal Marginal Relevance (MMR).
+
+    At each step, selects the candidate that maximises:
+        lambda_mult * sim(candidate, user) - (1 - lambda_mult) * max_sim(candidate, already_selected)
+
+    lambda_mult=1.0 -> pure relevance (original behaviour, no diversity penalty)
+    lambda_mult=0.7 -> default: relevance-leaning with diversity enforcement
+    lambda_mult=0.5 -> balanced relevance / diversity
+    lambda_mult=0.0 -> pure diversity (ignores user vector entirely)
+    """
+    valid_ids = [pid for pid in candidate_ids if pid in product_index]
+    if not valid_ids:
         return []
 
-    X = product_vectors[idxs]
-    scores = cosine_similarity(user_vector.reshape(1, -1), X).flatten()
-    order = np.argsort(scores)[::-1]
+    X = product_vectors[[product_index[pid] for pid in valid_ids]]
+    relevance = cosine_similarity(user_vector.reshape(1, -1), X).flatten()
 
-    
-    valid_candidate_ids = [pid for pid in candidate_ids if pid in product_index]
-    return [valid_candidate_ids[i] for i in order[: min(top_n, len(order))]]
+    if lambda_mult == 1.0:
+        order = np.argsort(relevance)[::-1]
+        return [valid_ids[i] for i in order[: min(top_n, len(order))]]
+
+    # Precompute pairwise similarities between all candidates once
+    pairwise = cosine_similarity(X)  # shape (n_candidates, n_candidates)
+
+    selected: List[int] = []
+    remaining = list(range(len(valid_ids)))
+
+    while len(selected) < min(top_n, len(valid_ids)):
+        if not selected:
+            # First pick: no selected set yet, just take most relevant
+            best = max(remaining, key=lambda i: relevance[i])
+        else:
+            best, best_score = None, -np.inf
+            for i in remaining:
+                redundancy = max(pairwise[i, j] for j in selected)
+                score = lambda_mult * relevance[i] - (1 - lambda_mult) * redundancy
+                if score > best_score:
+                    best_score = score
+                    best = i
+        selected.append(best)
+        remaining.remove(best)
+
+    return [valid_ids[i] for i in selected]
 
 
 def mock_candidates_similarity_seed(

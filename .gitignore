@@ -136,3 +136,4 @@ notebooks/data/
 
 # local database files
 dev.db 
+local.db

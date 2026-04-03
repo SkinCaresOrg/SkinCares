@@ -10,6 +10,9 @@ import Recommendations from "./pages/Recommendations.tsx";
 import Swiping from "./pages/Swiping.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
+import Login from "./pages/Login.tsx";
+import Register from "./pages/Register.tsx";
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -20,6 +23,8 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
           <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/catalog" element={<Catalog />} />
           <Route path="/recommendations" element={<Recommendations />} />

@@ -23,7 +23,7 @@ export class ApiError extends Error {
   }
 }
 
-async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
+export async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${url}`, {
     headers: { "Content-Type": "application/json" },
     ...options,

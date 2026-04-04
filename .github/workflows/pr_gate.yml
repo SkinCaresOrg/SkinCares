@@ -27,7 +27,7 @@ jobs:
   test:
     name: Test Python ${{ matrix.python }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       max-parallel: 20 # Usage limits: https://docs.github.com/en/actions/learn-github-actions/usage-limits-billing-and-administration

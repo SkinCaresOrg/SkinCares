@@ -15,7 +15,9 @@ def test_constraint_compliance_rate():
             "category": ["Moisturizer", "Moisturizer", "Cleanser"],
         }
     )
-    rate = constraint_compliance_rate(recs, budget=50, allowed_categories=["Moisturizer"])
+    rate = constraint_compliance_rate(
+        recs, budget=50, allowed_categories=["Moisturizer"]
+    )
     assert rate == 1 / 3
 
 

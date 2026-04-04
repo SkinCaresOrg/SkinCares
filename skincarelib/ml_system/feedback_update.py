@@ -1,4 +1,3 @@
-
 import json
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -13,7 +12,9 @@ def find_project_root() -> Path:
     for p in [here] + list(here.parents):
         if (p / "artifacts").exists():
             return p
-    raise FileNotFoundError("Could not find project root (folder containing 'artifacts/').")
+    raise FileNotFoundError(
+        "Could not find project root (folder containing 'artifacts/')."
+    )
 
 
 def load_artifacts():
@@ -40,17 +41,14 @@ class UserState:
     def __init__(self, dim: int):
         self.dim = dim
 
-        
         self.liked_vectors: List[np.ndarray] = []
         self.disliked_vectors: List[np.ndarray] = []
         self.irritation_vectors: List[np.ndarray] = []
 
-        
         self.liked_reasons: List[str] = []
         self.disliked_reasons: List[str] = []
         self.irritation_reasons: List[str] = []
 
-        
         self.interactions: int = 0
         self.liked_count: int = 0
         self.disliked_count: int = 0
@@ -106,7 +104,6 @@ def update_user_state(
         user.add_irritation(product_vec, reason_tags)
 
     else:
-        
         return user
 
     return user
@@ -126,22 +123,18 @@ def compute_user_vector(user: UserState, schema: Optional[Dict] = None) -> np.nd
     """
     user_vec = np.zeros(user.dim, dtype=np.float32)
 
-    
     if user.liked_vectors:
         liked_avg = np.mean(user.liked_vectors, axis=0)
         user_vec += 2.0 * liked_avg
 
-    
     if user.disliked_vectors:
         disliked_avg = np.mean(user.disliked_vectors, axis=0)
         user_vec -= 1.0 * disliked_avg
 
-    
     if user.irritation_vectors:
         irritation_avg = np.mean(user.irritation_vectors, axis=0)
         user_vec -= 2.0 * irritation_avg
 
-    
     norm = np.linalg.norm(user_vec)
     if norm > 1e-9:
         user_vec = user_vec / norm
@@ -157,22 +150,22 @@ def compute_user_vector_lr(
 ) -> np.ndarray:
     """
     Compute user preference vector using Logistic Regression feedback learning.
-    
+
     This is a machine learning approach that:
     1. Trains a logistic regression classifier on feedback history
     2. Uses the learned model to determine feature importance
     3. Generates a preference vector from weighted average using learned importance
-    
+
     Compared to compute_user_vector:
     - Learns weights from feedback patterns instead of using fixed weights
     - Scales better with more feedback (model converges with data)
     - Handles preference intensity (strong vs weak likes/dislikes)
-    
+
     Args:
         user: UserState with interaction history
         schema: Optional feature schema (unused, kept for API compatibility)
         use_cache: Whether to cache model in-memory
-        
+
     Returns:
         np.ndarray: Normalized user preference vector (shape: (dim,))
     """
@@ -180,7 +173,7 @@ def compute_user_vector_lr(
     lr_model = FeedbackLogisticRegression(dim=user.dim)
     if model_user_id:
         lr_model.bind_user(model_user_id)
-    
+
     # Add all feedback interactions to the model
     for vec in user.liked_vectors:
         lr_model.add_feedback(vec, feedback_label=1)
@@ -188,35 +181,35 @@ def compute_user_vector_lr(
         lr_model.add_feedback(vec, feedback_label=0)
     for vec in user.irritation_vectors:
         lr_model.add_feedback(vec, feedback_label=-1)
-    
+
     # Train the model (requires min 3 samples)
     if not lr_model.train(min_samples=3):
         # Fallback to weighted average if not enough feedback
         return compute_user_vector(user, schema)
-    
+
     # Build user vector using learned preference weights
     learned_weights = lr_model.get_learned_weights()  # shape: (dim,)
     if learned_weights is None:
         return compute_user_vector(user, schema)
-    
+
     user_vec = np.zeros(user.dim, dtype=np.float32)
-    
+
     # Weighted average using learned importance
     if user.liked_vectors:
         liked_avg = np.mean(user.liked_vectors, axis=0)
         # Weight liked products by learned feature importance
         user_vec += 1.5 * learned_weights * liked_avg
-    
+
     if user.disliked_vectors:
         disliked_avg = np.mean(user.disliked_vectors, axis=0)
         # Negative weight for disliked
         user_vec -= 0.8 * learned_weights * disliked_avg
-    
+
     if user.irritation_vectors:
         irritation_avg = np.mean(user.irritation_vectors, axis=0)
         # Stronger negative weight for irritation
         user_vec -= 2.0 * learned_weights * irritation_avg
-    
+
     # Normalize
     norm = np.linalg.norm(user_vec)
     if norm > 1e-9:
@@ -224,5 +217,5 @@ def compute_user_vector_lr(
     else:
         # If result is zero vector, fallback to simple weighted average
         return compute_user_vector(user, schema)
-    
+
     return user_vec

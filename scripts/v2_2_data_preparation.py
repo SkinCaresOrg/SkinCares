@@ -13,15 +13,16 @@ What it covers:
 7. Save cleaned dataset
 """
 
+
 def main():
     df_products = load_csv("../data/raw/products_dataset_raw.csv")
     df_prices = load_csv("../data/raw/prices_raw.csv")
 
-    
     df_processed = run_pipeline(df_products, df_prices)
-    
+
     df_processed.to_csv("../data/processed/products_dataset_processed.csv", index=False)
     print("File saved as products_dataset_processed.csv")
+
 
 if __name__ == "__main__":
     main()

@@ -15,8 +15,7 @@ install_requires = [
     "scipy>=1.8,<2",
     "joblib>=1.2,<2",
     "vowpalwabbit>=9.0,<10",
-    "requests>=2.31,<3",  # For Ollama integration
-    "openai>=1.0,<2",  # For OpenAI API (optional but listed for import)
+    "requests>=2.31,<3",  # For Ollama integration (local AI)
 ]
 
 extras_require = {
@@ -41,6 +40,9 @@ extras_require = {
         "requests>=2.31,<3",
         "beautifulsoup4>=4.12,<5",
         "urllib3>=2,<3",
+    ],
+    "ai": [
+        "openai>=1.0,<2",  # Optional: for ChatGPT fallback in chatbot (uses Ollama by default)
     ],
 }
 

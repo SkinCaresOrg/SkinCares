@@ -13,6 +13,7 @@ from v2_utils import (
     apply_fuzzy,               
 )
 
+
 def main():
     project_root = Path(__file__).resolve().parents[1]
 
@@ -42,6 +43,7 @@ def main():
 
     df_clean.to_csv(output_path, index=False)
     print(f"File saved as {output_path}")
+
 
 if __name__ == "__main__":
     main()

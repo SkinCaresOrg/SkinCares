@@ -14,40 +14,36 @@ import importlib
 def dupe_module(monkeypatch):
     # IMPORTANT: product_id must match index "0"
     fake_vectors = np.array([[1, 0], [0, 1]], dtype=np.float32)
-    fake_index = {"0": 0}   # <-- FIXED
+    fake_index = {"0": 0}  # <-- FIXED
     fake_schema = {}
 
-    fake_metadata = pd.DataFrame({
-        "product_name": ["Test Product"],
-        "brand": ["Test Brand"],
-        "category": ["serum"],
-        "price": [10.0],
-    })
+    fake_metadata = pd.DataFrame(
+        {
+            "product_name": ["Test Product"],
+            "brand": ["Test Brand"],
+            "category": ["serum"],
+            "price": [10.0],
+        }
+    )
 
     # mock BEFORE import
-    monkeypatch.setattr(
-        "pandas.read_csv",
-        lambda *args, **kwargs: fake_metadata
-    )
+    monkeypatch.setattr("pandas.read_csv", lambda *args, **kwargs: fake_metadata)
+
+    monkeypatch.setattr("numpy.load", lambda *args, **kwargs: fake_vectors)
 
     monkeypatch.setattr(
-        "numpy.load",
-        lambda *args, **kwargs: fake_vectors
-    )
-
-    monkeypatch.setattr(
-        "json.load",
-        lambda f: fake_index if "index" in str(f.name) else fake_schema
+        "json.load", lambda f: fake_index if "index" in str(f.name) else fake_schema
     )
 
     import skincarelib.models.dupe_finder as df
+
     importlib.reload(df)
 
     return df
 
 
 def test_find_dupes_returns_dataframe(dupe_module):
-    results = dupe_module.find_dupes("0")   # <-- FIXED
+    results = dupe_module.find_dupes("0")  # <-- FIXED
     assert isinstance(results, pd.DataFrame)
 
 

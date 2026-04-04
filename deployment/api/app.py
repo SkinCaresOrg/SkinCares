@@ -186,7 +186,7 @@ app.add_middleware(
 # These were validated on test users but not A/B tested yet.
 # TODO: Fine-tune these based on production metrics.
 EARLY_STAGE_THRESHOLD = 5  # Minimum interactions to start using complex models
-MID_STAGE_THRESHOLD = 20   # Minimum interactions to use online learning
+MID_STAGE_THRESHOLD = 20  # Minimum interactions to use online learning
 
 
 def normalize_category(raw_category: str) -> Category:
@@ -210,42 +210,49 @@ def normalize_category(raw_category: str) -> Category:
 def load_products_from_csv() -> Dict[int, ProductDetail]:
     """Load products from CSV file."""
     products = {}
-    csv_path = Path(__file__).parent.parent.parent / "data" / "processed" / "products_dataset_processed.csv"
-    
+    csv_path = (
+        Path(__file__).parent.parent.parent
+        / "data"
+        / "processed"
+        / "products_dataset_processed.csv"
+    )
+
     if not csv_path.exists():
         print(f"Warning: CSV file not found at {csv_path}")
         return products
-    
+
     try:
         with open(csv_path, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for idx, row in enumerate(reader, start=1):
                 product_name = row.get("product_name", "").strip()
                 brand = row.get("brand", "").strip()
-                
+
                 # Clean product name: remove brand prefix and trim at first comma
                 if brand and product_name.lower().startswith(brand.lower()):
-                    product_name = product_name[len(brand):].strip()
-                
+                    product_name = product_name[len(brand) :].strip()
+
                 if "," in product_name:
                     product_name = product_name.split(",")[0].strip()
-                
+
                 try:
                     price = float(row.get("price", 0))
                 except ValueError:
                     price = 0.0
-                
+
                 category_raw = row.get("usage_type", row.get("category", "treatment"))
                 category = normalize_category(category_raw)
-                
+
                 image_url = row.get("image_url", "").strip()
-                
+
                 ingredients = []
                 if "ingredients" in row:
                     ing_str = row.get("ingredients", "").strip()
                     if ing_str:
-                        ingredients = [ing.strip() for ing in ing_str.split(",") if ing.strip()]
-                
+                        ingredients = [
+                            ing.strip() for ing in ing_str.split(",") if ing.strip()
+                        ]
+
                 product = ProductDetail(
                     product_id=idx,
                     product_name=product_name,
@@ -264,7 +271,7 @@ def load_products_from_csv() -> Dict[int, ProductDetail]:
                 products[idx] = product
     except Exception as e:
         print(f"Error loading CSV: {e}")
-    
+
     return products
 
 
@@ -306,7 +313,7 @@ def get_user_session(user_id: str) -> SwipeSession:
             ]
         )
         product_index = {p.product_id: i for i, p in enumerate(PRODUCTS.values())}
-        
+
         USER_SESSIONS[user_id] = SwipeSession(
             user_id=user_id,
             product_vectors=PRODUCT_VECTORS,
@@ -316,16 +323,18 @@ def get_user_session(user_id: str) -> SwipeSession:
     return USER_SESSIONS[user_id]
 
 
-def get_product_vector_safe(product_id: int, product_index: Dict[int, int]) -> Optional[np.ndarray]:
+def get_product_vector_safe(
+    product_id: int, product_index: Dict[int, int]
+) -> Optional[np.ndarray]:
     """Safely get product vector using product_index mapping.
-    
+
     Args:
         product_id: The user-facing product ID
         product_index: Mapping from product_id to array index
-    
+
     Returns:
         Product vector or None if not found
-    
+
     Rationale:
         Using product_index mapping is safer than assuming product_id - 1 alignment.
         This handles any product ID gaps and future schema changes.
@@ -352,14 +361,14 @@ def _product_to_card(product: ProductDetail) -> ProductCard:
 def get_best_model(user_state: UserState):
     """
     Select the best model based on user's learning stage.
-    
+
     Strategy:
     - Early stage (< 5 interactions): LogisticRegression (fast, lightweight)
     - Mid stage (5-20 interactions): RandomForest (captures complex patterns)
     - Experienced (20+ interactions): ContextualBandit (online learning, exploration)
     """
     interactions = user_state.interactions
-    
+
     if interactions < EARLY_STAGE_THRESHOLD:
         # Early stage: need fast feedback (< 5 interactions)
         return LogisticRegressionFeedback(), "LogisticRegression (Early Stage)"
@@ -368,7 +377,9 @@ def get_best_model(user_state: UserState):
         return RandomForestFeedback(), "RandomForest (Mid Stage)"
     else:
         # Experienced user: use online learning with exploration
-        return ContextualBanditFeedback(dim=PRODUCT_VECTORS.shape[1]), "ContextualBandit (Online Learning)"
+        return ContextualBanditFeedback(
+            dim=PRODUCT_VECTORS.shape[1]
+        ), "ContextualBandit (Online Learning)"
 
 
 @app.options("/api/onboarding")
@@ -464,6 +475,9 @@ def get_recommendations(
             model, model_name = get_best_model(user_state)
             model.fit(user_state)
             
+            # Build product_index mapping for safe vector lookup
+            product_index = {p.product_id: i for i, p in enumerate(PRODUCTS.values())}
+
             for product in candidates:
                 # Get vector for this product using safe mapping
                 vec = get_product_vector_safe(product.product_id, product_index)
@@ -486,7 +500,9 @@ def get_recommendations(
         RecommendationsProduct(
             **_product_to_card(product).model_dump(),
             recommendation_score=score,
-            explanation="Personalized based on your feedback" if score != 0.5 else "Matches profile preferences",
+            explanation="Personalized based on your feedback"
+            if score != 0.5
+            else "Matches profile preferences",
         )
         for product, score in ranked[:limit]
     ]
@@ -552,9 +568,9 @@ def get_user_debug_state(user_id: str) -> dict:
     """Debug endpoint to inspect ML model learning state."""
     if user_id not in USER_PROFILES:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     user_state = get_user_state(user_id)
-    
+
     return {
         "user_id": user_id,
         "interactions": user_state.interactions,
@@ -571,19 +587,19 @@ def get_product_score(user_id: str, product_id: int) -> dict:
     """Debug endpoint to get ML model score for a specific product."""
     if user_id not in USER_PROFILES:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     if product_id not in PRODUCTS:
         raise HTTPException(status_code=404, detail="Product not found")
-    
+
     user_state = get_user_state(user_id)
     product_data = PRODUCTS[product_id]
-    
+
     # Get product vector using safe mapping
     product_index = {p.product_id: i for i, p in enumerate(PRODUCTS.values())}
     product_vector = get_product_vector_safe(product_id, product_index)
     if product_vector is None:
         raise HTTPException(status_code=400, detail="Product vector not found")
-    
+
     # Score using adaptive model based on interaction count
     if user_state.liked_count > 0 and user_state.disliked_count > 0:
         try:
@@ -598,14 +614,15 @@ def get_product_score(user_id: str, product_id: int) -> dict:
     else:
         score = 0.5  # Neutral score if not enough training data
         model_used = "default"
-    
+
     return {
         "user_id": user_id,
         "product_id": product_id,
         "product_name": product_data.product_name,
         "score": score,
         "model_used": model_used,
-        "training_data_available": user_state.liked_count > 0 and user_state.disliked_count > 0,
+        "training_data_available": user_state.liked_count > 0
+        and user_state.disliked_count > 0,
     }
 
 

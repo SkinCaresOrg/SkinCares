@@ -17,15 +17,14 @@ from skincarelib.ml_system.reranker import rerank_candidates
 from skincarelib.models.recommender_ranker import rank_products
 
 
-
 def load_metadata(root) -> pd.DataFrame:
     path = root / "data" / "processed" / "products_dataset_processed.csv"
     df = pd.read_csv(path, dtype={"product_id": str})
-    
+
     # Add product_id if not present
     if "product_id" not in df.columns:
         df.insert(0, "product_id", df.index.astype(str))
-    
+
     # Ensure product_id is string
     df["product_id"] = df["product_id"].astype(str)
 
@@ -52,12 +51,15 @@ def format_product(pid: str, meta_indexed: pd.DataFrame) -> str:
     row = meta_indexed.loc[pid]
     price = row.get("price", None)
     price_str = f"${price:.2f}" if pd.notna(price) else "NA"
-    return f"{pid} | {row.get('brand','')} | {row.get('category','')} | {price_str}"
+    return f"{pid} | {row.get('brand', '')} | {row.get('category', '')} | {price_str}"
 
 
 def pretty_list(product_ids: List[str], meta_indexed: pd.DataFrame, n: int = 10) -> str:
     return "\n".join(
-        [f"{i:>2}. {format_product(pid, meta_indexed)}" for i, pid in enumerate(product_ids[:n], start=1)]
+        [
+            f"{i:>2}. {format_product(pid, meta_indexed)}"
+            for i, pid in enumerate(product_ids[:n], start=1)
+        ]
     )
 
 
@@ -81,7 +83,9 @@ def run_simulation(
     meta_idx["product_id"] = meta_idx["product_id"].astype(str)
     meta_idx = meta_idx.set_index("product_id", drop=False)
 
-    print(f"Loaded vectors: {product_vectors.shape} (products={product_vectors.shape[0]}, dim={dim})")
+    print(
+        f"Loaded vectors: {product_vectors.shape} (products={product_vectors.shape[0]}, dim={dim})"
+    )
     print(f"Using model: {model_type}")
 
     # ---- Initialize user ----
@@ -151,7 +155,9 @@ def run_simulation(
 
     print("\nApplied interactions:")
     for reaction, pid, reasons in interaction_plan:
-        print(f"  - {reaction.upper():<10} {format_product(pid, meta_idx)} | reasons={reasons}")
+        print(
+            f"  - {reaction.upper():<10} {format_product(pid, meta_idx)} | reasons={reasons}"
+        )
 
     # ---- Apply interactions ----
     for reaction, pid, reasons in interaction_plan:
@@ -190,15 +196,14 @@ def run_simulation(
             ranked_after = sorted(
                 valid_candidate_ids,
                 key=lambda pid: pid_to_score.get(pid, 0),
-                reverse=True
+                reverse=True,
             )[:top_n]
         else:
             ranked_after = ranked_before
 
     # ---- Exclude liked products from AFTER recommendations ----
     liked_ids = {
-        str(pid) for reaction, pid, _ in interaction_plan
-        if reaction.lower() == "like"
+        str(pid) for reaction, pid, _ in interaction_plan if reaction.lower() == "like"
     }
 
     ranked_after = [pid for pid in ranked_after if str(pid) not in liked_ids][:top_n]
@@ -213,10 +218,14 @@ def run_simulation(
     print(f"  interactions: {user.interactions}")
     print(f"  liked count:  {len(user.liked_vectors)}")
     print(f"  disliked count: {len(user.disliked_vectors)}")
-    
+
     # Model-specific info
-    if model_type != "weighted_avg" and hasattr(model, 'is_trained') and model.is_trained:
-        if hasattr(model, 'get_feature_importance'):
+    if (
+        model_type != "weighted_avg"
+        and hasattr(model, "is_trained")
+        and model.is_trained
+    ):
+        if hasattr(model, "get_feature_importance"):
             imp = model.get_feature_importance()
             if len(imp) > 0:
                 print("\nTop feature importances:")
@@ -232,7 +241,7 @@ def run_model_comparison(
     categories: List[str] | None = None,
 ):
     """Compare different feedback models on the same interaction sequence."""
-    
+
     # ---- Load artifacts ----
     product_vectors, product_index, _, schema = load_artifacts()
     dim = product_vectors.shape[1]
@@ -299,17 +308,23 @@ def run_model_comparison(
         print(f"  {reaction.upper():<10} {format_product(pid, meta_idx)}")
 
     # ---- Test each model ----
-    model_types = ["weighted_avg", "logistic", "random_forest", "gradient_boosting", "contextual_bandit"]
+    model_types = [
+        "weighted_avg",
+        "logistic",
+        "random_forest",
+        "gradient_boosting",
+        "contextual_bandit",
+    ]
     results = {}
 
     for model_type in model_types:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Model: {model_type}")
-        print(f"{'='*60}")
-        
+        print(f"{'=' * 60}")
+
         # Create fresh user state
         user = UserState(dim=dim)
-        
+
         # Apply interactions
         for reaction, pid, reasons in interaction_plan:
             pid = str(pid)
@@ -317,7 +332,7 @@ def run_model_comparison(
                 continue
             vec = product_vectors[product_index[pid]]
             update_user_state(user, reaction, vec, reason_tags=reasons)
-        
+
         # Get recommendations
         if model_type == "weighted_avg":
             user_vec = compute_user_vector(user, schema=schema)
@@ -331,47 +346,56 @@ def run_model_comparison(
         elif model_type == "contextual_bandit":
             # Bandit learns incrementally, not batch training
             from skincarelib.ml_system.ml_feedback_model import ContextualBanditFeedback
+
             model = ContextualBanditFeedback(dim=dim)
             for vec in user.liked_vectors:
                 model.update(vec, reward=1)
             for vec in user.disliked_vectors:
                 model.update(vec, reward=0)
-            
-            candidate_indices = [product_index[pid] for pid in candidate_ids if pid in product_index]
+
+            candidate_indices = [
+                product_index[pid] for pid in candidate_ids if pid in product_index
+            ]
             candidate_vectors = product_vectors[candidate_indices]
             scores = model.score_products(candidate_vectors)
-            
-            pid_to_score = {candidate_ids[i]: scores[i] for i in range(len(candidate_ids))}
+
+            pid_to_score = {
+                candidate_ids[i]: scores[i] for i in range(len(candidate_ids))
+            }
             ranked = sorted(
                 [pid for pid in candidate_ids if pid in product_index],
                 key=lambda pid: pid_to_score.get(pid, 0),
-                reverse=True
+                reverse=True,
             )[:top_n]
         else:
             model = create_feedback_model(model_type=model_type, dim=dim)
             if model.fit(user):
-                candidate_indices = [product_index[pid] for pid in candidate_ids if pid in product_index]
+                candidate_indices = [
+                    product_index[pid] for pid in candidate_ids if pid in product_index
+                ]
                 candidate_vectors = product_vectors[candidate_indices]
                 scores = model.score_products(candidate_vectors)
-                
-                pid_to_score = {candidate_ids[i]: scores[i] for i in range(len(candidate_ids))}
+
+                pid_to_score = {
+                    candidate_ids[i]: scores[i] for i in range(len(candidate_ids))
+                }
                 ranked = sorted(
                     [pid for pid in candidate_ids if pid in product_index],
                     key=lambda pid: pid_to_score.get(pid, 0),
-                    reverse=True
+                    reverse=True,
                 )[:top_n]
             else:
                 ranked = []
-        
+
         results[model_type] = ranked
         print(f"\nTop {top_n} recommendations:")
         print(pretty_list(ranked, meta_idx, n=top_n))
-    
+
     # Compare results
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("COMPARISON SUMMARY")
-    print(f"{'='*60}")
-    
+    print(f"{'=' * 60}")
+
     for i, pid in enumerate(results["weighted_avg"][:5], 1):
         print(f"\nRank {i}: {format_product(pid, meta_idx)}")
         for model_type in model_types[1:]:
@@ -382,9 +406,10 @@ def run_model_comparison(
                 print(f"  {model_type:<20} rank: N/A")
 
 
-
 def main():
-    p = argparse.ArgumentParser(description="Skincare recommendation with various feedback models.")
+    p = argparse.ArgumentParser(
+        description="Skincare recommendation with various feedback models."
+    )
     p.add_argument("--top_n", type=int, default=10)
     p.add_argument("--candidate_k", type=int, default=200)
     p.add_argument("--budget", type=float, default=100.0)
@@ -398,19 +423,25 @@ def main():
     p.add_argument(
         "--model",
         type=str,
-        choices=["weighted_avg", "logistic", "random_forest", "gradient_boosting", "contextual_bandit"],
+        choices=[
+            "weighted_avg",
+            "logistic",
+            "random_forest",
+            "gradient_boosting",
+            "contextual_bandit",
+        ],
         default="weighted_avg",
-        help="Feedback model type."
+        help="Feedback model type.",
     )
     p.add_argument(
         "--compare",
         action="store_true",
-        help="Compare all models instead of running single model."
+        help="Compare all models instead of running single model.",
     )
     args = p.parse_args()
 
     cats = args.categories if args.categories else None
-    
+
     if args.compare:
         run_model_comparison(
             top_n=args.top_n,

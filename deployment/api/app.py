@@ -16,6 +16,7 @@ from skincarelib.ml_system.ml_feedback_model import (
     UserState,
 )
 from skincarelib.ml_system.swipe_session import SwipeSession
+from skincarelib.ml_system.handler import handle_chat
 
 Category = Literal[
     "cleanser",
@@ -161,6 +162,15 @@ class FeedbackResponse(BaseModel):
     message: str
 
 
+class ChatRequest(BaseModel):
+    message: str
+    profile: Optional[OnboardingRequest] = None
+
+
+class ChatResponse(BaseModel):
+    response: str
+
+
 app = FastAPI(title="SkinCares API", version="1.0.0")
 
 app.add_middleware(
@@ -170,6 +180,13 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+
+# Model selection thresholds (based on data availability patterns)
+# These were validated on test users but not A/B tested yet.
+# TODO: Fine-tune these based on production metrics.
+EARLY_STAGE_THRESHOLD = 5  # Minimum interactions to start using complex models
+MID_STAGE_THRESHOLD = 20   # Minimum interactions to use online learning
 
 
 def normalize_category(raw_category: str) -> Category:
@@ -299,6 +316,28 @@ def get_user_session(user_id: str) -> SwipeSession:
     return USER_SESSIONS[user_id]
 
 
+def get_product_vector_safe(product_id: int, product_index: Dict[int, int]) -> Optional[np.ndarray]:
+    """Safely get product vector using product_index mapping.
+    
+    Args:
+        product_id: The user-facing product ID
+        product_index: Mapping from product_id to array index
+    
+    Returns:
+        Product vector or None if not found
+    
+    Rationale:
+        Using product_index mapping is safer than assuming product_id - 1 alignment.
+        This handles any product ID gaps and future schema changes.
+    """
+    if product_id not in product_index:
+        return None
+    idx = product_index[product_id]
+    if idx < 0 or idx >= len(PRODUCT_VECTORS):
+        return None
+    return PRODUCT_VECTORS[idx]
+
+
 def get_user_state(user_id: str) -> UserState:
     """Get or create user's ML model state for recommendations."""
     if user_id not in USER_STATES:
@@ -321,11 +360,11 @@ def get_best_model(user_state: UserState):
     """
     interactions = user_state.interactions
     
-    if interactions < 5:
-        # Early stage: need fast feedback
+    if interactions < EARLY_STAGE_THRESHOLD:
+        # Early stage: need fast feedback (< 5 interactions)
         return LogisticRegressionFeedback(), "LogisticRegression (Early Stage)"
-    elif interactions < 20:
-        # Mid stage: more data available, can handle complexity
+    elif interactions < MID_STAGE_THRESHOLD:
+        # Mid stage: more data available, can handle complexity (5-20 interactions)
         return RandomForestFeedback(), "RandomForest (Mid Stage)"
     else:
         # Experienced user: use online learning with exploration
@@ -426,10 +465,9 @@ def get_recommendations(
             model.fit(user_state)
             
             for product in candidates:
-                # Get vector for this product
-                prod_idx = product.product_id - 1
-                if prod_idx < len(PRODUCT_VECTORS):
-                    vec = PRODUCT_VECTORS[prod_idx]
+                # Get vector for this product using safe mapping
+                vec = get_product_vector_safe(product.product_id, product_index)
+                if vec is not None:
                     score = float(model.predict_preference(vec))
                     scores.append(max(0.1, score))
                 else:
@@ -493,9 +531,10 @@ def submit_feedback(payload: FeedbackRequest) -> FeedbackResponse:
     try:
         user_state = get_user_state(payload.user_id)
         if payload.has_tried:
-            prod_idx = payload.product_id - 1
-            if prod_idx < len(PRODUCT_VECTORS):
-                vec = PRODUCT_VECTORS[prod_idx]
+            # Build product_index for this user session
+            product_index = {p.product_id: i for i, p in enumerate(PRODUCTS.values())}
+            vec = get_product_vector_safe(payload.product_id, product_index)
+            if vec is not None:
                 if payload.reaction == "like":
                     user_state.add_liked(vec)
                 elif payload.reaction == "dislike":
@@ -539,12 +578,11 @@ def get_product_score(user_id: str, product_id: int) -> dict:
     user_state = get_user_state(user_id)
     product_data = PRODUCTS[product_id]
     
-    # Get product vector (product_id is 1-indexed, numpy array is 0-indexed)
-    prod_idx = product_id - 1
-    if prod_idx >= len(PRODUCT_VECTORS):
+    # Get product vector using safe mapping
+    product_index = {p.product_id: i for i, p in enumerate(PRODUCTS.values())}
+    product_vector = get_product_vector_safe(product_id, product_index)
+    if product_vector is None:
         raise HTTPException(status_code=400, detail="Product vector not found")
-    
-    product_vector = PRODUCT_VECTORS[prod_idx]
     
     # Score using adaptive model based on interaction count
     if user_state.liked_count > 0 and user_state.disliked_count > 0:
@@ -569,3 +607,14 @@ def get_product_score(user_id: str, product_id: int) -> dict:
         "model_used": model_used,
         "training_data_available": user_state.liked_count > 0 and user_state.disliked_count > 0,
     }
+
+
+@app.post("/api/chat", response_model=ChatResponse)
+def chat(request: ChatRequest) -> ChatResponse:
+    """Chat endpoint that handles ingredient questions, dupe finding, and recommendations"""
+    try:
+        response_text = handle_chat(request.message, profile=request.profile)
+        return ChatResponse(response=response_text)
+    except Exception as e:
+        print(f"Chat error: {e}")
+        return ChatResponse(response="Sorry, I encountered an error. Please try again.")

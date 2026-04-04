@@ -4,8 +4,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from dupe_scorer import DupeScorer
-from dupe_explainer import explain_dupe
+from .dupe_scorer import DupeScorer
+from .dupe_explainer import explain_dupe
 
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 VECTORS_PATH  = ROOT / "artifacts" / "product_vectors.npy"
 INDEX_PATH    = ROOT / "artifacts" / "product_index.json"
 SCHEMA_PATH   = ROOT / "artifacts" / "feature_schema.json"
-METADATA_PATH = ROOT / "data" / "processed" / "products_dataset_clean_tokens.csv"
+METADATA_PATH = ROOT / "data" / "processed" / "cosmetics_processed_clean_tokens.csv"
 
 
 def load_artifacts():
@@ -27,13 +27,27 @@ def load_artifacts():
 
     metadata = pd.read_csv(METADATA_PATH)
 
+    # Normalize column names to lowercase
+    metadata.columns = metadata.columns.str.lower()
+
     # product_id comes from the row index to match keys in product_index.json
     metadata["product_id"] = metadata.index.astype(str)
 
-    needed = {"product_id", "brand", "category", "price"}
+    needed = {"product_id", "brand", "price"}
     missing = needed - set(metadata.columns)
     if missing:
         raise ValueError(f"products_dataset_processed.csv missing columns: {missing}")
+
+    # Use 'action' as category if it exists, otherwise use 'label' or 'name'
+    if "action" not in metadata.columns:
+        if "label" in metadata.columns:
+            metadata["category"] = metadata["label"]
+        elif "name" in metadata.columns:
+            metadata["category"] = metadata["name"]
+        else:
+            metadata["category"] = "unknown"
+    else:
+        metadata["category"] = metadata["action"]
 
     metadata["price"] = pd.to_numeric(metadata["price"], errors="coerce")
 

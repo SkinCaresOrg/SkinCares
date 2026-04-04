@@ -8,6 +8,7 @@ import {
   Category,
   SortValue,
 } from "./types";
+import { getUserProfile } from "./wishlist";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -23,7 +24,7 @@ export class ApiError extends Error {
   }
 }
 
-async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
+export async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${url}`, {
     headers: { "Content-Type": "application/json" },
     ...options,
@@ -85,4 +86,9 @@ export async function getDupes(productId: number): Promise<{ source_product_id: 
 
 export async function submitFeedback(feedback: FeedbackRequest): Promise<{ success: boolean; message: string }> {
   return fetchApi("/feedback", { method: "POST", body: JSON.stringify(feedback) });
+}
+
+export async function sendChatMessage(message: string): Promise<{ response: string }> {
+  const profile = getUserProfile();
+  return fetchApi("/chat", { method: "POST", body: JSON.stringify({ message, profile }) });
 }

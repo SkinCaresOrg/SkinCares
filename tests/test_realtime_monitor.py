@@ -7,7 +7,6 @@ Simulates user onboarding, providing feedback, and checking state changes
 import requests
 import json
 import time
-import numpy as np
 
 BASE_URL = "http://localhost:8000"
 USER_ID = None  # Will be set after onboarding
@@ -113,7 +112,7 @@ def monitor_realtime():
         
         # Submit feedback
         if not submit_feedback(product_id, reaction):
-            print(f"❌ Failed to submit feedback")
+            print("❌ Failed to submit feedback")
             success = False
             continue
         
@@ -123,12 +122,12 @@ def monitor_realtime():
         # Fetch updated state
         state = get_model_state()
         if not state:
-            print(f"❌ Failed to fetch updated state")
+            print("\u274c Failed to fetch updated state")
             success = False
             continue
         
         # Display changes
-        print(f"  ✓ Feedback submitted")
+        print("  ✓ Feedback submitted")
         print(f"  Total Interactions: {state['interactions']}")
         print(f"  Liked Count: {state['liked_count']}")
         print(f"  Disliked Count: {state['disliked_count']}")

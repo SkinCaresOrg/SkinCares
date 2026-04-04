@@ -9,7 +9,7 @@ import {
   SortValue,
 } from "./types";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
 export class ApiError extends Error {
   status: number;
@@ -43,6 +43,10 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
 
 export async function submitOnboarding(profile: OnboardingProfile): Promise<{ user_id: string; profile: OnboardingProfile }> {
   return fetchApi("/onboarding", { method: "POST", body: JSON.stringify(profile) });
+}
+
+export async function getUserDebugState(userId: string): Promise<any> {
+  return fetchApi(`/debug/user-state/${userId}`);
 }
 
 export async function getProducts(params?: {

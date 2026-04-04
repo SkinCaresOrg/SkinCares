@@ -15,6 +15,8 @@ install_requires = [
     "scipy>=1.8,<2",
     "joblib>=1.2,<2",
     "vowpalwabbit>=9.0,<10",
+    "requests>=2.31,<3",  # For Ollama integration
+    "openai>=1.0,<2",  # For OpenAI API (optional but listed for import)
 ]
 
 extras_require = {

@@ -131,7 +131,6 @@ class SwipeSession:
             return  # No metadata to work with
         
         user_context = self.questionnaire.get_context_features()
-        skin_type_lower = skin_type.lower()
         concerns_lower = [c.lower() for c in skin_concerns]
         
         # Score products based on metadata match

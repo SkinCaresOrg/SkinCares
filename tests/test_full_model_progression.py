@@ -4,7 +4,6 @@ Test conditional model selection with enough interactions to reach all stages.
 """
 
 import requests
-import json
 import random
 
 BASE_URL = "http://localhost:8000"

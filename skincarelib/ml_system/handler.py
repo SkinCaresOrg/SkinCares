@@ -1,7 +1,6 @@
 import os
 import requests
 from typing import Optional, Dict, Any
-from openai import OpenAI
 
 from skincarelib.ml_system.intent import detect_intent
 from skincarelib.models.dupe_finder import find_dupes
@@ -11,9 +10,15 @@ _client = None
 
 
 def get_openai_client():
+    """Get OpenAI client, only if openai package is installed and API key is set."""
     global _client
     if _client is None and os.getenv("OPENAI_API_KEY"):
-        _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        try:
+            from openai import OpenAI
+            _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        except ImportError:
+            print("Warning: openai package not installed. Skipping OpenAI integration.")
+            return None
     return _client
 
 

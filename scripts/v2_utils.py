@@ -92,32 +92,68 @@ def smart_split_ingredients(ingredients: Optional[str]) -> List[str]:
     return tokens
 
 
+
 def load_cosing_ingredients(path: str) -> List[str]:
     """
-    Load official INCI ingredient names from the CosIng database.
-    These are the canonical correctly-spelled ingredient names used
-    as the reference list for fuzzy matching.
+    Load and normalize CosIng INCI ingredient names so they match
+    the same tokenization logic used in the pipeline.
     """
     df = pd.read_csv(path, sep=None, engine='python')
-    names = df['INCI name'].dropna().str.strip().str.lower().tolist()
-    return names
+
+    ingredients = set()
+
+    for raw in df['INCI name'].dropna():
+        raw = str(raw)
+
+        # split complex names first
+        parts = re.split(r"\(|\)|,|/| and ", raw.lower())
+
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+
+            # apply SAME tokenization as pipeline
+            tokens = smart_split_ingredients(part)
+
+            for token in tokens:
+                token = token.strip().lower()
+
+                # cleaning
+                if len(token) < 3:
+                    continue
+
+                ingredients.add(token)
+
+    return list(ingredients)
 
 def apply_fuzzy(tokens: List[str], known_ingredients: List[str], threshold: int = 90) -> List[str]:
     known_set = set(known_ingredients)
+
     mapped = []
     seen = set()
 
     for t in tokens:
+        if not t:
+            continue
+
+        # if already correct, → skip fuzzy
         if t in known_set:
-            # already correct, skip fuzzy matching entirely
             final = t
+
+        # only fuzzy short tokens
         elif len(t.split()) <= 3:
-            result = process.extractOne(t, known_ingredients, scorer=fuzz.ratio, score_cutoff=threshold)
+            result = process.extractOne(
+                t,
+                known_ingredients,
+                scorer=fuzz.ratio,
+                score_cutoff=threshold
+            )
             final = result[0] if result else t
         else:
             final = t
 
-        if final and final not in seen:
+        if final not in seen:
             mapped.append(final)
             seen.add(final)
 

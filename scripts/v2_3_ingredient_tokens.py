@@ -9,6 +9,8 @@ from v2_utils import (
     load_cosing_ingredients,
     run_pipeline2,
     CANON_RULES_SMALL_COMPILED,
+    smart_split_ingredients,   
+    apply_fuzzy,               
 )
 
 def main():
@@ -20,6 +22,17 @@ def main():
 
     df_processed = load_csv(processed_data_path)
     known_ingredients = load_cosing_ingredients(str(cosing_path))
+    print("CosIng ingredients loaded:", len(known_ingredients))
+    print("Sample:", known_ingredients[:10])
+
+    sample_tokens = df_processed["ingredients"].iloc[:5]
+    #quick sanity check on the fuzzy matching before running the full pipeline
+    for i, row in enumerate(sample_tokens):
+        tokens = smart_split_ingredients(row)
+        fuzzy = apply_fuzzy(tokens, known_ingredients)
+        print(f"\nExample {i}:")
+        print("Original:", tokens)
+        print("After fuzzy:", fuzzy)
 
     df_clean = run_pipeline2(
         df_processed,

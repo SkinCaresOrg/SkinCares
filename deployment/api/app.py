@@ -9,6 +9,8 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 
+from deployment.api.auth.routes import router as auth_router
+
 from skincarelib.ml_system.ml_feedback_model import (
     LogisticRegressionFeedback,
     RandomForestFeedback,
@@ -175,7 +177,11 @@ app = FastAPI(title="SkinCares API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",  # development
+        "https://skinscares.es",  # production
+        "https://www.skinscares.es",
+    ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -635,3 +641,6 @@ def chat(request: ChatRequest) -> ChatResponse:
     except Exception as e:
         print(f"Chat error: {e}")
         return ChatResponse(response="Sorry, I encountered an error. Please try again.")
+ 
+
+app.include_router(auth_router, prefix="/api", tags=["auth"])

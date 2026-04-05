@@ -39,3 +39,20 @@ uvicorn deployment.api:app --reload --host 0.0.0.0 --port 8000
 Open docs:
 - `http://localhost:8000/docs`
 - `http://localhost:8000/openapi.json`
+
+## Auth/API environment variables
+
+When auth is enabled, backend startup requires:
+- `SECRET_KEY`
+- Database URL via `DATABASE_URL`
+
+If you created Postgres through Vercel Integrations, Vercel usually injects one of:
+- `POSTGRES_URL`
+- `POSTGRES_PRISMA_URL`
+- `POSTGRES_URL_NON_POOLING`
+
+For a backend running on Render, copy the connection string value into Render env vars
+as `DATABASE_URL` (or set one of the `POSTGRES_*` vars above).
+
+Also set CORS on Render:
+- `CORS_ALLOW_ORIGINS=https://skinscares.es,https://www.skinscares.es`

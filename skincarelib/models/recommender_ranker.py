@@ -135,7 +135,9 @@ def rank_products(
     else:
         recs = candidates.sort_values("similarity", ascending=False).head(top_n)
 
-    return recs[["product_id", "brand", "category", "price", "similarity"]].reset_index(drop=True)
+    return recs[["product_id", "brand", "category", "price", "similarity"]].reset_index(
+        drop=True
+    )
 
 
 def recommend(liked_product_ids, explicit_prefs, constraints, top_n=10):
@@ -163,7 +165,9 @@ def recommend(liked_product_ids, explicit_prefs, constraints, top_n=10):
     merged_constraints = dict(constraints)
     if liked_product_ids:
         existing = merged_constraints.get("liked_product_ids") or []
-        merged_constraints["liked_product_ids"] = list(set(existing) | set(liked_product_ids))
+        merged_constraints["liked_product_ids"] = list(
+            set(existing) | set(liked_product_ids)
+        )
 
     return rank_products(
         user_vector=user_vector,

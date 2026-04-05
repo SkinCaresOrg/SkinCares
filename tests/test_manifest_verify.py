@@ -3,7 +3,10 @@ from pathlib import Path
 import pytest
 
 from skincarelib.ml_system.manifest import build_manifest, write_manifest
-from skincarelib.ml_system.manifest_verify import ManifestVerificationError, verify_manifest
+from skincarelib.ml_system.manifest_verify import (
+    ManifestVerificationError,
+    verify_manifest,
+)
 
 
 def _write_file(path: Path, content: bytes) -> None:

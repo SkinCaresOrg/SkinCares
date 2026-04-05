@@ -9,6 +9,7 @@ import Catalog from "./pages/Catalog.tsx";
 import Recommendations from "./pages/Recommendations.tsx";
 import Swiping from "./pages/Swiping.tsx";
 import NotFound from "./pages/NotFound.tsx";
+import FloatingChat from "./components/FloatingChat.tsx";
 
 import Login from "./pages/Login.tsx";
 import Register from "./pages/Register.tsx";
@@ -20,6 +21,7 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
+      <FloatingChat />
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />

@@ -159,7 +159,11 @@ app = FastAPI(title="SkinCares API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",  # development
+        "https://skinscares.es",  # production
+        "https://www.skinscares.es",
+    ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],

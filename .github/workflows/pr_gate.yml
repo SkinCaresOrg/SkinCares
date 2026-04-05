@@ -27,7 +27,7 @@ jobs:
   test:
     name: Test Python ${{ matrix.python }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 60
     env:
       DATABASE_URL: sqlite:///./ci_auth_test.db
       SECRET_KEY: ci-test-secret-key

@@ -4,6 +4,7 @@ import Navigation from "@/components/Navigation";
 import { Product, Category, Reaction, REACTION_TAGS, IRRITATION_TAGS, CATEGORY_LABELS, formatTagLabel, formatPrice } from "@/lib/types";
 import { getProducts, submitFeedback } from "@/lib/api";
 import { getUserId } from "@/lib/wishlist";
+import { ModelMonitor } from "@/components/ModelMonitor";
 import { motion, useMotionValue, useTransform, AnimatePresence } from "framer-motion";
 import { ThumbsUp, ThumbsDown, AlertTriangle, SkipForward, Undo2, Check } from "lucide-react";
 
@@ -50,6 +51,12 @@ const Swiping = () => {
       setLoading(false);
     });
   }, [userId, navigate]);
+
+  // Reset motion values when moving to next product
+  useEffect(() => {
+    x.set(0);
+    y.set(0);
+  }, [currentIndex, x, y]);
 
   const currentProduct = products[currentIndex];
   const isFinished = currentIndex >= products.length && !loading;
@@ -103,7 +110,7 @@ const Swiping = () => {
       has_tried: true,
       reaction,
       reason_tags: selectedTags,
-      free_text: freeText || undefined,
+      free_text: freeText,
     });
     setStep("done");
     setTimeout(() => {
@@ -357,6 +364,9 @@ const Swiping = () => {
             Drag right to like · left to dislike · up for irritation · or use the buttons
           </p>
         )}
+
+        {/* Real-time model monitoring */}
+        {userId && <ModelMonitor userId={userId} refreshInterval={2000} />}
       </div>
     </div>
   );

@@ -11,7 +11,7 @@ TFIDF_PATH = ROOT / "artifacts" / "tfidf.joblib"
 SCHEMA_PATH = ROOT / "artifacts" / "feature_schema.json"
 
 TFIDF_START = 0
-TFIDF_END = None    # set by _init_layout() from feature_schema.json
+TFIDF_END = None  # set by _init_layout() from feature_schema.json
 GROUPS_START = None
 TOTAL_DIMS = None
 
@@ -36,24 +36,25 @@ _init_layout()
 
 # Skin type -> (groups to boost, groups to suppress)
 SKIN_TYPE_PREFS = {
-    "dry":         (["humectant", "emollient", "occlusive", "soothing_agent"],
-                    ["exfoliant", "irritant_flag"]),
-    "oily":        (["exfoliant", "active", "ph_adjuster"],
-                    ["occlusive", "emollient"]),
-    "sensitive":   (["soothing_agent", "humectant"],
-                    ["irritant_flag", "exfoliant", "active"]),
-    "combination": (["humectant"],
-                    ["irritant_flag"]),
-    "normal":      (["active", "antioxidant"],
-                    []),
+    "dry": (
+        ["humectant", "emollient", "occlusive", "soothing_agent"],
+        ["exfoliant", "irritant_flag"],
+    ),
+    "oily": (["exfoliant", "active", "ph_adjuster"], ["occlusive", "emollient"]),
+    "sensitive": (
+        ["soothing_agent", "humectant"],
+        ["irritant_flag", "exfoliant", "active"],
+    ),
+    "combination": (["humectant"], ["irritant_flag"]),
+    "normal": (["active", "antioxidant"], []),
 }
 
 # Module-level caches — populated lazily on first call
-_group_map = None       # ingredient -> group name
-_group_names = None     # sorted list of unique group names
-_group_dim = None       # group name -> absolute dim index
-_cat_dim = None         # category name -> absolute dim index
-_tfidf_vocab = None     # token -> dim index (0-511)
+_group_map = None  # ingredient -> group name
+_group_names = None  # sorted list of unique group names
+_group_dim = None  # group name -> absolute dim index
+_cat_dim = None  # category name -> absolute dim index
+_tfidf_vocab = None  # token -> dim index (0-511)
 
 
 def _load_group_info():
@@ -81,7 +82,14 @@ def _load_cat_info():
         cat_start = s["price_index"] - len(s["categories"])
     else:
         # Alphabetical fallback matching sklearn fit order on the known label set
-        cat_names = ["Cleanser", "Eye cream", "Face Mask", "Moisturizer", "Sun protect", "Treatment"]
+        cat_names = [
+            "Cleanser",
+            "Eye cream",
+            "Face Mask",
+            "Moisturizer",
+            "Sun protect",
+            "Treatment",
+        ]
         cat_start = GROUPS_START + 1  # 1 group dim when all groups are empty
     _cat_dim = {name: cat_start + i for i, name in enumerate(cat_names)}
 
@@ -94,7 +102,9 @@ def _load_tfidf_vocab():
     _tfidf_vocab = vec.vocabulary_  # token -> dim index (0-511)
 
 
-def build_user_vector(liked_product_ids, explicit_prefs, product_vectors, product_index):
+def build_user_vector(
+    liked_product_ids, explicit_prefs, product_vectors, product_index
+):
     """
     Build a user preference vector from liked products and explicit preferences.
 
@@ -128,7 +138,9 @@ def build_user_vector(liked_product_ids, explicit_prefs, product_vectors, produc
     if skin_type in SKIN_TYPE_PREFS:
         boost_groups, suppress_groups = SKIN_TYPE_PREFS[skin_type]
         # Use catalog mean per group dim as reference magnitude for boosts
-        catalog_group_mean = product_vectors[:, GROUPS_START:GROUPS_START + len(_group_names)].mean(axis=0)
+        catalog_group_mean = product_vectors[
+            :, GROUPS_START : GROUPS_START + len(_group_names)
+        ].mean(axis=0)
         BOOST_FACTOR = 0.3
         SUPPRESS_FACTOR = 0.5
         for grp in boost_groups:

@@ -4,16 +4,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from dupe_scorer import DupeScorer
-from dupe_explainer import explain_dupe
+from .dupe_scorer import DupeScorer
+from .dupe_explainer import explain_dupe
 
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
-VECTORS_PATH  = ROOT / "artifacts" / "product_vectors.npy"
-INDEX_PATH    = ROOT / "artifacts" / "product_index.json"
-SCHEMA_PATH   = ROOT / "artifacts" / "feature_schema.json"
-METADATA_PATH = ROOT / "data" / "processed" / "products_dataset_clean_tokens.csv"
+VECTORS_PATH = ROOT / "artifacts" / "product_vectors.npy"
+INDEX_PATH = ROOT / "artifacts" / "product_index.json"
+SCHEMA_PATH = ROOT / "artifacts" / "feature_schema.json"
+METADATA_PATH = ROOT / "data" / "processed" / "cosmetics_processed_clean_tokens.csv"
 
 
 def load_artifacts():
@@ -27,13 +27,27 @@ def load_artifacts():
 
     metadata = pd.read_csv(METADATA_PATH)
 
+    # Normalize column names to lowercase
+    metadata.columns = metadata.columns.str.lower()
+
     # product_id comes from the row index to match keys in product_index.json
     metadata["product_id"] = metadata.index.astype(str)
 
-    needed = {"product_id", "brand", "category", "price"}
+    needed = {"product_id", "brand", "price"}
     missing = needed - set(metadata.columns)
     if missing:
         raise ValueError(f"products_dataset_processed.csv missing columns: {missing}")
+
+    # Use 'action' as category if it exists, otherwise use 'label' or 'name'
+    if "action" not in metadata.columns:
+        if "label" in metadata.columns:
+            metadata["category"] = metadata["label"]
+        elif "name" in metadata.columns:
+            metadata["category"] = metadata["name"]
+        else:
+            metadata["category"] = "unknown"
+    else:
+        metadata["category"] = metadata["action"]
 
     metadata["price"] = pd.to_numeric(metadata["price"], errors="coerce")
 
@@ -71,9 +85,9 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
     if product_id not in PRODUCT_INDEX:
         raise ValueError(f"Unknown product_id: {product_id!r}")
 
-    source_row      = METADATA[METADATA["product_id"] == product_id].iloc[0]
+    source_row = METADATA[METADATA["product_id"] == product_id].iloc[0]
     source_category = source_row["category"]
-    source_price    = source_row["price"]
+    source_price = source_row["price"]
 
     candidates = METADATA[
         (METADATA["product_id"] != product_id)
@@ -86,8 +100,17 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
 
     if candidates.empty:
         return pd.DataFrame(
-            columns=["product_id", "product_name", "brand", "category", "price",
-                     "dupe_score", "cosine_sim", "price_score", "ingredient_group_score"]
+            columns=[
+                "product_id",
+                "product_name",
+                "brand",
+                "category",
+                "price",
+                "dupe_score",
+                "cosine_sim",
+                "price_score",
+                "ingredient_group_score",
+            ]
         )
 
     scored = SCORER.score(
@@ -99,15 +122,23 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
 
     results = candidates.merge(scored, on="product_id", how="inner")
     results = (
-        results
-        .sort_values("dupe_score", ascending=False)
+        results.sort_values("dupe_score", ascending=False)
         .head(top_n)
         .reset_index(drop=True)
     )
 
     results = results[
-        ["product_id", "product_name", "brand", "category", "price",
-         "dupe_score", "cosine_sim", "price_score", "ingredient_group_score"]
+        [
+            "product_id",
+            "product_name",
+            "brand",
+            "category",
+            "price",
+            "dupe_score",
+            "cosine_sim",
+            "price_score",
+            "ingredient_group_score",
+        ]
     ]
 
     if explain:
@@ -119,7 +150,7 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
 
 
 if __name__ == "__main__":
-    demo_id  = next(iter(PRODUCT_INDEX))
+    demo_id = next(iter(PRODUCT_INDEX))
     demo_row = METADATA[METADATA["product_id"] == demo_id].iloc[0]
 
     print("Finding dupes for:")

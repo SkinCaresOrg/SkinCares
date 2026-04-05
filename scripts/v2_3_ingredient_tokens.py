@@ -9,8 +9,6 @@ from v2_utils import (
     load_cosing_ingredients,
     run_pipeline2,
     CANON_RULES_SMALL_COMPILED,
-    smart_split_ingredients,   
-    apply_fuzzy,               
 )
 
 

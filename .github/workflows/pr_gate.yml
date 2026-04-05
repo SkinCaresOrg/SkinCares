@@ -28,6 +28,9 @@ jobs:
     name: Test Python ${{ matrix.python }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    env:
+      DATABASE_URL: sqlite:///./ci_auth_test.db
+      SECRET_KEY: ci-test-secret-key
     strategy:
       fail-fast: false
       max-parallel: 20 # Usage limits: https://docs.github.com/en/actions/learn-github-actions/usage-limits-billing-and-administration

@@ -1,4 +1,8 @@
+import { OnboardingProfile } from "./types";
+
 const WISHLIST_KEY = "skincares_wishlist";
+const USER_ID_KEY = "skincares_user_id";
+const USER_PROFILE_KEY = "skincares_user_profile";
 
 export function getWishlist(): number[] {
   try {
@@ -22,13 +26,30 @@ export function isInWishlist(productId: number): boolean {
 }
 
 export function getUserId(): string | null {
-  return localStorage.getItem("skincares_user_id");
+  return localStorage.getItem(USER_ID_KEY);
 }
 
 export function setUserId(id: string): void {
-  localStorage.setItem("skincares_user_id", id);
+  localStorage.setItem(USER_ID_KEY, id);
 }
 
 export function clearUserId(): void {
-  localStorage.removeItem("skincares_user_id");
+  localStorage.removeItem(USER_ID_KEY);
+}
+
+export function getUserProfile(): OnboardingProfile | null {
+  try {
+    const data = localStorage.getItem(USER_PROFILE_KEY);
+    return data ? JSON.parse(data) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setUserProfile(profile: OnboardingProfile): void {
+  localStorage.setItem(USER_PROFILE_KEY, JSON.stringify(profile));
+}
+
+export function clearUserProfile(): void {
+  localStorage.removeItem(USER_PROFILE_KEY);
 }

@@ -666,12 +666,17 @@ def submit_feedback(payload: FeedbackRequest) -> FeedbackResponse:
             product_index = {p.product_id: i for i, p in enumerate(PRODUCTS.values())}
             vec = get_product_vector_safe(payload.product_id, product_index)
             if vec is not None:
+                # Include reason_tags for richer learning signal
+                reasons = payload.reason_tags or []
+                if payload.free_text:
+                    reasons = reasons + [payload.free_text]
+                
                 if payload.reaction == "like":
-                    user_state.add_liked(vec)
+                    user_state.add_liked(vec, reasons=reasons if reasons else None)
                 elif payload.reaction == "dislike":
-                    user_state.add_disliked(vec)
+                    user_state.add_disliked(vec, reasons=reasons if reasons else None)
                 elif payload.reaction == "irritation":
-                    user_state.add_irritation(vec)
+                    user_state.add_irritation(vec, reasons=reasons if reasons else None)
     except Exception as e:
         print(f"Warning: Could not update ML model state: {e}")
 

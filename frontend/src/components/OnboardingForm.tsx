@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { submitOnboarding } from "@/lib/api";
-import { setUserId } from "@/lib/wishlist";
+import { setUserId, setUserProfile } from "@/lib/wishlist";
 import { OnboardingProfile, SkinType, SensitivityLevel, PriceRange, RoutineSize, Category, CATEGORIES, CATEGORY_LABELS } from "@/lib/types";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
@@ -97,6 +97,7 @@ const OnboardingForm = () => {
     setSubmitting(true);
     const res = await submitOnboarding(profile);
     setUserId(res.user_id);
+    setUserProfile(profile);
     navigate("/recommendations");
   };
 

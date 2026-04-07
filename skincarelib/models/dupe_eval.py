@@ -45,9 +45,9 @@ def load_benchmark(path):
 
 def write_template(product_ids, path="benchmark_template.csv", n=20):
     """Sample n products at random and write an empty benchmark CSV to label."""
-    rng    = np.random.default_rng(42)
+    rng = np.random.default_rng(42)
     sample = rng.choice(product_ids, size=min(n, len(product_ids)), replace=False)
-    rows   = [
+    rows = [
         {"query_product_id": pid, "relevant_product_id": "", "relevance": ""}
         for pid in sample
     ]
@@ -71,10 +71,7 @@ def ndcg_at_k(retrieved, relevant, k):
         for rank, pid in enumerate(retrieved[:k], start=1)
     )
     ideal = sorted(relevant.values(), reverse=True)
-    idcg  = sum(
-        rel / math.log2(rank + 1)
-        for rank, rel in enumerate(ideal[:k], start=1)
-    )
+    idcg = sum(rel / math.log2(rank + 1) for rank, rel in enumerate(ideal[:k], start=1))
     return dcg / idcg if idcg > 0 else 0.0
 
 
@@ -83,24 +80,26 @@ def evaluate(benchmark, k_values=(3, 5, 10), find_dupes_kwargs=None):
     from dupe_finder import find_dupes
 
     kwargs = find_dupes_kwargs or {}
-    max_k  = max(k_values)
-    rows   = []
+    max_k = max(k_values)
+    rows = []
 
     for query_id, relevant in benchmark.items():
         try:
-            results   = find_dupes(query_id, top_n=max_k, explain=False, **kwargs)
+            results = find_dupes(query_id, top_n=max_k, explain=False, **kwargs)
             retrieved = results["product_id"].tolist()
         except ValueError:
             print(f"  [skip] {query_id} not in product index", file=sys.stderr)
             continue
 
         for k in k_values:
-            rows.append({
-                "query_id":    query_id,
-                "k":           k,
-                "precision@k": precision_at_k(retrieved, relevant, k),
-                "ndcg@k":      ndcg_at_k(retrieved, relevant, k),
-            })
+            rows.append(
+                {
+                    "query_id": query_id,
+                    "k": k,
+                    "precision@k": precision_at_k(retrieved, relevant, k),
+                    "ndcg@k": ndcg_at_k(retrieved, relevant, k),
+                }
+            )
 
     if not rows:
         print("No results — check that benchmark product IDs exist in the index.")
@@ -127,6 +126,7 @@ if __name__ == "__main__":
 
     if args.template:
         from dupe_finder import PRODUCT_INDEX
+
         write_template(list(PRODUCT_INDEX.keys()))
         sys.exit(0)
 

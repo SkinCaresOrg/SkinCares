@@ -1,5 +1,6 @@
 import os
 import re
+from unicodedata import category
 import requests
 from typing import Optional, Dict, Any
 
@@ -11,6 +12,8 @@ if "product_name" not in METADATA.columns and "name" in METADATA.columns:
 
 # Initialize OpenAI client lazily (only when needed)
 _client = None
+
+last_intent = None
 
 def _find_product_id(product_name: str):
     product_name = product_name.lower().strip()
@@ -107,6 +110,15 @@ def query_ollama(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
 
 def handle_chat(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
     msg_lower = message.lower().strip()
+    global last_intent
+    # ✅ handle short confirmations
+    if msg_lower in ["yes", "yeah", "y", "ok", "sure"]:
+        if last_intent == "recommend":
+            last_intent = "recommend"   # 🔥 keep it alive
+            return "Great 🙂 What category are you interested in? (moisturizer, cleanser, serum)"
+    if any(greet in msg_lower for greet in ["hi", "hello", "hey"]):
+        last_intent = "greeting"
+        return _smart_fallback(message, profile)
 
     # 1. HARD RULES 
     # meaningless input
@@ -130,12 +142,56 @@ def handle_chat(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
     
     # 2. INTENT DETECTION
     intent = detect_intent(message)
+    if intent in ["recommend", "dupe", "info"]:
+        last_intent = intent
 
     if intent == "dupe":
         return handle_dupe(message, profile)
 
-    elif intent == "recommend" or "should i use" in msg_lower:
+    elif intent == "recommend" or last_intent == "recommend":
+
+       
+        if any(cat in msg_lower for cat in ["moisturizer", "cleanser", "serum"]):
+            category = next(cat for cat in ["moisturizer", "cleanser", "serum"] if cat in msg_lower)
+
+            skin_type = _get_profile_field(profile, "skin_type", "your")
+
+            name_col = "product_name" if "product_name" in METADATA.columns else "name"
+
+            skin_filters = []
+
+            if "oily" in msg_lower:
+                skin_filters = ["oil", "gel", "foam", "salicylic"]
+            elif "dry" in msg_lower:
+                skin_filters = ["hydrating", "cream", "milk", "barrier"]
+            elif "acne" in msg_lower:
+                skin_filters = ["bha", "salicylic", "acne"]
+
+            def score(row):
+                text = f"{row[name_col]} {row['brand']}".lower()
+                
+                base = category in text
+                
+                skin_bonus = sum(f in text for f in skin_filters)
+
+                return base * 2 + skin_bonus
+
+            METADATA["rec_score"] = METADATA.apply(score, axis=1)
+
+            results = METADATA.sort_values("rec_score", ascending=False).head(3)
+
+            if results.empty:
+                return f"I couldn't find {category} recommendations 😕"
+
+            response = f"Here are some {category} recommendations for {skin_type} skin:\n"
+            for _, row in results.iterrows():
+                response += f"- {row[name_col]} by {row['brand']} (${row['price']})\n"
+
+            return response
+
         return handle_recommend(message, profile)
+    
+
 
     elif intent == "info":
         return handle_info(message, profile)

@@ -19,15 +19,29 @@ const CATEGORY_GRADIENTS: Record<Category, string> = {
 };
 
 const ProductCard = ({ product, onClick, explanation, score, scoreLabel }: ProductCardProps) => {
+  const hasImage = product.image_url && product.image_url.trim().length > 0;
+
   return (
     <button
       onClick={() => onClick(product)}
       className="group flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-card text-left shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/30"
     >
-      <div className={`relative flex h-44 items-center justify-center bg-gradient-to-br ${CATEGORY_GRADIENTS[product.category]}`}>
-        <span className="font-display text-3xl font-bold text-foreground/10">
-          {CATEGORY_LABELS[product.category]}
-        </span>
+      <div className={`relative flex h-44 items-center justify-center overflow-hidden ${hasImage ? "" : `bg-gradient-to-br ${CATEGORY_GRADIENTS[product.category]}`}`}>
+        {hasImage ? (
+          <img
+            src={product.image_url}
+            alt={product.product_name}
+            className="h-full w-full object-cover object-center"
+            onError={(e) => {
+              // Fallback to gradient if image fails to load
+              (e.target as HTMLImageElement).style.display = "none";
+            }}
+          />
+        ) : (
+          <span className="font-display text-3xl font-bold text-foreground/10">
+            {CATEGORY_LABELS[product.category]}
+          </span>
+        )}
         <div className="absolute right-3 top-3">
           <WishlistButton productId={product.product_id} />
         </div>

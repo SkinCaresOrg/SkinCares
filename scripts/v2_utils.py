@@ -1,28 +1,31 @@
 import re
 import unicodedata
 import pandas as pd
-from collections import Counter
 from typing import Optional, List, Tuple, Pattern
 from rapidfuzz import process, fuzz
+
 
 def load_csv(path: str) -> pd.DataFrame:
     return pd.read_csv(path)
 
-def add_price_column(products_df: pd.DataFrame, prices_df: pd.DataFrame) -> pd.DataFrame:
+
+def add_price_column(
+    products_df: pd.DataFrame, prices_df: pd.DataFrame
+) -> pd.DataFrame:
     # drop duplicates in prices to ensure we have only one price per product
-    prices = prices_df[['brand', 'product_name', 'price']].drop_duplicates(
-        subset=['brand', 'product_name'],
-        keep='first'
+    prices = prices_df[["brand", "product_name", "price"]].drop_duplicates(
+        subset=["brand", "product_name"], keep="first"
     )
 
     merged = products_df.merge(
         prices,
-        on=['brand', 'product_name'],
-        how='left',
-        validate='many_to_one' #there may be duplicates in products, but only one price per product   
+        on=["brand", "product_name"],
+        how="left",
+        validate="many_to_one",  # there may be duplicates in products, but only one price per product
     )
 
     return merged
+
 
 def standardize_prices(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -30,14 +33,17 @@ def standardize_prices(df: pd.DataFrame) -> pd.DataFrame:
     df["product_name"] = df["product_name"].apply(normalize_text)
     return df
 
+
 def remove_duplicates(df: pd.DataFrame) -> pd.DataFrame:
-    return df.drop_duplicates(subset=['brand', 'product_name'])
+    return df.drop_duplicates(subset=["brand", "product_name"])
+
 
 def clean_ingredient(ing: Optional[str]) -> str:
     if not isinstance(ing, str) or not ing.strip():
         return ""
     parts = [p.strip().lower() for p in ing.split(",") if p.strip()]
     return ", ".join(parts)
+
 
 def normalize_text(x: Optional[str]) -> str:
     if not isinstance(x, str):
@@ -48,19 +54,20 @@ def normalize_text(x: Optional[str]) -> str:
 
 def standardize_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-    df['ingredients'] = df['ingredients'].apply(clean_ingredient)
-    df['brand'] = df['brand'].apply(normalize_text)
-    df['product_name'] = df['product_name'].apply(normalize_text)
+    df["ingredients"] = df["ingredients"].apply(clean_ingredient)
+    df["brand"] = df["brand"].apply(normalize_text)
+    df["product_name"] = df["product_name"].apply(normalize_text)
     return df
 
+
 def run_pipeline(df: pd.DataFrame, prices_df: pd.DataFrame) -> pd.DataFrame:
-    """ simple pipeline to run all steps in sequence """
+    """simple pipeline to run all steps in sequence"""
     df = standardize_data(df)
     prices_df = standardize_prices(prices_df)
     df = add_price_column(df, prices_df)
-    df = remove_duplicates(df) 
-    df = df.dropna(subset=["price"]) #just 0.08% prices missing
-    return df 
+    df = remove_duplicates(df)
+    df = df.dropna(subset=["price"])  # just 0.08% prices missing
+    return df
 
 
 def smart_split_ingredients(ingredients: Optional[str]) -> List[str]:
@@ -75,7 +82,7 @@ def smart_split_ingredients(ingredients: Optional[str]) -> List[str]:
     text = ingredients.strip().lower()
 
     # protect numeric ingredient names like "1, 2-hexanediol"
-    text = re.sub(r'(\d)\s*,\s*(\d-\w)', r'\1@@\2', text)
+    text = re.sub(r"(\d)\s*,\s*(\d-\w)", r"\1@@\2", text)
 
     parts = [p.strip() for p in text.split(",") if p.strip()]
 
@@ -93,130 +100,180 @@ def smart_split_ingredients(ingredients: Optional[str]) -> List[str]:
     return tokens
 
 
-def build_known_ingredients(df: pd.DataFrame, top_n: int = 500) -> List[str]:
+
+def load_cosing_ingredients(path: str) -> List[str]:
     """
-    Build a list of correctly-spelled ingredients by taking the
-    most frequent tokens across all products. High frequency = correct spelling.
+    Load and normalize CosIng INCI ingredient names so they match
+    the same tokenization logic used in the pipeline.
     """
-    counter = Counter()
-    for row in df["ingredients"]:
-        tokens = smart_split_ingredients(row)
-        counter.update(tokens)
-    return [ing for ing, count in counter.most_common(top_n)]
+    df = pd.read_csv(path, sep=None, engine='python')
+
+    ingredients = set()
+
+    for raw in df['INCI name'].dropna():
+        raw = str(raw)
+
+        # split complex names first
+        parts = re.split(r"\(|\)|,|/| and ", raw.lower())
+
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+
+            # apply SAME tokenization as pipeline
+            tokens = smart_split_ingredients(part)
+
+            for token in tokens:
+                token = token.strip().lower()
+
+                # cleaning
+                if len(token) < 3:
+                    continue
+
+                ingredients.add(token)
+
+    return list(ingredients)
 
 def apply_fuzzy(tokens: List[str], known_ingredients: List[str], threshold: int = 90) -> List[str]:
-    """
-    Replace likely typos by fuzzy-matching each token against a list
-    of known correctly-spelled ingredients. Replaces apply_synonyms.
-    """
+    known_set = set(known_ingredients)
+
     mapped = []
     seen = set()
 
     for t in tokens:
-        # only try to fix short tokens - long ones are complex names not typos
-        if len(t.split()) <= 3:
-            result = process.extractOne(t, known_ingredients, scorer=fuzz.ratio)
-            if result and result[1] >= threshold:
-                t = result[0]
+        if not t:
+            continue
 
-        if t and t not in seen:
-            mapped.append(t)
-            seen.add(t)
+        # if already correct, → skip fuzzy
+        if t in known_set:
+            final = t
+
+        # only fuzzy short tokens
+        elif len(t.split()) <= 3:
+            result = process.extractOne(
+                t,
+                known_ingredients,
+                scorer=fuzz.ratio,
+                score_cutoff=threshold
+            )
+            final = result[0] if result else t
+        else:
+            final = t
+
+        if final not in seen:
+            mapped.append(final)
+            seen.add(final)
 
     return mapped
 
+
 CANON_RULES_SMALL = [
-    ("water", [
-        r"^\s*aqua\s*$",
-        r"^\s*water\s*$",
-        r"^\s*eau\s*$",
-        r"aqua\s*/\s*water\s*/\s*eau",
-        r"water\s*/\s*aqua\s*/\s*eau",
-        r"water\s*\\\s*aqua\s*\\\s*eau",
-        r"aqua\s*\\\s*water\s*\\\s*eau",
-        r"water/aqua/eau",
-        r"aqua/water/eau",
-        r"water\\aqua\\eau",
-        r"water\s*\(aqua\)",
-        r"aqua\s*\(water\)",
-        r"water\s*\(aqua/eau\)",
-        r"aqua\s*\(water/eau\)",
-        r"water/eau",
-        r"water/aqua",
-        r"aqua/water",
-        r"purified\s+water",
-        r"^water\s*\(aqua$",
-        r"^eau\)$"
-    ]),
-
-    ("fragrance", [
-        r"^\s*parfum\s*$",
-        r"^\s*fragrance\s*$",
-        r"^\s*perfume\s*$",
-        r"parfum\s*\(fragrance\)",
-        r"fragrance\s*\(parfum\)",
-        r"fragrance\s*/\s*parfum",
-        r"parfum\s*/\s*fragrance",
-        r"parfum/fragrance",
-        r"fragrance/parfum",
-        r"natural\s+fragrance",
-        r"^\s*aroma\s*$",
-        r"^\s*flavor\s*$",
-        r"^\s*flavors\s*$",
-        r"flavor\s*\(aroma\)",
-        r"aroma\s*\(flavor\)",
-        r"flavor/aroma",
-        r"aroma/flavor"
-    ]),
-
-    ("vitamin e", [
-        r"\btocopherol\b",
-        r"\btocopheryl\s+acetate\b",
-        r"\btocopheryl\s+succinate\b",
-        r"\btocotrienols\b",
-        r"\btocopherol\s*\(vitamin e\)",
-        r"\btocopheryl acetate\s*\(vitamin e\)",
-        r"\btocopherol\s*\(natural vitamin e\)",
-        r"\bmixed tocopherols\b",
-        r"\btocopherols\b",
-        r"\btocopheryl\b"
-    ]),
-
-    ("mica", [
-        r"\bmica\b",
-        r"\bmica\s*\(ci\s*77019\)",
-        r"\bci\s*77019\b",
-        r"\bci\s*77019\s*\(mica\)"
-    ]),
-
-    ("titanium dioxide", [
-        r"titanium\s+dioxide",
-        r"titanium dioxide\s*\(ci\s*77891\)",
-        r"ci\s*77891\s*\(titanium dioxide\)",
-        r"ci\s*77891/titanium dioxide",
-        r"ci\s*77891\s*/\s*titanium dioxide",
-        r"\bci\s*77891\b"
-    ]),
-
-    ("iron oxides", [
-        r"iron\s+oxides",
-        r"iron oxide",
-        r"iron oxides\s*\(ci\s*77491\)?",
-        r"iron oxides\s*\(ci\s*77492\)?",
-        r"iron oxides\s*\(ci\s*77499\)?",
-        r"ci\s*77491\s*\(iron oxides\)",
-        r"ci\s*77492\s*\(iron oxides\)",
-        r"ci\s*77499\s*\(iron oxides\)",
-        r"iron oxides ci\s*77491",
-        r"ci\s*77491/iron oxides",
-        r"\bci\s*77491\b",
-        r"\bci\s*77492\b",
-        r"\bci\s*77499\b"
-    ]),
+    (
+        "water",
+        [
+            r"^\s*aqua\s*$",
+            r"^\s*water\s*$",
+            r"^\s*eau\s*$",
+            r"aqua\s*/\s*water\s*/\s*eau",
+            r"water\s*/\s*aqua\s*/\s*eau",
+            r"water\s*\\\s*aqua\s*\\\s*eau",
+            r"aqua\s*\\\s*water\s*\\\s*eau",
+            r"water/aqua/eau",
+            r"aqua/water/eau",
+            r"water\\aqua\\eau",
+            r"water\s*\(aqua\)",
+            r"aqua\s*\(water\)",
+            r"water\s*\(aqua/eau\)",
+            r"aqua\s*\(water/eau\)",
+            r"water/eau",
+            r"water/aqua",
+            r"aqua/water",
+            r"purified\s+water",
+            r"^water\s*\(aqua$",
+            r"^eau\)$",
+        ],
+    ),
+    (
+        "fragrance",
+        [
+            r"^\s*parfum\s*$",
+            r"^\s*fragrance\s*$",
+            r"^\s*perfume\s*$",
+            r"parfum\s*\(fragrance\)",
+            r"fragrance\s*\(parfum\)",
+            r"fragrance\s*/\s*parfum",
+            r"parfum\s*/\s*fragrance",
+            r"parfum/fragrance",
+            r"fragrance/parfum",
+            r"natural\s+fragrance",
+            r"^\s*aroma\s*$",
+            r"^\s*flavor\s*$",
+            r"^\s*flavors\s*$",
+            r"flavor\s*\(aroma\)",
+            r"aroma\s*\(flavor\)",
+            r"flavor/aroma",
+            r"aroma/flavor",
+        ],
+    ),
+    (
+        "vitamin e",
+        [
+            r"\btocopherol\b",
+            r"\btocopheryl\s+acetate\b",
+            r"\btocopheryl\s+succinate\b",
+            r"\btocotrienols\b",
+            r"\btocopherol\s*\(vitamin e\)",
+            r"\btocopheryl acetate\s*\(vitamin e\)",
+            r"\btocopherol\s*\(natural vitamin e\)",
+            r"\bmixed tocopherols\b",
+            r"\btocopherols\b",
+            r"\btocopheryl\b",
+        ],
+    ),
+    (
+        "mica",
+        [
+            r"\bmica\b",
+            r"\bmica\s*\(ci\s*77019\)",
+            r"\bci\s*77019\b",
+            r"\bci\s*77019\s*\(mica\)",
+        ],
+    ),
+    (
+        "titanium dioxide",
+        [
+            r"titanium\s+dioxide",
+            r"titanium dioxide\s*\(ci\s*77891\)",
+            r"ci\s*77891\s*\(titanium dioxide\)",
+            r"ci\s*77891/titanium dioxide",
+            r"ci\s*77891\s*/\s*titanium dioxide",
+            r"\bci\s*77891\b",
+        ],
+    ),
+    (
+        "iron oxides",
+        [
+            r"iron\s+oxides",
+            r"iron oxide",
+            r"iron oxides\s*\(ci\s*77491\)?",
+            r"iron oxides\s*\(ci\s*77492\)?",
+            r"iron oxides\s*\(ci\s*77499\)?",
+            r"ci\s*77491\s*\(iron oxides\)",
+            r"ci\s*77492\s*\(iron oxides\)",
+            r"ci\s*77499\s*\(iron oxides\)",
+            r"iron oxides ci\s*77491",
+            r"ci\s*77491/iron oxides",
+            r"\bci\s*77491\b",
+            r"\bci\s*77492\b",
+            r"\bci\s*77499\b",
+        ],
+    ),
 ]
+
+
 def apply_canon_to_tokens(
-    tokens: List[str],
-    canon_rules_compiled: List[Tuple[str, List[Pattern]]]
+    tokens: List[str], canon_rules_compiled: List[Tuple[str, List[Pattern]]]
 ) -> List[str]:
     """
     Apply canonical ingredient mapping to a list of tokens.
@@ -255,6 +312,7 @@ def apply_canon_to_tokens(
 
     return out
 
+
 CANON_RULES_SMALL_COMPILED: List[Tuple[str, List[Pattern]]] = [
     (canon, [re.compile(pat, flags=re.IGNORECASE) for pat in pats])
     for canon, pats in CANON_RULES_SMALL
@@ -264,7 +322,7 @@ CANON_RULES_SMALL_COMPILED: List[Tuple[str, List[Pattern]]] = [
 def run_pipeline2(
     df: pd.DataFrame,
     known_ingredients: List[str],
-    canon_rules_compiled: List[Tuple[str, List[Pattern]]]
+    canon_rules_compiled: List[Tuple[str, List[Pattern]]],
 ) -> pd.DataFrame:
     """
     Run the ingredient-standardization pipeline.

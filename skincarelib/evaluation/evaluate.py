@@ -49,9 +49,17 @@ def run_scenario(scenario: EvaluationScenario) -> Dict[str, object]:
     )
 
     budget = scenario.constraints.get("budget") if scenario.constraints else None
-    categories = scenario.constraints.get("categories") if scenario.constraints else None
+    categories = (
+        scenario.constraints.get("categories") if scenario.constraints else None
+    )
 
-    metrics = summarize_metrics(recs, budget=budget, allowed_categories=categories)
+    metrics = summarize_metrics(
+        recs,
+        budget=budget,
+        allowed_categories=categories,
+        product_vectors=vectors,
+        product_index=product_index,
+    )
 
     return {
         "scenario": scenario.name,

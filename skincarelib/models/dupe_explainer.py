@@ -1,6 +1,5 @@
 """Generates plain-English explanations for dupe finder results."""
 
-
 _COSINE_LABELS = [
     (0.90, "Excellent ingredient match"),
     (0.75, "Strong ingredient match"),
@@ -36,7 +35,7 @@ def explain_dupe(source_row, candidate_row):
     parts.append(f"{_label(cosine, _COSINE_LABELS)} (cosine {cosine:.2f}).")
 
     source_price = float(source_row.get("price", 0.0))
-    cand_price   = float(candidate_row.get("price", 0.0))
+    cand_price = float(candidate_row.get("price", 0.0))
 
     if source_price > 0 and (source_price - cand_price) >= 3.00:
         savings = (source_price - cand_price) / source_price

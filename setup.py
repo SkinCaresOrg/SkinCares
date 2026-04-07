@@ -20,6 +20,7 @@ install_requires = [
     "uvicorn>=0.29,<1",
     "python-jose[cryptography]>=3.3,<4",
     "passlib>=1.7,<2",
+    "bcrypt>=4,<5",
     "python-dotenv>=0.21,<1",
     "psycopg[binary]>=3.2,<4",
     "vowpalwabbit>=9.0,<10",

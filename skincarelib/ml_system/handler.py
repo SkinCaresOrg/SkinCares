@@ -4,11 +4,58 @@ import requests
 from typing import Optional, Dict, Any
 
 from skincarelib.ml_system.intent import detect_intent
-from skincarelib.models.dupe_finder import find_dupes
+from skincarelib.models.dupe_finder import find_dupes, METADATA
+
+if "product_name" not in METADATA.columns and "name" in METADATA.columns:
+    METADATA["product_name"] = METADATA["name"]
 
 # Initialize OpenAI client lazily (only when needed)
 _client = None
 
+def _find_product_id(product_name: str):
+    product_name = product_name.lower().strip()
+
+    name_col = "product_name" if "product_name" in METADATA.columns else "name"
+
+    STOPWORDS = {
+        "cream", "cleanser", "moisturizer", "serum",
+        "lotion", "gel", "face", "skin", "care"
+    }
+
+    query_words = [w for w in product_name.split() if w not in STOPWORDS]
+
+    def score(row):
+        text = f"{row[name_col]} {row['brand']}".lower()
+
+        matched = 0
+
+        for word in query_words:
+            if word in text:
+                matched += 1
+
+        # 🚨 HARD RULE: ALL important words must match
+        if matched < len(query_words):
+            return -100   # reject completely
+
+        score = matched * 3
+
+        if product_name in text:
+            score += 10
+
+        return score
+
+    METADATA["match_score"] = METADATA.apply(score, axis=1)
+
+    matches = METADATA.sort_values("match_score", ascending=False)
+    best = matches.iloc[0]
+
+    # 🚨 stricter threshold
+    if best["match_score"] < 6:
+        print("DEBUG rejected match:", best["match_score"])
+        return None
+
+    print("DEBUG best match:", best[name_col], "| brand:", best["brand"])
+    return best["product_id"]
 def _get_profile_field(profile, field, default):
     if not profile:
         return default
@@ -27,7 +74,6 @@ def get_openai_client():
             print("Warning: openai package not installed. Skipping OpenAI integration.")
             return None
     return _client
-
 
 def query_ollama(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
     """Query local Ollama instance running on localhost:11434"""
@@ -59,15 +105,19 @@ def query_ollama(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
         print(f"Ollama error: {e}")
         return None
 
-
 def handle_chat(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
     msg_lower = message.lower().strip()
-
 
     # 1. HARD RULES 
     # meaningless input
     if len(msg_lower) < 4 or not any(c.isalpha() for c in msg_lower):
-        return _smart_fallback(message, profile)
+        return (
+            "I didn’t quite get that 😅\n\n"
+            "You can ask things like:\n"
+            "• 'What is niacinamide?'\n"
+            "• 'Find a dupe for CeraVe cleanser'\n"
+            "• 'What should I use for acne?'\n"
+        )
 
     # Routine questions 
     if "routine" in msg_lower or "order" in msg_lower or "step" in msg_lower:
@@ -100,31 +150,108 @@ def handle_chat(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
     # 4. AI 
     return handle_ai_fallback(message, profile)
 
-def handle_dupe(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
-    """Handle product dupe finding requests."""
-    match = re.search(r"(dupe|alternative|similar).*(for|to)?\s*(.+)", message.lower())
-    if match:
-        product_name = match.group(3).strip()
-    else:
-        product_name = message.lower().strip()
+def handle_dupe(message: str, profile=None) -> str:
+    print("DEBUG message:", message)
+
+    msg = message.lower()
+
+    # 🔹 extract product name
+    product_name = (
+        msg.replace("dupe for", "")
+           .replace("dupe", "")
+           .replace("similar to", "")
+           .replace("similar", "")
+           .replace("alternative to", "")
+           .replace("alternative", "")
+           .strip()
+    )
+
+    print("DEBUG extracted name:", product_name)
 
     if not product_name:
-        return "I'd be happy to help find dupes! Please tell me which product you're looking for dupes for (e.g., 'Find me a dupe for Cetaphil')."
+        return "Tell me which product you want a dupe for 🙂"
 
     try:
-        results = find_dupes(product_name)
+        # 🔹 STEP 1: find product
+        product_id = _find_product_id(product_name)
+        print("DEBUG product_id:", product_id)
+
+        # 🔥 STEP 2: fallback → suggestions
+        if not product_id:
+            print("DEBUG: using similarity fallback")
+
+            name_col = "product_name" if "product_name" in METADATA.columns else "name"
+
+            STOPWORDS = {"cream", "cleanser", "moisturizer", "serum", "lotion", "gel"}
+
+            # 🔹 smarter scoring
+            def loose_score(row):
+                text = f"{row[name_col]} {row['brand']}".lower()
+                return sum(
+                    word in text
+                    for word in product_name.split()
+                    if word not in STOPWORDS
+                )
+
+            METADATA["loose_score"] = METADATA.apply(loose_score, axis=1)
+
+            suggestions = METADATA.sort_values("loose_score", ascending=False).head(3)
+
+            if suggestions.empty:
+                return f"I couldn't find '{product_name}' 😕"
+
+            # 🔹 extract meaningful keywords
+            keywords_used = [
+                w for w in product_name.split()
+                if w not in STOPWORDS
+            ]
+
+            keywords_str = ", ".join(keywords_used) if keywords_used else product_name
+
+            # 🔹 category hint
+            if "cream" in product_name:
+                category_hint = "creams"
+            elif "cleanser" in product_name:
+                category_hint = "cleansers"
+            elif "serum" in product_name:
+                category_hint = "serums"
+            else:
+                category_hint = "products"
+
+            # 🔹 response
+            response = f"I couldn't find '{product_name}' in our dataset 😕\n"
+            response += f"But here are similar {category_hint} based on keywords like {keywords_str}:\n"
+
+            for _, row in suggestions.iterrows():
+                response += f"- {row[name_col]} by {row['brand']} (${row['price']})\n"
+
+            return response
+
+        # 🔹 STEP 3: get source product
+        source_row = METADATA[METADATA["product_id"] == product_id].iloc[0]
+        print("DEBUG source:", source_row["product_name"])
+
+        # 🔹 STEP 4: find dupes
+        results = find_dupes(product_id)
+
+        if "product_name" not in results.columns and "name" in results.columns:
+            results = results.rename(columns={"name": "product_name"})
+
+        print("DEBUG results empty:", results.empty)
 
         if results.empty:
-            return f"I couldn't find cheaper alternatives for {product_name} in our database. Try browsing our products for similar items!"
+            return "No cheaper dupes found 😢"
 
-        response = f"Great! Here are some possible dupes for {product_name}:\n"
-        for idx, row in results.head(3).iterrows():
-            response += f"- {row['name']} by {row['brand']} (${row['price']})\n"
+        # 🔹 STEP 5: build response
+        response = f"Here are dupes for {product_name}:\n"
+        for _, row in results.head(3).iterrows():
+            response += f"- {row['product_name']} by {row['brand']} (${row['price']})\n"
 
         return response
-    except Exception:
-        return "I couldn't find dupes for that product. Please try browsing our products or asking for recommendations instead!"
 
+    except Exception as e:
+        print("DEBUG ERROR:", e)
+        return "Something went wrong while finding dupes"
 
 def handle_recommend(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
     skin_type = _get_profile_field(profile, "skin_type", "your")
@@ -135,7 +262,6 @@ def handle_recommend(message: str, profile: Optional[Dict[str, Any]] = None) -> 
     response += "Would you like recommendations for a specific category like moisturizer, cleanser, or treatment?"
 
     return response
-
 
 def handle_info(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
     """Handle ingredient and skincare information requests."""
@@ -183,7 +309,6 @@ def handle_info(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
         "in my database, but I'd recommend checking product labels and consulting with a dermatologist for personalized advice."
     )
 
-
 def handle_ai_fallback(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
     """Handle general skincare questions using Ollama (local) or OpenAI. Last resort only."""
     ollama_response = query_ollama(message, profile)
@@ -216,7 +341,6 @@ def handle_ai_fallback(message: str, profile: Optional[Dict[str, Any]] = None) -
             print(f"OpenAI error: {e}")
 
     return _smart_fallback(message, profile)
-
 
 def _smart_fallback(message: str, profile: Optional[Any] = None) -> str:
     """Smart fallback responses based on keywords and patterns, personalized with user profile"""

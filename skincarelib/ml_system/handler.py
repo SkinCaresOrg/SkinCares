@@ -15,6 +15,7 @@ def get_openai_client():
     if _client is None and os.getenv("OPENAI_API_KEY"):
         try:
             from openai import OpenAI
+
             _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         except ImportError:
             print("Warning: openai package not installed. Skipping OpenAI integration.")

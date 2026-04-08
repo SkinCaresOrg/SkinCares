@@ -19,7 +19,11 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-import vowpalwabbit
+
+try:
+    import vowpalwabbit
+except ImportError:
+    vowpalwabbit = None
 
 
 class OnlineLearner:
@@ -58,6 +62,10 @@ class OnlineLearner:
 
     def _init_vw(self):
         """Initialize or load Vowpal Wabbit model."""
+        if vowpalwabbit is None:
+            raise ImportError(
+                "vowpalwabbit is required for OnlineLearner. Install with: pip install vowpalwabbit"
+            )
         if self.model_file is None:
             self.model_file = tempfile.NamedTemporaryFile(delete=False, suffix=".vw")
             self.model_file.close()

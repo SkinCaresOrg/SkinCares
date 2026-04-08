@@ -5,6 +5,12 @@ from typing import List, Dict, Optional
 import numpy as np
 
 from skincarelib.ml_system.feedback_lr_model import FeedbackLogisticRegression
+from skincarelib.ml_system.ml_feedback_model import (
+    LogisticRegressionFeedback,
+    RandomForestFeedback,
+    GradientBoostingFeedback,
+    ContextualBanditFeedback,
+)
 
 
 def find_project_root() -> Path:
@@ -71,6 +77,29 @@ class UserState:
         self.irritation_reasons.extend(reasons)
         self.interactions += 1
         self.irritation_count += 1
+
+    def get_training_data(self):
+        if (
+            not self.liked_vectors
+            and not self.disliked_vectors
+            and not self.irritation_vectors
+        ):
+            return None
+        X_list, y_list = [], []
+        for vec in self.liked_vectors:
+            X_list.append(vec)
+            y_list.append(1)
+        for vec in self.disliked_vectors:
+            X_list.append(vec)
+            y_list.append(0)
+        for vec in self.irritation_vectors:
+            X_list.append(vec)
+            y_list.append(0)
+        X = np.array(X_list, dtype=np.float32)
+        y = np.array(y_list, dtype=np.int32)
+        if len(X) < 2:
+            return None
+        return X, y
 
 
 def update_user_state(
@@ -219,3 +248,17 @@ def compute_user_vector_lr(
         return compute_user_vector(user, schema)
 
     return user_vec
+
+
+def create_feedback_model(model_type: str, dim: int):
+    """Factory that returns a feedback model for the given model_type."""
+    if model_type == "logistic":
+        return LogisticRegressionFeedback()
+    elif model_type == "random_forest":
+        return RandomForestFeedback()
+    elif model_type == "gradient_boosting":
+        return GradientBoostingFeedback()
+    elif model_type == "contextual_bandit":
+        return ContextualBanditFeedback(dim=dim)
+    else:
+        raise ValueError(f"Unknown model_type: {model_type}")

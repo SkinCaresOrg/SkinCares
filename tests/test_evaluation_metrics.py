@@ -10,6 +10,7 @@ from skincarelib.evaluation.metrics import (
     constraint_compliance_rate,
     intra_list_diversity,
 )
+from skincarelib.ml_system.reranker import rerank_candidates
 
 
 def test_constraint_compliance_rate():
@@ -106,3 +107,49 @@ def test_catalog_coverage_deduplicates():
 
 def test_catalog_coverage_zero_catalog():
     assert catalog_coverage(["p1"], total_catalog_size=0) == pytest.approx(0.0)
+
+
+def test_mmr_changes_ranking_vs_pure_relevance():
+    # user_vector tilted slightly toward y so p3 has a tiny relevance edge over p2 post-MMR.
+    # p1 and p2 are identical (both point to x) → p2 adds nothing new after p1 is selected.
+    # p3 points to y → zero similarity to p1, so MMR diversity penalty is 0.
+    #
+    # Pure relevance (lambda=1.0): p1, p2, p3  (sorted by cos sim to user)
+    # MMR (lambda=0.5) rank-2 scores after selecting p1:
+    #   p2: 0.5 * rel(p2) - 0.5 * sim(p2, p1) = 0.5*1 - 0.5*1 = 0.0
+    #   p3: 0.5 * rel(p3) - 0.5 * sim(p3, p1) = 0.5*ε - 0.5*0 = +ε  → p3 wins
+    vectors = np.array(
+        [
+            [1.0, 0.0],  # p1 — highest relevance, points along user direction
+            [1.0, 0.0],  # p2 — identical to p1, fully redundant
+            [0.0, 1.0],  # p3 — orthogonal to p1, low but non-zero relevance
+        ],
+        dtype=np.float32,
+    )
+    product_index = {"p1": 0, "p2": 1, "p3": 2}
+    # Small y-component gives p3 a non-zero relevance score to break the MMR tie
+    user_vector = np.array([1.0, 0.01], dtype=np.float32)
+
+    pure_relevance = rerank_candidates(
+        user_vector,
+        ["p1", "p2", "p3"],
+        vectors,
+        product_index,
+        top_n=3,
+        lambda_mult=1.0,
+    )
+    mmr_ranking = rerank_candidates(
+        user_vector,
+        ["p1", "p2", "p3"],
+        vectors,
+        product_index,
+        top_n=3,
+        lambda_mult=0.5,
+    )
+
+    # Pure relevance: p1 and p2 tied at top, p3 last
+    assert pure_relevance[0] in ("p1", "p2")
+    assert pure_relevance[2] == "p3"
+    # MMR: first pick unchanged; p3 beats the redundant p2 at rank 2
+    assert mmr_ranking[0] in ("p1", "p2")
+    assert mmr_ranking[1] == "p3"

@@ -1,7 +1,6 @@
 import re
 import unicodedata
 import pandas as pd
-from collections import Counter
 from typing import Optional, List, Tuple, Pattern
 from rapidfuzz import process, fuzz
 
@@ -101,38 +100,70 @@ def smart_split_ingredients(ingredients: Optional[str]) -> List[str]:
     return tokens
 
 
-def build_known_ingredients(df: pd.DataFrame, top_n: int = 500) -> List[str]:
-    """
-    Build a list of correctly-spelled ingredients by taking the
-    most frequent tokens across all products. High frequency = correct spelling.
-    """
-    counter = Counter()
-    for row in df["ingredients"]:
-        tokens = smart_split_ingredients(row)
-        counter.update(tokens)
-    return [ing for ing, count in counter.most_common(top_n)]
 
+def load_cosing_ingredients(path: str) -> List[str]:
+    """
+    Load and normalize CosIng INCI ingredient names so they match
+    the same tokenization logic used in the pipeline.
+    """
+    df = pd.read_csv(path, sep=None, engine='python')
 
-def apply_fuzzy(
-    tokens: List[str], known_ingredients: List[str], threshold: int = 90
-) -> List[str]:
-    """
-    Replace likely typos by fuzzy-matching each token against a list
-    of known correctly-spelled ingredients. Replaces apply_synonyms.
-    """
+    ingredients = set()
+
+    for raw in df['INCI name'].dropna():
+        raw = str(raw)
+
+        # split complex names first
+        parts = re.split(r"\(|\)|,|/| and ", raw.lower())
+
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+
+            # apply SAME tokenization as pipeline
+            tokens = smart_split_ingredients(part)
+
+            for token in tokens:
+                token = token.strip().lower()
+
+                # cleaning
+                if len(token) < 3:
+                    continue
+
+                ingredients.add(token)
+
+    return list(ingredients)
+
+def apply_fuzzy(tokens: List[str], known_ingredients: List[str], threshold: int = 90) -> List[str]:
+    known_set = set(known_ingredients)
+
     mapped = []
     seen = set()
 
     for t in tokens:
-        # only try to fix short tokens - long ones are complex names not typos
-        if len(t.split()) <= 3:
-            result = process.extractOne(t, known_ingredients, scorer=fuzz.ratio)
-            if result and result[1] >= threshold:
-                t = result[0]
+        if not t:
+            continue
 
-        if t and t not in seen:
-            mapped.append(t)
-            seen.add(t)
+        # if already correct, → skip fuzzy
+        if t in known_set:
+            final = t
+
+        # only fuzzy short tokens
+        elif len(t.split()) <= 3:
+            result = process.extractOne(
+                t,
+                known_ingredients,
+                scorer=fuzz.ratio,
+                score_cutoff=threshold
+            )
+            final = result[0] if result else t
+        else:
+            final = t
+
+        if final not in seen:
+            mapped.append(final)
+            seen.add(final)
 
     return mapped
 

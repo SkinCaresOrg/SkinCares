@@ -1,6 +1,4 @@
 import os
-import re
-from unicodedata import category
 import requests
 from typing import Optional, Dict, Any
 
@@ -54,10 +52,10 @@ def _find_product_id(product_name: str):
 
     # 🚨 stricter threshold
     if best["match_score"] < 6:
-        print("DEBUG rejected match:", best["match_score"])
+        
         return None
 
-    print("DEBUG best match:", best[name_col], "| brand:", best["brand"])
+    
     return best["product_id"]
 def _get_profile_field(profile, field, default):
     if not profile:
@@ -207,7 +205,7 @@ def handle_chat(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
     return handle_ai_fallback(message, profile)
 
 def handle_dupe(message: str, profile=None) -> str:
-    print("DEBUG message:", message)
+    
 
     msg = message.lower()
 
@@ -222,7 +220,7 @@ def handle_dupe(message: str, profile=None) -> str:
            .strip()
     )
 
-    print("DEBUG extracted name:", product_name)
+    
 
     if not product_name:
         return "Tell me which product you want a dupe for 🙂"
@@ -230,11 +228,11 @@ def handle_dupe(message: str, profile=None) -> str:
     try:
         # 🔹 STEP 1: find product
         product_id = _find_product_id(product_name)
-        print("DEBUG product_id:", product_id)
+        
 
         # 🔥 STEP 2: fallback → suggestions
         if not product_id:
-            print("DEBUG: using similarity fallback")
+            
 
             name_col = "product_name" if "product_name" in METADATA.columns else "name"
 
@@ -285,7 +283,7 @@ def handle_dupe(message: str, profile=None) -> str:
 
         # 🔹 STEP 3: get source product
         source_row = METADATA[METADATA["product_id"] == product_id].iloc[0]
-        print("DEBUG source:", source_row["product_name"])
+        
 
         # 🔹 STEP 4: find dupes
         results = find_dupes(product_id)
@@ -293,7 +291,7 @@ def handle_dupe(message: str, profile=None) -> str:
         if "product_name" not in results.columns and "name" in results.columns:
             results = results.rename(columns={"name": "product_name"})
 
-        print("DEBUG results empty:", results.empty)
+        
 
         if results.empty:
             return "No cheaper dupes found 😢"
@@ -306,7 +304,7 @@ def handle_dupe(message: str, profile=None) -> str:
         return response
 
     except Exception as e:
-        print("DEBUG ERROR:", e)
+        
         return "Something went wrong while finding dupes"
 
 def handle_recommend(message: str, profile: Optional[Dict[str, Any]] = None) -> str:

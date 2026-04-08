@@ -13,6 +13,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from skincarelib.ml_system.online_learning import vowpalwabbit
+
+if vowpalwabbit is None:
+    pytestmark = pytest.mark.skip(reason="vowpalwabbit is not installed")
+
 from skincarelib.ml_system.online_learning import (
     OnlineLearner,
     ContextualBanditStrategy,

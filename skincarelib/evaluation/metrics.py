@@ -82,7 +82,12 @@ def intra_list_diversity(
     sim_matrix = sklearn_cosine(vecs)
     n = len(pids)
     upper_triangle = [sim_matrix[i, j] for i in range(n) for j in range(i + 1, n)]
-    return float(1.0 - np.mean(upper_triangle))
+    if not upper_triangle:
+        return None
+    mean_sim = np.nanmean(upper_triangle)
+    if np.isnan(mean_sim):
+        return None
+    return float(1.0 - mean_sim)
 
 
 def brand_diversity_ratio(recs: pd.DataFrame) -> Optional[float]:

@@ -38,8 +38,9 @@ def load_metadata(root) -> pd.DataFrame:
 
 def load_tokens(root) -> pd.DataFrame:
     path = root / "data" / "processed" / "products_tokens.csv"
+    if not path.exists():
+        return pd.DataFrame(columns=["product_id", "ingredient_tokens"])
     df = pd.read_csv(path)
-    # Ensure product_id is string for consistency
     df["product_id"] = df["product_id"].astype(str)
     return df
 

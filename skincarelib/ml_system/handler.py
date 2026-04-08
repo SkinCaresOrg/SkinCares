@@ -281,8 +281,8 @@ def handle_dupe(message: str, profile=None) -> str:
 
             return response
 
-        # 🔹 STEP 3: get source product
-        source_row = METADATA[METADATA["product_id"] == product_id].iloc[0]
+        
+        
         
 
         # 🔹 STEP 4: find dupes
@@ -303,7 +303,7 @@ def handle_dupe(message: str, profile=None) -> str:
 
         return response
 
-    except Exception as e:
+    except Exception:
         
         return "Something went wrong while finding dupes"
 

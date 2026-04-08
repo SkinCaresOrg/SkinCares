@@ -7,6 +7,7 @@ import pytest
 
 from skincarelib.ml_system.ml_feedback_model import (
     UserState,
+    VW_AVAILABLE,
     update_user_state,
     compute_user_vector,
     LogisticRegressionFeedback,
@@ -204,6 +205,7 @@ class TestGradientBoostingFeedback:
         assert all(i >= 0 for i in importance)
 
 
+@pytest.mark.skipif(not VW_AVAILABLE, reason="vowpalwabbit is not installed")
 class TestContextualBanditFeedback:
     """Tests for ContextualBanditFeedback model."""
 

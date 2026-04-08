@@ -40,48 +40,19 @@ Open docs:
 - `http://localhost:8000/docs`
 - `http://localhost:8000/openapi.json`
 
-## Hosted deployment (no server): Vercel + Render
+## Auth/API environment variables
 
-This repo is ready for:
-- Frontend on Vercel from `frontend/`
-- API on Render from repo root using `render.yaml`
+When auth is enabled, backend startup requires:
+- `SECRET_KEY`
+- Database URL via `DATABASE_URL`
 
-### Render (API)
+If you created Postgres through Vercel Integrations, Vercel usually injects one of:
+- `POSTGRES_URL`
+- `POSTGRES_PRISMA_URL`
+- `POSTGRES_URL_NON_POOLING`
 
-1. Connect this GitHub repository in Render.
-2. Create a Web Service using `render.yaml`.
-3. Confirm:
-	- Build command: `pip install -e .[api]`
-	- Start command: `uvicorn deployment.api:app --host 0.0.0.0 --port $PORT`
-4. Set `CORS_ALLOW_ORIGINS` to your frontend domains.
+For a backend running on Render, copy the connection string value into Render env vars
+as `DATABASE_URL` (or set one of the `POSTGRES_*` vars above).
 
-### Vercel (Frontend)
-
-1. Import the same repository in Vercel.
-2. Set Root Directory to `frontend`.
-3. Add environment variable:
-	- `VITE_API_BASE_URL=https://api.skinscares.es/api`
-4. Deploy.
-
-### GoDaddy DNS
-
-- Point `@` and `www` to Vercel (values shown in Vercel domains setup).
-- Point `api` to your Render backend host (CNAME).
-
-## Continuous deployment from `main`
-
-This repo includes `.github/workflows/cd_main.yml` to auto-deploy on every push to `main`.
-
-### Required GitHub repository secrets
-
-- `VERCEL_DEPLOY_HOOK_URL`
-- `RENDER_DEPLOY_HOOK_URL`
-
-### Where to get deploy hook URLs
-
-- Vercel: Project -> Settings -> Git -> Deploy Hooks
-- Render: Service -> Settings -> Deploy Hook
-
-After adding both secrets, every push to `main` triggers:
-1. Frontend deploy on Vercel
-2. API deploy on Render
+Also set CORS on Render:
+- `CORS_ALLOW_ORIGINS=https://skinscares.es,https://www.skinscares.es`

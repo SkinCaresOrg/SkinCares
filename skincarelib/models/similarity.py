@@ -28,9 +28,9 @@ def _build_default_weights():
     price_dim = schema["price_index"]
 
     w = np.ones(n, dtype=np.float32)
-    w[groups_start:groups_end] = 3.0   # group dims × 3
-    w[cat_start:cat_end] = 5.0         # category dims × 5
-    w[price_dim] = 0.5                 # price is a soft signal
+    w[groups_start:groups_end] = 3.0  # group dims × 3
+    w[cat_start:cat_end] = 5.0  # category dims × 5
+    w[price_dim] = 0.5  # price is a soft signal
     return w
 
 
@@ -76,7 +76,7 @@ def score_similarity(user_vector, product_vectors, weights=None, dims_mask=None)
 
     # Weighted scaling: multiply by sqrt(w) on both sides so the weighted dot product is sum(u_i * v_i * w_i)
     w_sqrt = np.sqrt(weights)
-    user_w = user_vector * w_sqrt          # shape (D,)
+    user_w = user_vector * w_sqrt  # shape (D,)
     products_w = product_vectors * w_sqrt  # shape (N, D), broadcasts
 
     sims = sklearn_cosine(user_w.reshape(1, -1), products_w).flatten()

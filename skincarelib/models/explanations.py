@@ -9,21 +9,21 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 # Human-readable labels for ingredient group names
 _GROUP_LABELS = {
-    "active":           "active",
-    "antioxidant":      "antioxidant",
-    "chelating_agent":  "chelating",
-    "colorant":         "color",
-    "emollient":        "moisturizing",
-    "exfoliant":        "exfoliating",
-    "humectant":        "hydrating",
-    "irritant_flag":    "fragrance/irritant",
-    "occlusive":        "barrier-protecting",
-    "ph_adjuster":      "pH-balancing",
-    "preservative":     "preservative",
-    "solvent":          "solvent",
-    "soothing_agent":   "soothing",
+    "active": "active",
+    "antioxidant": "antioxidant",
+    "chelating_agent": "chelating",
+    "colorant": "color",
+    "emollient": "moisturizing",
+    "exfoliant": "exfoliating",
+    "humectant": "hydrating",
+    "irritant_flag": "fragrance/irritant",
+    "occlusive": "barrier-protecting",
+    "ph_adjuster": "pH-balancing",
+    "preservative": "preservative",
+    "solvent": "solvent",
+    "soothing_agent": "soothing",
     "sunscreen_filter": "sun protection",
-    "texture_agent":    "texture",
+    "texture_agent": "texture",
 }
 
 # Module-level reverse TF-IDF vocab cache: dim index -> token name
@@ -110,10 +110,14 @@ def _get_price_tier(product_row, metadata_df):
     return "premium"
 
 
-def _build_explanation(user_vector, product_vector, product_row, metadata_df, explicit_prefs):
+def _build_explanation(
+    user_vector, product_vector, product_row, metadata_df, explicit_prefs
+):
     """Build a single explanation string for one recommended product."""
     skin_type = (explicit_prefs.get("skin_type") or "").lower().strip()
-    preferred_ings = {i.lower().strip() for i in (explicit_prefs.get("preferred_ingredients") or [])}
+    preferred_ings = {
+        i.lower().strip() for i in (explicit_prefs.get("preferred_ingredients") or [])
+    }
 
     group_overlaps = _get_group_overlap(user_vector, product_vector)
     top_groups = [g for g, _, _ in group_overlaps[:2]]
@@ -131,18 +135,26 @@ def _build_explanation(user_vector, product_vector, product_row, metadata_df, ex
     if len(top_groups) >= 2:
         g1 = _GROUP_LABELS.get(top_groups[0], top_groups[0])
         g2 = _GROUP_LABELS.get(top_groups[1], top_groups[1])
-        parts.append(f"recommended because it shares your preference for {g1} and {g2} ingredients")
+        parts.append(
+            f"recommended because it shares your preference for {g1} and {g2} ingredients"
+        )
     elif len(top_groups) == 1:
         g1 = _GROUP_LABELS.get(top_groups[0], top_groups[0])
         ing_str = shared_ings[0] if shared_ings else "key ingredients"
-        parts.append(f"recommended because it is rich in {g1} ingredients like {ing_str}")
+        parts.append(
+            f"recommended because it is rich in {g1} ingredients like {ing_str}"
+        )
     else:
-        parts.append("recommended based on overall ingredient similarity to products you liked")
+        parts.append(
+            "recommended based on overall ingredient similarity to products you liked"
+        )
 
     # Preferred ingredient call-out
     matching_pref = [i for i in shared_ings if i in preferred_ings]
     if matching_pref:
-        parts.append(f"contains {matching_pref[0]}, which matches your ingredient preferences")
+        parts.append(
+            f"contains {matching_pref[0]}, which matches your ingredient preferences"
+        )
 
     # Skin type suitability
     if skin_type in _up.SKIN_TYPE_PREFS and top_groups:
@@ -168,7 +180,9 @@ def _build_explanation(user_vector, product_vector, product_row, metadata_df, ex
     return explanation[0].upper() + explanation[1:]
 
 
-def explain_recommendations(recs_df, user_profile, metadata_df, product_vectors=None, product_index=None):
+def explain_recommendations(
+    recs_df, user_profile, metadata_df, product_vectors=None, product_index=None
+):
     """
     Add an 'explanation' column to recs_df describing why each product was recommended.
 
@@ -196,12 +210,18 @@ def explain_recommendations(recs_df, user_profile, metadata_df, product_vectors=
         if is_cold_start:
             price_val = pd.to_numeric(row.get("price"), errors="coerce")
             price_str = f" at ${price_val:.0f}" if not pd.isna(price_val) else ""
-            explanation = f"A well-regarded {row.get('category', 'product')}{price_str}."
+            explanation = (
+                f"A well-regarded {row.get('category', 'product')}{price_str}."
+            )
             explanations.append(explanation)
             continue
 
         pid = row["product_id"]
-        if product_vectors is not None and product_index is not None and pid in product_index:
+        if (
+            product_vectors is not None
+            and product_index is not None
+            and pid in product_index
+        ):
             prod_vec = product_vectors[product_index[pid]]
             explanation = _build_explanation(
                 user_vector, prod_vec, row, metadata_df, explicit_prefs

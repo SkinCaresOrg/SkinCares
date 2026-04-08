@@ -43,7 +43,9 @@ def build_clean_tokenized_ingredients(
 
 
 def run_pipeline3(
-    raw_path: str, processed_path: str = None, synonyms_path: str = "features/synonyms.json"
+    raw_path: str,
+    processed_path: str = None,
+    synonyms_path: str = "features/synonyms.json",
 ) -> pd.DataFrame:
     """
     Load -> clean/tokenize/canon -> save.

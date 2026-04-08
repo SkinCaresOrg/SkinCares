@@ -494,7 +494,7 @@ def get_recommendations(
             # Select best model based on learning stage
             model, model_name = get_best_model(user_state)
             model.fit(user_state)
-            
+
             # Build product_index mapping for safe vector lookup
             product_index = {p.product_id: i for i, p in enumerate(PRODUCTS.values())}
 
@@ -655,6 +655,6 @@ def chat(request: ChatRequest) -> ChatResponse:
     except Exception as e:
         print(f"Chat error: {e}")
         return ChatResponse(response="Sorry, I encountered an error. Please try again.")
- 
+
 
 app.include_router(auth_router, prefix="/api", tags=["auth"])

@@ -1,0 +1,50 @@
+name: CD main deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: cd-main-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy frontend and API
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+
+    steps:
+      - name: Validate deploy hook secrets
+        env:
+          VERCEL_DEPLOY_HOOK_URL: ${{ secrets['VERCEL_DEPLOY_HOOK_URL'] }}
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets['RENDER_DEPLOY_HOOK_URL'] }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${VERCEL_DEPLOY_HOOK_URL:-}" ]]; then
+            echo "Missing required secret: VERCEL_DEPLOY_HOOK_URL"
+            exit 1
+          fi
+          if [[ -z "${RENDER_DEPLOY_HOOK_URL:-}" ]]; then
+            echo "Missing required secret: RENDER_DEPLOY_HOOK_URL"
+            exit 1
+          fi
+
+      - name: Trigger Vercel deployment
+        env:
+          VERCEL_DEPLOY_HOOK_URL: ${{ secrets['VERCEL_DEPLOY_HOOK_URL'] }}
+        run: |
+          set -euo pipefail
+          echo "Triggering Vercel deploy hook..."
+          curl -fsS -X POST "$VERCEL_DEPLOY_HOOK_URL"
+
+      - name: Trigger Render deployment
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets['RENDER_DEPLOY_HOOK_URL'] }}
+        run: |
+          set -euo pipefail
+          echo "Triggering Render deploy hook..."
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"

@@ -1,5 +1,6 @@
 import csv
 from itertools import count
+import os
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
@@ -175,14 +176,27 @@ class ChatResponse(BaseModel):
 
 app = FastAPI(title="SkinCares API", version="1.0.0")
 
+DEFAULT_CORS_ALLOW_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://skinscares.es",
+    "https://www.skinscares.es",
+]
+
+raw_cors_origins = os.getenv("CORS_ALLOW_ORIGINS", "")
+cors_allow_origins = (
+    [origin.strip() for origin in raw_cors_origins.split(",") if origin.strip()]
+    if raw_cors_origins
+    else DEFAULT_CORS_ALLOW_ORIGINS
+)
+allow_all_origins = "*" in cors_allow_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # development
-        "https://skinscares.es",  # production
-        "https://www.skinscares.es",
-    ],
-    allow_credentials=True,
+    allow_origins=["*"] if allow_all_origins else cors_allow_origins,
+    allow_credentials=not allow_all_origins,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )

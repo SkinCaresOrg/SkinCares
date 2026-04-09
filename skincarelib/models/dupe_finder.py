@@ -63,7 +63,10 @@ try:
 except FileNotFoundError:
     import pandas as pd
 
-    VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA = None, None, None
+    VECTORS = {}  # instead of None
+    PRODUCT_INDEX = {}  # instead of None
+    FEATURE_SCHEMA = {}  # instead of None
+
     METADATA = pd.DataFrame(
         columns=["product_name", "name", "brand", "price", "product_id"]
     )

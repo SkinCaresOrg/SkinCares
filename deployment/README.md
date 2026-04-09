@@ -11,6 +11,18 @@ python scripts/build_artifacts.py --schema-version v1
 docker compose up --build
 ```
 
+To run only API + frontend locally:
+
+```bash
+docker compose up --build api frontend
+```
+
+Local URLs:
+- Frontend: `http://localhost:8080`
+- API docs: `http://localhost:8000/docs`
+
+The frontend container proxies `/api/*` to the API container, so app requests work at `http://localhost:8080`.
+
 If you want a one-off run without Compose:
 
 ```bash

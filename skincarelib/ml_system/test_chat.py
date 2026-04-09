@@ -2,6 +2,7 @@ from skincarelib.ml_system.handler import handle_chat
 
 chat_history = []
 
+
 def chat():
     print("Start chatting (type 'exit' to stop)\n")
 
@@ -19,5 +20,6 @@ def chat():
 
         print("Bot:", response)
         print()
+
 
 chat()

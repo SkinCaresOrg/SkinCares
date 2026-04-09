@@ -100,17 +100,16 @@ def smart_split_ingredients(ingredients: Optional[str]) -> List[str]:
     return tokens
 
 
-
 def load_cosing_ingredients(path: str) -> List[str]:
     """
     Load and normalize CosIng INCI ingredient names so they match
     the same tokenization logic used in the pipeline.
     """
-    df = pd.read_csv(path, sep=None, engine='python')
+    df = pd.read_csv(path, sep=None, engine="python")
 
     ingredients = set()
 
-    for raw in df['INCI name'].dropna():
+    for raw in df["INCI name"].dropna():
         raw = str(raw)
 
         # split complex names first
@@ -135,7 +134,10 @@ def load_cosing_ingredients(path: str) -> List[str]:
 
     return list(ingredients)
 
-def apply_fuzzy(tokens: List[str], known_ingredients: List[str], threshold: int = 90) -> List[str]:
+
+def apply_fuzzy(
+    tokens: List[str], known_ingredients: List[str], threshold: int = 90
+) -> List[str]:
     known_set = set(known_ingredients)
 
     mapped = []
@@ -152,10 +154,7 @@ def apply_fuzzy(tokens: List[str], known_ingredients: List[str], threshold: int 
         # only fuzzy short tokens
         elif len(t.split()) <= 3:
             result = process.extractOne(
-                t,
-                known_ingredients,
-                scorer=fuzz.ratio,
-                score_cutoff=threshold
+                t, known_ingredients, scorer=fuzz.ratio, score_cutoff=threshold
             )
             final = result[0] if result else t
         else:

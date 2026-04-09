@@ -1,4 +1,5 @@
 import csv
+from contextlib import asynccontextmanager
 import os
 from pathlib import Path
 import re
@@ -180,7 +181,13 @@ class ChatResponse(BaseModel):
     response: str
 
 
-app = FastAPI(title="SkinCares API", version="1.0.0")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="SkinCares API", version="1.0.0", lifespan=lifespan)
 
 DEFAULT_CORS_ALLOW_ORIGINS = [
     "http://localhost:3000",

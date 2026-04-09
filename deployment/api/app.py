@@ -1,17 +1,22 @@
 import csv
-from itertools import count
 import os
 from pathlib import Path
 import re
 from typing import Dict, List, Literal, Optional
+from uuid import uuid4
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from deployment.api.auth.routes import router as auth_router
+from deployment.api.db.init_db import init_db
+from deployment.api.db.session import get_db
+from deployment.api.persistence.models import UserFeedbackEvent, UserProfileState
 
 from skincarelib.ml_system.ml_feedback_model import (
     LogisticRegressionFeedback,
@@ -314,7 +319,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 PRODUCT_VECTORS_PATH = PROJECT_ROOT / "artifacts" / "product_vectors.npy"
 
 try:
-    PRODUCT_VECTORS = np.load(PRODUCT_VECTORS_PATH)
+    PRODUCT_VECTORS = np.load(PRODUCT_VECTORS_PATH, mmap_mode="r")
 except FileNotFoundError:
     print(f"⚠️  Warning: Product vectors not found at {PRODUCT_VECTORS_PATH}")
     PRODUCT_VECTORS = np.random.randn(len(PRODUCTS), 128).astype(np.float32)
@@ -324,8 +329,8 @@ USER_SESSIONS: Dict[str, SwipeSession] = {}
 # User ML model states for generating recommendations
 USER_STATES: Dict[str, UserState] = {}
 USER_PROFILES: Dict[str, OnboardingRequest] = {}
-USER_ID_COUNTER = count(start=1)
 USER_FEEDBACK: List[FeedbackRequest] = []
+DB_INITIALIZED = False
 
 
 def get_user_session(user_id: str) -> SwipeSession:
@@ -384,6 +389,93 @@ def get_user_state(user_id: str) -> UserState:
     if user_id not in USER_STATES:
         USER_STATES[user_id] = UserState(dim=PRODUCT_VECTORS.shape[1])
     return USER_STATES[user_id]
+
+
+def _build_product_index() -> Dict[int, int]:
+    return {p.product_id: i for i, p in enumerate(PRODUCTS.values())}
+
+
+def _ensure_db_initialized() -> None:
+    global DB_INITIALIZED
+    if DB_INITIALIZED:
+        return
+    init_db()
+    DB_INITIALIZED = True
+
+
+def _generate_user_id() -> str:
+    return f"user_{uuid4().hex[:12]}"
+
+
+def _load_profile_from_db(db: Session, user_id: str) -> Optional[OnboardingRequest]:
+    _ensure_db_initialized()
+    profile_row = (
+        db.query(UserProfileState).filter(UserProfileState.user_id == user_id).first()
+    )
+    if profile_row is None:
+        return None
+    return OnboardingRequest.model_validate(profile_row.profile)
+
+
+def _save_profile_to_db(db: Session, user_id: str, payload: OnboardingRequest) -> None:
+    _ensure_db_initialized()
+    profile_row = (
+        db.query(UserProfileState).filter(UserProfileState.user_id == user_id).first()
+    )
+    profile_data = payload.model_dump()
+
+    if profile_row is None:
+        profile_row = UserProfileState(user_id=user_id, profile=profile_data)
+        db.add(profile_row)
+    else:
+        profile_row.profile = profile_data
+
+
+def _save_feedback_to_db(db: Session, payload: FeedbackRequest) -> None:
+    _ensure_db_initialized()
+    db.add(
+        UserFeedbackEvent(
+            user_id=payload.user_id,
+            product_id=payload.product_id,
+            has_tried=payload.has_tried,
+            reaction=payload.reaction,
+            reason_tags=payload.reason_tags,
+            free_text=payload.free_text or "",
+        )
+    )
+
+
+def _load_user_state_from_db(db: Session, user_id: str) -> UserState:
+    _ensure_db_initialized()
+    user_state = UserState(dim=PRODUCT_VECTORS.shape[1])
+    product_index = _build_product_index()
+
+    feedback_rows = (
+        db.query(UserFeedbackEvent)
+        .filter(UserFeedbackEvent.user_id == user_id)
+        .filter(UserFeedbackEvent.has_tried.is_(True))
+        .order_by(UserFeedbackEvent.id.asc())
+        .all()
+    )
+
+    for feedback in feedback_rows:
+        vec = get_product_vector_safe(feedback.product_id, product_index)
+        if vec is None:
+            continue
+
+        reasons = list(feedback.reason_tags or [])
+        if feedback.free_text:
+            reasons.append(feedback.free_text)
+
+        if feedback.reaction == "like":
+            user_state.add_liked(vec, reasons=reasons if reasons else None)
+        elif feedback.reaction == "dislike":
+            user_state.add_disliked(vec, reasons=reasons if reasons else None)
+        elif feedback.reaction == "irritation":
+            user_state.add_irritation(vec, reasons=reasons if reasons else None)
+
+    USER_STATES[user_id] = user_state
+    return user_state
 
 
 def _product_to_card(product: ProductDetail) -> ProductCard:
@@ -511,9 +603,22 @@ def _seed_user_model_from_onboarding(
 
 
 @app.post("/api/onboarding", response_model=OnboardingResponse)
-def submit_onboarding(payload: OnboardingRequest) -> OnboardingResponse:
-    user_id = f"user_{next(USER_ID_COUNTER)}"
+def submit_onboarding(
+    payload: OnboardingRequest,
+    db: Session = Depends(get_db),
+) -> OnboardingResponse:
+    user_id = _generate_user_id()
     USER_PROFILES[user_id] = payload
+
+    try:
+        _save_profile_to_db(db, user_id, payload)
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not persist onboarding profile: {exc}",
+        ) from exc
 
     # Seed the model with onboarding data
     _seed_user_model_from_onboarding(
@@ -535,7 +640,7 @@ def list_products(
     limit: int = Query(default=24, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> ProductListResponse:
-    items = [_product_to_card(product) for product in PRODUCTS.values()]
+    items = list(PRODUCTS.values())
 
     if category is not None:
         items = [product for product in items if product.category == category]
@@ -560,7 +665,7 @@ def list_products(
         items.sort(key=lambda product: product.price, reverse=True)
 
     total = len(items)
-    paged = items[offset : offset + limit]
+    paged = [_product_to_card(product) for product in items[offset : offset + limit]]
 
     return ProductListResponse(products=paged, total=total)
 
@@ -578,11 +683,15 @@ def get_recommendations(
     user_id: str,
     category: Optional[Category] = None,
     limit: int = Query(default=12, ge=1, le=100),
+    db: Session = Depends(get_db),
 ) -> RecommendationsResponse:
     if user_id not in USER_PROFILES:
-        raise HTTPException(status_code=404, detail="User not found")
+        db_profile = _load_profile_from_db(db, user_id)
+        if db_profile is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        USER_PROFILES[user_id] = db_profile
 
-    user_state = get_user_state(user_id)
+    user_state = USER_STATES.get(user_id) or _load_user_state_from_db(db, user_id)
     candidates = [product for product in PRODUCTS.values()]
     if category is not None:
         candidates = [product for product in candidates if product.category == category]
@@ -656,20 +765,39 @@ def get_dupes(product_id: int) -> DupesResponse:
 
 
 @app.post("/api/feedback", response_model=FeedbackResponse)
-def submit_feedback(payload: FeedbackRequest) -> FeedbackResponse:
+def submit_feedback(
+    payload: FeedbackRequest,
+    db: Session = Depends(get_db),
+) -> FeedbackResponse:
     if payload.user_id not in USER_PROFILES:
-        raise HTTPException(status_code=404, detail="User not found")
+        db_profile = _load_profile_from_db(db, payload.user_id)
+        if db_profile is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        USER_PROFILES[payload.user_id] = db_profile
+
     if payload.product_id not in PRODUCTS:
         raise HTTPException(status_code=404, detail="Product not found")
 
     USER_FEEDBACK.append(payload)
 
+    try:
+        _save_feedback_to_db(db, payload)
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not persist feedback event: {exc}",
+        ) from exc
+
     # Update ML model state with new feedback
     try:
-        user_state = get_user_state(payload.user_id)
+        user_state = USER_STATES.get(payload.user_id) or _load_user_state_from_db(
+            db, payload.user_id
+        )
         if payload.has_tried:
             # Build product_index for this user session
-            product_index = {p.product_id: i for i, p in enumerate(PRODUCTS.values())}
+            product_index = _build_product_index()
             vec = get_product_vector_safe(payload.product_id, product_index)
             if vec is not None:
                 # Include reason_tags for richer learning signal
@@ -690,12 +818,15 @@ def submit_feedback(payload: FeedbackRequest) -> FeedbackResponse:
 
 
 @app.get("/api/debug/user-state/{user_id}")
-def get_user_debug_state(user_id: str) -> dict:
+def get_user_debug_state(user_id: str, db: Session = Depends(get_db)) -> dict:
     """Debug endpoint to inspect ML model learning state."""
     if user_id not in USER_PROFILES:
-        raise HTTPException(status_code=404, detail="User not found")
+        db_profile = _load_profile_from_db(db, user_id)
+        if db_profile is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        USER_PROFILES[user_id] = db_profile
 
-    user_state = get_user_state(user_id)
+    user_state = USER_STATES.get(user_id) or _load_user_state_from_db(db, user_id)
 
     return {
         "user_id": user_id,
@@ -709,15 +840,22 @@ def get_user_debug_state(user_id: str) -> dict:
 
 
 @app.get("/api/debug/product-score/{user_id}/{product_id}")
-def get_product_score(user_id: str, product_id: int) -> dict:
+def get_product_score(
+    user_id: str,
+    product_id: int,
+    db: Session = Depends(get_db),
+) -> dict:
     """Debug endpoint to get ML model score for a specific product."""
     if user_id not in USER_PROFILES:
-        raise HTTPException(status_code=404, detail="User not found")
+        db_profile = _load_profile_from_db(db, user_id)
+        if db_profile is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        USER_PROFILES[user_id] = db_profile
 
     if product_id not in PRODUCTS:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    user_state = get_user_state(user_id)
+    user_state = USER_STATES.get(user_id) or _load_user_state_from_db(db, user_id)
     product_data = PRODUCTS[product_id]
 
     # Get product vector using safe mapping

@@ -727,21 +727,31 @@ def get_recommendations(
     model_name = "default"
     if user_state.interactions > 0:
         try:
-            # Select best model based on learning stage
-            model, model_name = get_best_model(user_state)
-            model.fit(user_state)
-
-            # Build product_index mapping for safe vector lookup
-            product_index = {p.product_id: i for i, p in enumerate(PRODUCTS.values())}
-
-            for product in candidates:
-                # Get vector for this product using safe mapping
-                vec = get_product_vector_safe(product.product_id, product_index)
-                if vec is not None:
-                    score = float(model.predict_preference(vec))
-                    scores.append(max(0.1, score))
+            training_data = user_state.get_training_data()
+            if training_data is None:
+                scores = [0.5] * len(candidates)
+            else:
+                _, y = training_data
+                if len(np.unique(y)) < 2:
+                    scores = [0.5] * len(candidates)
                 else:
-                    scores.append(0.5)
+                    # Select best model based on learning stage
+                    model, model_name = get_best_model(user_state)
+                    model.fit(user_state)
+
+                    # Build product_index mapping for safe vector lookup
+                    product_index = {
+                        p.product_id: i for i, p in enumerate(PRODUCTS.values())
+                    }
+
+                    for product in candidates:
+                        # Get vector for this product using safe mapping
+                        vec = get_product_vector_safe(product.product_id, product_index)
+                        if vec is not None:
+                            score = float(model.predict_preference(vec))
+                            scores.append(max(0.1, score))
+                        else:
+                            scores.append(0.5)
         except Exception as e:
             # Fallback to neutral if model fails
             print(f"Model error: {e}")

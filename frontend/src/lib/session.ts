@@ -18,7 +18,8 @@ function decodeJwtSub(token: string): string | null {
     const payload = token.split(".")[1];
     if (!payload) return null;
     const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const parsed = JSON.parse(atob(normalized));
+    const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+    const parsed = JSON.parse(atob(padded));
     const sub = parsed?.sub;
     return typeof sub === "string" && sub.length > 0 ? sub : null;
   } catch {
@@ -35,6 +36,10 @@ export function isAuthenticated(): boolean {
 }
 
 export function setAuthSession(token: string, authUserId?: string): void {
+  localStorage.removeItem(AUTH_USER_ID_KEY);
+  localStorage.removeItem("skincares_user_id");
+  localStorage.removeItem("skincares_user_profile");
+
   localStorage.setItem(TOKEN_KEY, token);
   const resolvedAuthUserId = authUserId || decodeJwtSub(token);
   if (resolvedAuthUserId) {

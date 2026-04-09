@@ -224,23 +224,44 @@ app.add_middleware(
 # TODO: Fine-tune these based on production metrics.
 EARLY_STAGE_THRESHOLD = 5  # Minimum interactions to start using complex models
 MID_STAGE_THRESHOLD = 20  # Minimum interactions to use online learning
+MAX_ONBOARDING_SEED_LIKES = 40
+MAX_ONBOARDING_SEED_DISLIKES = 40
 
 
-def normalize_category(raw_category: str) -> Category:
+def normalize_category(raw_category: str, product_name: str = "") -> Category:
     """Map raw category strings from CSV to Category enum."""
-    if not raw_category:
+    if not raw_category and not product_name:
         return "treatment"
     lower = raw_category.lower().strip()
-    if "clean" in lower:
-        return "cleanser"
-    elif "moisturiz" in lower:
-        return "moisturizer"
-    elif "sunscreen" in lower or "spf" in lower:
+    product_lower = product_name.lower().strip()
+    combined = f"{lower} {product_lower}"
+
+    if re.search(
+        r"\b(spf\s*\d*|sunscreen|sun\s*screen|broad\s*spectrum|uv)\b", combined
+    ):
         return "sunscreen"
-    elif "mask" in lower:
-        return "face_mask"
-    elif "eye" in lower:
+    if "eye" in lower or "eye" in product_lower:
         return "eye_cream"
+    if "mask" in lower or "mask" in product_lower:
+        return "face_mask"
+    if any(
+        keyword in combined
+        for keyword in [
+            "clean",
+            "cleanser",
+            "wash",
+            "soap",
+            "micellar",
+            "scrub",
+            "exfoliat",
+        ]
+    ):
+        return "cleanser"
+    elif any(
+        keyword in combined
+        for keyword in ["moistur", "cream", "lotion", "balm", "hydrat", "ointment"]
+    ):
+        return "moisturizer"
     return "treatment"
 
 
@@ -277,8 +298,10 @@ def load_products_from_csv() -> Dict[int, ProductDetail]:
                 except ValueError:
                     price = 0.0
 
-                category_raw = row.get("usage_type", row.get("category", "treatment"))
-                category = normalize_category(category_raw)
+                usage_type = row.get("usage_type", "")
+                category_col = row.get("category", "")
+                category_raw = f"{usage_type} {category_col}".strip()
+                category = normalize_category(category_raw, product_name=product_name)
 
                 image_url = row.get("image_url", "").strip()
 
@@ -580,7 +603,7 @@ def _seed_user_model_from_onboarding(
     # Add top-matched products as pseudo-likes
     if suited_products:
         suited_products.sort(key=lambda x: x[1], reverse=True)
-        top_count = max(1, len(suited_products) // 3)
+        top_count = min(MAX_ONBOARDING_SEED_LIKES, max(1, len(suited_products) // 10))
 
         for product_id, _ in suited_products[:top_count]:
             vec = get_product_vector_safe(product_id, product_index)
@@ -589,7 +612,10 @@ def _seed_user_model_from_onboarding(
 
     # Add unsuitable products as pseudo-dislikes
     if unsuited_products:
-        dislike_count = max(1, len(unsuited_products) // 4)
+        dislike_count = min(
+            MAX_ONBOARDING_SEED_DISLIKES,
+            max(1, len(unsuited_products) // 20),
+        )
         for product_id in unsuited_products[:dislike_count]:
             vec = get_product_vector_safe(product_id, product_index)
             if vec is not None:

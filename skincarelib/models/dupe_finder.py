@@ -76,7 +76,10 @@ INDEX_TO_ID = {v: k for k, v in PRODUCT_INDEX.items()}
 # price lookup built here so DupeScorer doesn't need to import from this module
 _PRICE_LOOKUP = METADATA.set_index("product_id")["price"].to_dict()
 
-SCORER = DupeScorer(VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, _PRICE_LOOKUP)
+if FEATURE_SCHEMA is not None and PRODUCT_INDEX:
+    SCORER = DupeScorer(VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, _PRICE_LOOKUP)
+else:
+    SCORER = None
 
 
 def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):

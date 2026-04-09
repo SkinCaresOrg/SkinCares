@@ -135,17 +135,17 @@ def query_ollama(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
 def handle_chat(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
     msg_lower = message.lower().strip()
     global last_intent
-    # ✅ handle short confirmations
+
+    # 1. QUICK HANDLING (safe things only)
     if msg_lower in ["yes", "yeah", "y", "ok", "sure"]:
         if last_intent == "recommend":
-            last_intent = "recommend"  # 🔥 keep it alive
             return "Great 🙂 What category are you interested in? (moisturizer, cleanser, serum)"
+
     if any(greet in msg_lower for greet in ["hi", "hello", "hey"]):
         last_intent = "greeting"
         return _smart_fallback(message, profile)
 
-    # 1. HARD RULES
-    # meaningless input
+    # 2. HARD RULES (only true garbage filtering)
     if len(msg_lower) < 4 or not any(c.isalpha() for c in msg_lower):
         return (
             "I didn’t quite get that 😅\n\n"
@@ -155,18 +155,13 @@ def handle_chat(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
             "• 'What should I use for acne?'\n"
         )
 
-    # Routine questions
-    if "routine" in msg_lower or "order" in msg_lower or "step" in msg_lower:
-        return _smart_fallback(message, profile)
-
-    # Dupe shortcuts
-    if "dupe" in msg_lower or "similar" in msg_lower or "alternative" in msg_lower:
-        return handle_dupe(message, profile)
-
-    # 2. INTENT DETECTION
+    # 3. INTENT DETECTION (🔥 PRIORITY)
     intent = detect_intent(message)
+
     if intent in ["recommend", "dupe", "info"]:
         last_intent = intent
+
+    # 4. HANDLE INTENTS FIRST (🔥 THIS FIXES YOUR BUG)
 
     if intent == "dupe":
         return handle_dupe(message, profile)
@@ -180,10 +175,14 @@ def handle_chat(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
             skin_type = _get_profile_field(profile, "skin_type", "your")
 
             metadata = _get_metadata()
+
+            # ✅ safety check (prevents your crash)
+            if metadata is None or metadata.empty:
+                return "No product data available right now 😕"
+
             name_col = "product_name" if "product_name" in metadata.columns else "name"
 
             skin_filters = []
-
             if "oily" in msg_lower:
                 skin_filters = ["oil", "gel", "foam", "salicylic"]
             elif "dry" in msg_lower:
@@ -192,15 +191,12 @@ def handle_chat(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
                 skin_filters = ["bha", "salicylic", "acne"]
 
             def score(row):
-                text = f"{row[name_col]} {row['brand']}".lower()
-
+                text = f"{row.get(name_col, '')} {row.get('brand', '')}".lower()
                 base = category in text
-
                 skin_bonus = sum(f in text for f in skin_filters)
-
                 return base * 2 + skin_bonus
 
-            metadata = _get_metadata()
+            metadata = metadata.copy()
             metadata["rec_score"] = metadata.apply(score, axis=1)
 
             results = metadata.sort_values("rec_score", ascending=False).head(3)
@@ -212,7 +208,7 @@ def handle_chat(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
                 f"Here are some {category} recommendations for {skin_type} skin:\n"
             )
             for _, row in results.iterrows():
-                response += f"- {row[name_col]} by {row['brand']} (${row['price']})\n"
+                response += f"- {row.get(name_col, 'Unknown')} by {row.get('brand', 'Unknown')} (${row.get('price', '?')})\n"
 
             return response
 
@@ -221,14 +217,13 @@ def handle_chat(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
     elif intent == "info":
         return handle_info(message, profile)
 
-    # 3. RULE-BASED FALLBACK
-
+    # 5. ONLY NOW → FALLBACK (🔥 moved to the end)
     fallback_response = _smart_fallback(message, profile)
 
     if "I'm not sure I fully understood" not in fallback_response:
         return fallback_response
 
-    # 4. AI
+    # 6. LAST RESORT AI
     return handle_ai_fallback(message, profile)
 
 

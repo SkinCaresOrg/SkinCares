@@ -63,12 +63,10 @@ try:
 except FileNotFoundError:
     import pandas as pd
 
-    VECTORS = {}  # instead of None
-    PRODUCT_INDEX = {}  # instead of None
-    FEATURE_SCHEMA = {}  # instead of None
+    VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA = None, None, None
 
     METADATA = pd.DataFrame(
-        columns=["product_name", "name", "brand", "price", "product_id"]
+        columns=["product_id", "product_name", "name", "brand", "price"]
     )
 
 INDEX_TO_ID = {v: k for k, v in PRODUCT_INDEX.items()}
@@ -178,6 +176,4 @@ if __name__ == "__main__":
 
 
 def get_artifacts():
-    import pandas as pd
-
-    return None, None, None, pd.DataFrame()
+    return VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA

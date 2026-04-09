@@ -164,3 +164,9 @@ if __name__ == "__main__":
     else:
         pd.set_option("display.max_colwidth", 80)
         print(results.to_string(index=False, float_format="%.4f"))
+
+
+def get_artifacts():
+    import pandas as pd
+
+    return None, None, None, pd.DataFrame()

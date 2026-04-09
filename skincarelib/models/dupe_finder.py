@@ -58,7 +58,15 @@ def load_artifacts():
     return vectors, product_index, feature_schema, metadata
 
 
-VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA = load_artifacts()
+try:
+    VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA = load_artifacts()
+except FileNotFoundError:
+    import pandas as pd
+
+    VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA = None, None, None
+    METADATA = pd.DataFrame(
+        columns=["product_name", "name", "brand", "price", "product_id"]
+    )
 
 INDEX_TO_ID = {v: k for k, v in PRODUCT_INDEX.items()}
 

@@ -2,6 +2,7 @@ import csv
 from itertools import count
 import os
 from pathlib import Path
+import re
 from typing import Dict, List, Literal, Optional
 
 import numpy as np
@@ -185,11 +186,22 @@ DEFAULT_CORS_ALLOW_ORIGINS = [
     "https://www.skinscares.es",
 ]
 
+
+def _normalize_origin(origin: str) -> str:
+    return origin.strip().rstrip("/")
+
+
 raw_cors_origins = os.getenv("CORS_ALLOW_ORIGINS", "")
-cors_allow_origins = (
-    [origin.strip() for origin in raw_cors_origins.split(",") if origin.strip()]
-    if raw_cors_origins
-    else DEFAULT_CORS_ALLOW_ORIGINS
+extra_cors_origins = [
+    _normalize_origin(origin)
+    for origin in re.split(r"[,;\s]+", raw_cors_origins)
+    if origin.strip()
+]
+cors_allow_origins = list(
+    dict.fromkeys(
+        [_normalize_origin(origin) for origin in DEFAULT_CORS_ALLOW_ORIGINS]
+        + extra_cors_origins
+    )
 )
 allow_all_origins = "*" in cors_allow_origins
 

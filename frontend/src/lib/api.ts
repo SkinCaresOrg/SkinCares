@@ -9,6 +9,7 @@ import {
   SortValue,
 } from "./types";
 import { getUserProfile } from "./wishlist";
+import { getAuthToken } from "./session";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -34,8 +35,20 @@ export async function fetchApi<T>(url: string, options?: RequestInit): Promise<T
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
+      const token = getAuthToken();
+      const defaultHeaders: HeadersInit = {
+        "Content-Type": "application/json",
+      };
+
+      if (token) {
+        defaultHeaders.Authorization = `Bearer ${token}`;
+      }
+
       res = await fetch(`${BASE_URL}${url}`, {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          ...defaultHeaders,
+          ...(options?.headers || {}),
+        },
         ...options,
       });
 

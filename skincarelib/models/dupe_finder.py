@@ -63,7 +63,9 @@ try:
 except FileNotFoundError:
     import pandas as pd
 
-    VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA = None, None, None
+    VECTORS = None
+    PRODUCT_INDEX = {}  # ✅ THIS IS THE FIX
+    FEATURE_SCHEMA = None
 
     METADATA = pd.DataFrame(
         columns=["product_id", "product_name", "name", "brand", "price"]

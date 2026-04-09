@@ -1,5 +1,6 @@
 import csv
 from itertools import count
+import os
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
@@ -175,14 +176,27 @@ class ChatResponse(BaseModel):
 
 app = FastAPI(title="SkinCares API", version="1.0.0")
 
+DEFAULT_CORS_ALLOW_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://skinscares.es",
+    "https://www.skinscares.es",
+]
+
+raw_cors_origins = os.getenv("CORS_ALLOW_ORIGINS", "")
+cors_allow_origins = (
+    [origin.strip() for origin in raw_cors_origins.split(",") if origin.strip()]
+    if raw_cors_origins
+    else DEFAULT_CORS_ALLOW_ORIGINS
+)
+allow_all_origins = "*" in cors_allow_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # development
-        "https://skinscares.es",  # production
-        "https://www.skinscares.es",
-    ],
-    allow_credentials=True,
+    allow_origins=["*"] if allow_all_origins else cors_allow_origins,
+    allow_credentials=not allow_all_origins,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
@@ -403,10 +417,105 @@ def options_feedback():
     return {"detail": "OK"}
 
 
+def _seed_user_model_from_onboarding(
+    user_id: str,
+    skin_type: str,
+    skin_concerns: List[str],
+) -> None:
+    """
+    Seed user's ML model with pseudo-feedback from onboarding answers.
+    
+    Improves Day 1 recommendations by giving the model initial training data
+    based on the user's stated skin type and concerns.
+    
+    Args:
+        user_id: User identifier
+        skin_type: User's skin type (dry, oily, sensitive, etc.)
+        skin_concerns: List of user's skin concerns (dryness, acne, etc.)
+    """
+    user_state = get_user_state(user_id)
+    
+    if not PRODUCTS:
+        return  # No products to seed with
+    
+    concerns_lower = [c.lower() for c in skin_concerns]
+    suited_products = []
+    unsuited_products = []
+    
+    # Build product index for vector lookup
+    product_index = {p.product_id: i for i, p in enumerate(PRODUCTS.values())}
+    
+    # Score products based on metadata match with user's profile
+    for product in PRODUCTS.values():
+        product_text = (
+            f"{product.product_name.lower()} "
+            f"{product.category.lower()} "
+            f"{product.brand.lower()}"
+        )
+        
+        # Count matching keywords
+        match_count = sum(
+            1 for concern in concerns_lower 
+            if concern in product_text
+        )
+        
+        # Add bonus for common skincare keywords
+        skincare_keywords = {
+            "dry": ["hydrat", "moistur", "nourish", "repair"],
+            "oily": ["oil control", "matte", "purifying", "sebum"],
+            "sensitive": ["gentle", "soothing", "calm", "hypoallergen"],
+            "acne": ["acne", "pimple", "blemish", "purifying"],
+            "anti-aging": ["anti-aging", "wrinkle", "firming", "collagen"],
+        }
+        
+        skin_keywords = skincare_keywords.get(skin_type.lower(), [])
+        match_count += sum(
+            1 for keyword in skin_keywords 
+            if keyword in product_text
+        )
+        
+        if match_count > 0:
+            suited_products.append((product.product_id, match_count))
+        else:
+            unsuited_products.append(product.product_id)
+    
+    # Add top-matched products as pseudo-likes
+    if suited_products:
+        suited_products.sort(key=lambda x: x[1], reverse=True)
+        top_count = max(1, len(suited_products) // 3)
+        
+        for product_id, _ in suited_products[:top_count]:
+            vec = get_product_vector_safe(product_id, product_index)
+            if vec is not None:
+                user_state.add_liked(vec)
+    
+    # Add unsuitable products as pseudo-dislikes
+    if unsuited_products:
+        dislike_count = max(1, len(unsuited_products) // 4)
+        for product_id in unsuited_products[:dislike_count]:
+            vec = get_product_vector_safe(product_id, product_index)
+            if vec is not None:
+                user_state.add_disliked(vec)
+    
+    print(
+        f"[Onboarding Seeding] user={user_id} skin_type={skin_type} "
+        f"concerns={skin_concerns} suited={len(suited_products)} "
+        f"unseeded by={len(unsuited_products)}"
+    )
+
+
 @app.post("/api/onboarding", response_model=OnboardingResponse)
 def submit_onboarding(payload: OnboardingRequest) -> OnboardingResponse:
     user_id = f"user_{next(USER_ID_COUNTER)}"
     USER_PROFILES[user_id] = payload
+    
+    # Seed the model with onboarding data
+    _seed_user_model_from_onboarding(
+        user_id=user_id,
+        skin_type=payload.skin_type,
+        skin_concerns=payload.concerns,
+    )
+    
     return OnboardingResponse(user_id=user_id, profile=payload)
 
 
@@ -557,12 +666,17 @@ def submit_feedback(payload: FeedbackRequest) -> FeedbackResponse:
             product_index = {p.product_id: i for i, p in enumerate(PRODUCTS.values())}
             vec = get_product_vector_safe(payload.product_id, product_index)
             if vec is not None:
+                # Include reason_tags for richer learning signal
+                reasons = payload.reason_tags or []
+                if payload.free_text:
+                    reasons = reasons + [payload.free_text]
+                
                 if payload.reaction == "like":
-                    user_state.add_liked(vec)
+                    user_state.add_liked(vec, reasons=reasons if reasons else None)
                 elif payload.reaction == "dislike":
-                    user_state.add_disliked(vec)
+                    user_state.add_disliked(vec, reasons=reasons if reasons else None)
                 elif payload.reaction == "irritation":
-                    user_state.add_irritation(vec)
+                    user_state.add_irritation(vec, reasons=reasons if reasons else None)
     except Exception as e:
         print(f"Warning: Could not update ML model state: {e}")
 

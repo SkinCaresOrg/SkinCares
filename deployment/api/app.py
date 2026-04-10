@@ -18,6 +18,7 @@ from skincarelib.ml_system.ml_feedback_model import (
     ContextualBanditFeedback,
     UserState,
 )
+from skincarelib.ml_system.persistence import MLStatePersistence
 from skincarelib.ml_system.swipe_session import SwipeSession
 from skincarelib.ml_system.handler import handle_chat
 
@@ -176,6 +177,9 @@ class ChatResponse(BaseModel):
 
 app = FastAPI(title="SkinCares API", version="1.0.0")
 
+# Initialize ML model persistence layer
+ml_persistence = MLStatePersistence(db_path="data/ml_models.db")
+
 DEFAULT_CORS_ALLOW_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -200,6 +204,16 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Restore all user models from database on startup."""
+    users = ml_persistence.get_all_users()
+    print(f"[Startup] Restoring {len(users)} user ML models from database...")
+    for user_id in users:
+        user_state = get_user_state(user_id)
+        print(f"  - {user_id}: {user_state.interactions} interactions restored")
 
 
 # Model selection thresholds (based on data availability patterns)
@@ -368,9 +382,45 @@ def get_product_vector_safe(
 
 
 def get_user_state(user_id: str) -> UserState:
-    """Get or create user's ML model state for recommendations."""
+    """Get or create user's ML model state, loading from DB if available."""
     if user_id not in USER_STATES:
-        USER_STATES[user_id] = UserState(dim=PRODUCT_VECTORS.shape[1])
+        user_state = UserState(dim=PRODUCT_VECTORS.shape[1])
+        
+        # Try to load from database
+        db_state = ml_persistence.load_user_model_state(
+            user_id, PRODUCT_VECTORS.shape[1]
+        )
+        
+        if db_state:
+            # Restore from database
+            (
+                interactions,
+                liked_count,
+                disliked_count,
+                irritation_count,
+                liked_vectors,
+                disliked_vectors,
+                irritation_vectors,
+                liked_reasons,
+                disliked_reasons,
+                irritation_reasons,
+            ) = db_state
+            
+            user_state.interactions = interactions
+            user_state.liked_count = liked_count
+            user_state.disliked_count = disliked_count
+            user_state.irritation_count = irritation_count
+            user_state.liked_vectors = list(liked_vectors)
+            user_state.disliked_vectors = list(disliked_vectors)
+            user_state.irritation_vectors = list(irritation_vectors)
+            user_state.liked_reasons = liked_reasons
+            user_state.disliked_reasons = disliked_reasons
+            user_state.irritation_reasons = irritation_reasons
+            
+            print(f"[DB Restored] {user_id}: {interactions} interactions")
+        
+        USER_STATES[user_id] = user_state
+    
     return USER_STATES[user_id]
 
 
@@ -657,6 +707,15 @@ def submit_feedback(payload: FeedbackRequest) -> FeedbackResponse:
         raise HTTPException(status_code=404, detail="Product not found")
 
     USER_FEEDBACK.append(payload)
+    
+    # Persist feedback to database
+    ml_persistence.save_feedback(
+        payload.user_id,
+        payload.product_id,
+        payload.reaction,
+        payload.reason_tags,
+        payload.free_text or "",
+    )
 
     # Update ML model state with new feedback
     try:
@@ -677,10 +736,26 @@ def submit_feedback(payload: FeedbackRequest) -> FeedbackResponse:
                     user_state.add_disliked(vec, reasons=reasons if reasons else None)
                 elif payload.reaction == "irritation":
                     user_state.add_irritation(vec, reasons=reasons if reasons else None)
+                
+                # Persist model state after update
+                ml_persistence.save_user_model_state(
+                    payload.user_id,
+                    user_state.interactions,
+                    user_state.liked_count,
+                    user_state.disliked_count,
+                    user_state.irritation_count,
+                    np.array(user_state.liked_vectors),
+                    np.array(user_state.disliked_vectors),
+                    np.array(user_state.irritation_vectors),
+                    user_state.liked_reasons,
+                    user_state.disliked_reasons,
+                    user_state.irritation_reasons,
+                )
+                
     except Exception as e:
         print(f"Warning: Could not update ML model state: {e}")
 
-    return FeedbackResponse(success=True, message="Feedback recorded & model updated")
+    return FeedbackResponse(success=True, message="Feedback recorded & persisted")
 
 
 @app.get("/api/debug/user-state/{user_id}")

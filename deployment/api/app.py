@@ -1,5 +1,6 @@
 import csv
 from contextlib import asynccontextmanager
+import logging
 import os
 from pathlib import Path
 import re
@@ -27,6 +28,8 @@ from skincarelib.ml_system.ml_feedback_model import (
 )
 from skincarelib.ml_system.swipe_session import SwipeSession
 from skincarelib.ml_system.handler import handle_chat
+
+logger = logging.getLogger(__name__)
 
 Category = Literal[
     "cleanser",
@@ -209,11 +212,10 @@ extra_cors_origins = [
     for origin in re.split(r"[,;\s]+", raw_cors_origins)
     if origin.strip()
 ]
-cors_allow_origins = list(
-    dict.fromkeys(
-        [_normalize_origin(origin) for origin in DEFAULT_CORS_ALLOW_ORIGINS]
-        + extra_cors_origins
-    )
+cors_allow_origins = (
+    extra_cors_origins
+    if extra_cors_origins
+    else [_normalize_origin(origin) for origin in DEFAULT_CORS_ALLOW_ORIGINS]
 )
 allow_all_origins = "*" in cors_allow_origins
 
@@ -275,12 +277,16 @@ def normalize_category(raw_category: str, product_name: str = "") -> Category:
 def load_products_from_csv() -> Dict[int, ProductDetail]:
     """Load products from CSV file."""
     products = {}
-    csv_path = (
-        Path(__file__).parent.parent.parent
-        / "data"
-        / "processed"
-        / "products_dataset_processed.csv"
-    )
+    csv_path_env = os.getenv("PRODUCTS_CSV_PATH", "").strip()
+    if csv_path_env:
+        csv_path = Path(csv_path_env)
+    else:
+        csv_path = (
+            Path(__file__).parent.parent.parent
+            / "data"
+            / "processed"
+            / "products_dataset_processed.csv"
+        )
 
     if not csv_path.exists():
         print(f"Warning: CSV file not found at {csv_path}")
@@ -648,9 +654,10 @@ def submit_onboarding(
         db.commit()
     except SQLAlchemyError as exc:
         db.rollback()
+        logger.exception("Could not persist onboarding profile for user_id=%s", user_id)
         raise HTTPException(
             status_code=500,
-            detail=f"Could not persist onboarding profile: {exc}",
+            detail="Could not persist onboarding profile",
         ) from exc
 
     # Seed the model with onboarding data
@@ -761,7 +768,9 @@ def get_recommendations(
                             scores.append(0.5)
         except Exception as e:
             # Fallback to neutral if model fails
-            print(f"Model error: {e}")
+            logger.warning(
+                "Model error in recommendations for user_id=%s: %s", user_id, e
+            )
             scores = [0.5] * len(candidates)
     else:
         scores = [0.5] * len(candidates)
@@ -828,9 +837,14 @@ def submit_feedback(
         db.commit()
     except SQLAlchemyError as exc:
         db.rollback()
+        logger.exception(
+            "Could not persist feedback event for user_id=%s product_id=%s",
+            payload.user_id,
+            payload.product_id,
+        )
         raise HTTPException(
             status_code=500,
-            detail=f"Could not persist feedback event: {exc}",
+            detail="Could not persist feedback event",
         ) from exc
 
     # Update ML model state with new feedback
@@ -855,7 +869,12 @@ def submit_feedback(
                 elif payload.reaction == "irritation":
                     user_state.add_irritation(vec, reasons=reasons if reasons else None)
     except Exception as e:
-        print(f"Warning: Could not update ML model state: {e}")
+        logger.warning(
+            "Could not update ML model state for user_id=%s product_id=%s: %s",
+            payload.user_id,
+            payload.product_id,
+            e,
+        )
 
     return FeedbackResponse(success=True, message="Feedback recorded & model updated")
 

@@ -17,6 +17,13 @@ To run only API + frontend locally:
 docker compose up --build api frontend
 ```
 
+The API image no longer bakes in the full `data/` directory. In local compose, the required
+product CSV is mounted as a read-only volume. You can also override the CSV path with:
+
+```bash
+PRODUCTS_CSV_PATH=/absolute/path/to/products_dataset_processed.csv
+```
+
 Local URLs:
 - Frontend: `http://localhost:8080`
 - API docs: `http://localhost:8000/docs`

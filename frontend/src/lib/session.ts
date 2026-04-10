@@ -27,12 +27,34 @@ function decodeJwtSub(token: string): string | null {
   }
 }
 
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+    return JSON.parse(atob(padded));
+  } catch {
+    return null;
+  }
+}
+
 export function getAuthToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
 
 export function isAuthenticated(): boolean {
-  return !!getAuthToken();
+  const token = getAuthToken();
+  if (!token) return false;
+
+  const payload = decodeJwtPayload(token);
+  const exp = payload?.exp;
+  if (typeof exp === "number" && Date.now() >= exp * 1000) {
+    clearAuthSession();
+    return false;
+  }
+
+  return true;
 }
 
 export function setAuthSession(token: string, authUserId?: string): void {

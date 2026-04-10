@@ -9,7 +9,6 @@ COPY setup.py /app/
 COPY skincarelib /app/skincarelib
 COPY deployment /app/deployment
 COPY artifacts /app/artifacts
-COPY data /app/data
 COPY features /app/features
 
 RUN python -m pip install --upgrade pip \

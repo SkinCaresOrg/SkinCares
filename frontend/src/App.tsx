@@ -8,6 +8,7 @@ import Onboarding from "./pages/Onboarding.tsx";
 import Catalog from "./pages/Catalog.tsx";
 import Recommendations from "./pages/Recommendations.tsx";
 import Swiping from "./pages/Swiping.tsx";
+import Profile from "./pages/Profile.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import FloatingChat from "./components/FloatingChat.tsx";
 
@@ -65,6 +66,7 @@ const App = () => (
           <Route path="/catalog" element={<RequireAuth><Catalog /></RequireAuth>} />
           <Route path="/recommendations" element={<RequireAuth><Recommendations /></RequireAuth>} />
           <Route path="/swiping" element={<RequireAuth><Swiping /></RequireAuth>} />
+          <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

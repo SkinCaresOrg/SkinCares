@@ -16,6 +16,9 @@ def get_current_user(
 ):
     """this extracts the user back from the token and returns the user object"""
     payload = decode_access_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
     user_id_str = payload.get("sub")
     if not user_id_str:
         raise HTTPException(status_code=401, detail="Invalid token")
@@ -23,9 +26,9 @@ def get_current_user(
     try:
         user_id = uuid.UUID(user_id_str)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid user ID")
+        raise HTTPException(status_code=401, detail="Invalid token")
 
     user = get_user_by_id(db, user_id)  # queries db for user with that id
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=401, detail="Invalid token")
     return user

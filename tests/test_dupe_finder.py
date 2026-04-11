@@ -8,13 +8,14 @@ import pytest
 import pandas as pd
 import numpy as np
 import importlib
+import faiss
 
 
 @pytest.fixture
 def dupe_module(monkeypatch):
     # IMPORTANT: product_id must match index "0"
     fake_vectors = np.array([[1, 0], [0, 1]], dtype=np.float32)
-    fake_index = {"0": 0}  # <-- FIXED
+    fake_index = {"0": 0}
     fake_schema = {}
 
     fake_metadata = pd.DataFrame(
@@ -26,14 +27,18 @@ def dupe_module(monkeypatch):
         }
     )
 
-    # mock BEFORE import
+    # Build a real minimal FAISS index to avoid file I/O entirely
+    fake_faiss_index = faiss.IndexFlatIP(2)
+    normalized = fake_vectors.copy()
+    faiss.normalize_L2(normalized)
+    fake_faiss_index.add(normalized)
+
     monkeypatch.setattr("pandas.read_csv", lambda *args, **kwargs: fake_metadata)
-
     monkeypatch.setattr("numpy.load", lambda *args, **kwargs: fake_vectors)
-
     monkeypatch.setattr(
         "json.load", lambda f: fake_index if "index" in str(f.name) else fake_schema
     )
+    monkeypatch.setattr("faiss.read_index", lambda *args, **kwargs: fake_faiss_index)
 
     import skincarelib.models.dupe_finder as df
 
@@ -43,7 +48,7 @@ def dupe_module(monkeypatch):
 
 
 def test_find_dupes_returns_dataframe(dupe_module):
-    results = dupe_module.find_dupes("0")  # <-- FIXED
+    results = dupe_module.find_dupes("0")
     assert isinstance(results, pd.DataFrame)
 
 

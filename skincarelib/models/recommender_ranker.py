@@ -11,8 +11,8 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 VECTORS_PATH = ROOT / "artifacts" / "product_vectors.npy"
 INDEX_PATH = ROOT / "artifacts" / "product_index.json"
-METADATA_PATH = ROOT / "skincarelib" / "datasets" / "datasets" / "products_clean.csv"
-TOKENS_PATH = ROOT / "skincarelib" / "datasets" / "datasets" / "products_tokens.csv"
+METADATA_PATH = ROOT / "data" / "processed" / "products_dataset_clean_tokens.csv"
+TOKENS_PATH = ROOT / "data" / "processed" / "products_dataset_clean_tokens.csv"
 
 _EMPTY_RECS = pd.DataFrame(
     columns=["product_id", "brand", "category", "price", "similarity"]
@@ -27,6 +27,8 @@ def load_artifacts():
         product_index = json.load(f)
 
     metadata = pd.read_csv(METADATA_PATH, dtype={"product_id": str})
+    metadata.columns = metadata.columns.str.lower()
+    metadata["product_id"] = metadata.index.astype(str)
 
     needed = {"product_id", "brand", "category", "price"}
     missing = needed - set(metadata.columns)

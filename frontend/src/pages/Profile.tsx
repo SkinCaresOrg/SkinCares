@@ -20,6 +20,7 @@ import {
   Product, 
   CATEGORIES, 
   CATEGORY_LABELS,
+  Category,
   SkinType,
   Concern,
   SensitivityLevel,

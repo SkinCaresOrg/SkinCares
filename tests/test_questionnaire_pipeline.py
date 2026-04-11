@@ -133,6 +133,7 @@ def test_contains_fragrance_feedback_reduces_fragrance_in_top_recommendations() 
     after_ids = [product["product_id"] for product in after_products]
 
     assert after_ids != before_ids
+    assert after_fragrance_count <= before_fragrance_count
     assert after_fragrance_count == 0
 
 

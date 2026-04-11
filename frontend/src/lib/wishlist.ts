@@ -19,6 +19,7 @@ export function toggleWishlist(productId: number): number[] {
   else list.push(productId);
   localStorage.setItem(WISHLIST_KEY, JSON.stringify(list));
   window.dispatchEvent(new Event("storage"));
+  window.dispatchEvent(new CustomEvent("skincares-wishlist-updated"));
   return [...list];
 }
 

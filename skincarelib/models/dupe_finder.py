@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -73,9 +74,9 @@ def load_artifacts():
     return vectors, product_index, feature_schema, metadata
 
 
-# Capture the original exception so find_dupes() can surface a actionable
+# Capture the original exception so find_dupes() can surface an actionable
 # error message instead of a generic "not initialized" with no context.
-_LOAD_ERROR: Exception | None = None
+_LOAD_ERROR: Optional[Exception] = None
 
 try:
     VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA = load_artifacts()

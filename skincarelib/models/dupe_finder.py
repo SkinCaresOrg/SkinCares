@@ -4,6 +4,7 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
+import faiss
 
 from .dupe_scorer import DupeScorer
 from .dupe_explainer import explain_dupe
@@ -11,10 +12,15 @@ from .dupe_explainer import explain_dupe
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
-VECTORS_PATH = ROOT / "artifacts" / "product_vectors.npy"
-INDEX_PATH = ROOT / "artifacts" / "product_index.json"
-SCHEMA_PATH = ROOT / "artifacts" / "feature_schema.json"
-METADATA_PATH = ROOT / "data" / "processed" / "products_with_signals.csv"
+VECTORS_PATH     = ROOT / "artifacts" / "product_vectors.npy"
+INDEX_PATH       = ROOT / "artifacts" / "product_index.json"
+SCHEMA_PATH      = ROOT / "artifacts" / "feature_schema.json"
+METADATA_PATH    = ROOT / "data" / "processed" / "products_with_signals.csv"
+FAISS_INDEX_PATH = ROOT / "artifacts" / "faiss.index"
+
+# How many ANN neighbours to fetch from FAISS before price/subtype filtering.
+# Larger = better recall at the cost of more scoring work downstream.
+FAISS_RETRIEVAL_K = 2500  # ~5% of the catalogue
 
 
 # ---------------------------
@@ -57,7 +63,6 @@ def load_artifacts():
         feature_schema = json.load(f)
 
     metadata = pd.read_csv(METADATA_PATH)
-
     metadata.columns = metadata.columns.str.lower()
     metadata["product_id"] = metadata.index.astype(str)
 
@@ -67,34 +72,35 @@ def load_artifacts():
         raise ValueError(f"products_with_signals.csv missing columns: {missing}")
 
     metadata["price"] = pd.to_numeric(metadata["price"], errors="coerce")
-
     metadata = metadata[metadata["product_id"].isin(product_index)].copy()
     metadata = metadata.reset_index(drop=True)
 
-    return vectors, product_index, feature_schema, metadata
+    # faiss.read_index raises RuntimeError if the file is missing,
+    # not FileNotFoundError, so we catch both at the call site
+    faiss_index = faiss.read_index(str(FAISS_INDEX_PATH))
+
+    return vectors, product_index, feature_schema, metadata, faiss_index
 
 
-# Capture the original exception so find_dupes() can surface an actionable
-# error message instead of a generic "not initialized" with no context.
 _LOAD_ERROR: Optional[Exception] = None
 
 try:
-    VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA = load_artifacts()
-except FileNotFoundError as e:
+    VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA, FAISS_INDEX = load_artifacts()
+except (FileNotFoundError, RuntimeError) as e:
     import warnings
 
     _LOAD_ERROR = e
     warnings.warn(f"Could not load artifacts: {e}. Running in degraded mode.")
 
-    VECTORS = None
-    PRODUCT_INDEX = {}
+    VECTORS        = None
+    PRODUCT_INDEX  = {}
     FEATURE_SCHEMA = None
+    FAISS_INDEX    = None
     METADATA = pd.DataFrame(
         columns=["product_id", "product_name", "brand", "category", "price"]
     )
 
-
-INDEX_TO_ID = {v: k for k, v in PRODUCT_INDEX.items()}
+INDEX_TO_ID   = {v: k for k, v in PRODUCT_INDEX.items()}
 _PRICE_LOOKUP = METADATA.set_index("product_id")["price"].to_dict()
 
 if FEATURE_SCHEMA is not None and PRODUCT_INDEX:
@@ -104,10 +110,34 @@ else:
 
 
 # ---------------------------
+# FAISS-based candidate retrieval
+# ---------------------------
+def _faiss_candidates(source_id: str, k: int = FAISS_RETRIEVAL_K) -> list:
+    """Return up to k product IDs nearest to source via FAISS ANN search.
+
+    Vectors are L2-normalised at index build time so inner product == cosine
+    similarity. Replaces the previous full dataframe scan, which does not
+    scale beyond ~50k products.
+    """
+    source_idx = PRODUCT_INDEX[source_id]
+    query = VECTORS[source_idx].reshape(1, -1).copy().astype(np.float32)
+    faiss.normalize_L2(query)
+
+    _, neighbour_indices = FAISS_INDEX.search(query, k + 1)
+    neighbour_indices = neighbour_indices.flatten()
+
+    return [
+        INDEX_TO_ID[idx]
+        for idx in neighbour_indices
+        if idx in INDEX_TO_ID and INDEX_TO_ID[idx] != source_id
+    ]
+
+
+# ---------------------------
 # Main dupe finder
 # ---------------------------
 def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
-    if SCORER is None:
+    if SCORER is None or FAISS_INDEX is None:
         raise RuntimeError(
             "DupeScorer not initialized — artifacts failed to load at import time.\n"
             f"Expected files:\n"
@@ -115,6 +145,7 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
             f"  {INDEX_PATH}\n"
             f"  {SCHEMA_PATH}\n"
             f"  {METADATA_PATH}\n"
+            f"  {FAISS_INDEX_PATH}\n"
             f"Original error: {_LOAD_ERROR}\n"
             "Run vectorizer.py to regenerate missing artifacts."
         )
@@ -122,21 +153,24 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
     if product_id not in PRODUCT_INDEX:
         raise ValueError(f"Unknown product_id: {product_id!r}")
 
-    source_row = METADATA[METADATA["product_id"] == product_id].iloc[0]
+    source_row      = METADATA[METADATA["product_id"] == product_id].iloc[0]
     source_category = source_row["category"]
-    source_price = source_row["price"]
+    source_price    = source_row["price"]
+    source_subtype  = infer_product_subtype(source_row["product_name"])
 
-    # detect subtype
-    source_subtype = infer_product_subtype(source_row["product_name"])
+    # --- Retrieval: FAISS ANN instead of full dataframe scan ---
+    candidate_ids = _faiss_candidates(product_id, k=FAISS_RETRIEVAL_K)
 
-    # Base filtering (same category + cheaper)
-    candidates = METADATA[
-        (METADATA["product_id"] != product_id)
-        & (METADATA["category"] == source_category)
-        & (METADATA["price"] < source_price)
-    ].copy()
+    # --- Filtering ---
+    candidates = METADATA[METADATA["product_id"].isin(candidate_ids)].copy()
 
-    # subtype filtering (only if detected)
+    # Must be same category and cheaper
+    candidates = candidates[
+        (candidates["category"] == source_category)
+        & (candidates["price"] < source_price)
+    ]
+
+    # Subtype filter — keyword based
     if source_subtype is not None:
         filtered = candidates[
             candidates["product_name"].str.lower().apply(
@@ -144,7 +178,6 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
             )
         ].copy()
 
-        # fallback if too restrictive
         if not filtered.empty:
             candidates = filtered
 
@@ -154,15 +187,8 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
     if candidates.empty:
         return pd.DataFrame(
             columns=[
-                "product_id",
-                "product_name",
-                "brand",
-                "category",
-                "price",
-                "dupe_score",
-                "cosine_sim",
-                "price_score",
-                "ingredient_group_score",
+                "product_id", "product_name", "brand", "category", "price",
+                "dupe_score", "cosine_sim", "price_score", "ingredient_group_score",
             ]
         )
 
@@ -174,26 +200,15 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
     )
 
     results = candidates.merge(scored, on="product_id", how="inner")
-
     results = (
         results.sort_values("dupe_score", ascending=False)
         .head(top_n)
         .reset_index(drop=True)
     )
-
-    results = results[
-        [
-            "product_id",
-            "product_name",
-            "brand",
-            "category",
-            "price",
-            "dupe_score",
-            "cosine_sim",
-            "price_score",
-            "ingredient_group_score",
-        ]
-    ]
+    results = results[[
+        "product_id", "product_name", "brand", "category", "price",
+        "dupe_score", "cosine_sim", "price_score", "ingredient_group_score",
+    ]]
 
     if explain:
         results["explanation"] = results.apply(
@@ -211,7 +226,7 @@ def get_artifacts():
 # Demo run
 # ---------------------------
 if __name__ == "__main__":
-    demo_id = next(iter(PRODUCT_INDEX))
+    demo_id  = next(iter(PRODUCT_INDEX))
     demo_row = METADATA[METADATA["product_id"] == demo_id].iloc[0]
 
     print("Finding dupes for:")

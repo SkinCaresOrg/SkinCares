@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   User, 
@@ -39,6 +40,7 @@ import ProductModal from "@/components/ProductModal";
 import { useToast } from "@/hooks/use-toast";
 
 const Profile = () => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"preferences" | "wishlist">("preferences");
   const [profile, setProfile] = useState<OnboardingProfile | null>(getUserProfile());
   const [wishlistItems, setWishlistItems] = useState<Product[]>([]);
@@ -48,29 +50,41 @@ const Profile = () => {
   const { toast } = useToast();
 
   useEffect(() => {
+    if (!profile) {
+      navigate("/onboarding");
+    }
+  }, [profile, navigate]);
+
+  useEffect(() => {
     if (activeTab === "wishlist") {
       fetchWishlist();
     }
   }, [activeTab]);
 
   useEffect(() => {
-    const handleStorageChange = () => {
+    const handleSync = () => {
       if (activeTab === "wishlist") {
         fetchWishlist();
       }
     };
-    window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
+    window.addEventListener("storage", handleSync);
+    window.addEventListener("skincares-wishlist-updated", handleSync);
+    return () => {
+      window.removeEventListener("storage", handleSync);
+      window.removeEventListener("skincares-wishlist-updated", handleSync);
+    };
   }, [activeTab]);
 
   const fetchWishlist = async () => {
     const ids = getWishlist();
+    setLoadingWishlist(true);
+    
     if (ids.length === 0) {
       setWishlistItems([]);
+      setLoadingWishlist(false);
       return;
     }
     
-    setLoadingWishlist(true);
     try {
       const products = await Promise.all(
         ids.map((id) => getProductDetail(id).catch(() => null))

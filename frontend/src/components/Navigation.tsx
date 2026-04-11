@@ -41,6 +41,7 @@ const Navigation = () => {
           {isLoggedIn &&
             [
               { path: "/catalog", label: "Catalog" },
+              { path: "/profile", label: "Profile" },
               { path: "/recommendations", label: "For You" },
               { path: "/swiping", label: "Swiping" },
             ].map(({ path, label }) => (

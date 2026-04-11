@@ -13,17 +13,19 @@ import faiss
 
 @pytest.fixture
 def dupe_module(monkeypatch):
-    # IMPORTANT: product_id must match index "0"
-    fake_vectors = np.array([[1, 0], [0, 1]], dtype=np.float32)
-    fake_index = {"0": 0}
+    # Two products: source "0" at $20, cheaper candidate "1" at $10
+    # Both in the same category so find_dupes actually has candidates to score
+    fake_vectors = np.array([[1, 0], [0.9, 0.1]], dtype=np.float32)
+    fake_index = {"0": 0, "1": 1}
     fake_schema = {}
 
     fake_metadata = pd.DataFrame(
         {
-            "product_name": ["Test Product"],
-            "brand": ["Test Brand"],
-            "category": ["serum"],
-            "price": [10.0],
+            "product_id": ["0", "1"],
+            "product_name": ["Expensive Serum", "Cheap Serum"],
+            "brand": ["Brand A", "Brand B"],
+            "category": ["serum", "serum"],
+            "price": [20.0, 10.0],
         }
     )
 
@@ -72,7 +74,7 @@ def test_find_dupes_columns(dupe_module):
 
 def test_find_dupes_not_empty(dupe_module):
     results = dupe_module.find_dupes("0")
-    assert results is not None
+    assert len(results) > 0
 
 
 def test_invalid_product_id(dupe_module):

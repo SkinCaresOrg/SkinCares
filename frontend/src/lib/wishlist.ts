@@ -18,6 +18,8 @@ export function toggleWishlist(productId: number): number[] {
   if (idx > -1) list.splice(idx, 1);
   else list.push(productId);
   localStorage.setItem(WISHLIST_KEY, JSON.stringify(list));
+  window.dispatchEvent(new Event("storage"));
+  window.dispatchEvent(new CustomEvent("skincares-wishlist-updated"));
   return [...list];
 }
 

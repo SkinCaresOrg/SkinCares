@@ -4,6 +4,7 @@ import Navigation from "@/components/Navigation";
 import { Product, Category, Reaction, REACTION_TAGS, IRRITATION_TAGS, CATEGORY_LABELS, formatTagLabel, formatPrice } from "@/lib/types";
 import { getProducts, submitFeedback } from "@/lib/api";
 import { getUserId } from "@/lib/wishlist";
+import { ModelMonitor } from "@/components/ModelMonitor";
 import { motion, useMotionValue, useTransform, AnimatePresence } from "framer-motion";
 import { ThumbsUp, ThumbsDown, AlertTriangle, SkipForward, Undo2, Check } from "lucide-react";
 
@@ -24,6 +25,8 @@ const SWIPE_Y_THRESHOLD = -80;
 const Swiping = () => {
   const navigate = useNavigate();
   const userId = getUserId();
+  const shouldShowModelMonitor =
+    import.meta.env.DEV || localStorage.getItem("skincares_debug_monitor") === "1";
   const [products, setProducts] = useState<Product[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [step, setStep] = useState<SwipeStep>("swipe");
@@ -50,6 +53,12 @@ const Swiping = () => {
       setLoading(false);
     });
   }, [userId, navigate]);
+
+  // Reset motion values when moving to next product
+  useEffect(() => {
+    x.set(0);
+    y.set(0);
+  }, [currentIndex, x, y]);
 
   const currentProduct = products[currentIndex];
   const isFinished = currentIndex >= products.length && !loading;
@@ -103,7 +112,7 @@ const Swiping = () => {
       has_tried: true,
       reaction,
       reason_tags: selectedTags,
-      free_text: freeText || undefined,
+      free_text: freeText,
     });
     setStep("done");
     setTimeout(() => {
@@ -356,6 +365,11 @@ const Swiping = () => {
           <p className="mt-4 text-center text-xs text-muted-foreground">
             Drag right to like · left to dislike · up for irritation · or use the buttons
           </p>
+        )}
+
+        {/* Real-time model monitoring */}
+        {userId && shouldShowModelMonitor && (
+          <ModelMonitor userId={userId} refreshInterval={10000} />
         )}
       </div>
     </div>

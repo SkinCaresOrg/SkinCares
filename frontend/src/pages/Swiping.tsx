@@ -25,6 +25,8 @@ const SWIPE_Y_THRESHOLD = -80;
 const Swiping = () => {
   const navigate = useNavigate();
   const userId = getUserId();
+  const shouldShowModelMonitor =
+    import.meta.env.DEV || localStorage.getItem("skincares_debug_monitor") === "1";
   const [products, setProducts] = useState<Product[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [step, setStep] = useState<SwipeStep>("swipe");
@@ -366,7 +368,9 @@ const Swiping = () => {
         )}
 
         {/* Real-time model monitoring */}
-        {userId && <ModelMonitor userId={userId} refreshInterval={2000} />}
+        {userId && shouldShowModelMonitor && (
+          <ModelMonitor userId={userId} refreshInterval={10000} />
+        )}
       </div>
     </div>
   );

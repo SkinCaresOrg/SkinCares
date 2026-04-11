@@ -1,6 +1,8 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Sparkles } from "lucide-react";
 import { useState, useEffect } from "react";
+import { isAuthenticated } from "@/lib/session";
+import { logout } from "@/lib/auth";
 
 const Navigation = () => {
   const location = useLocation();
@@ -9,12 +11,12 @@ const Navigation = () => {
   const isActive = (path: string) => location.pathname === path;
 
   const [isLoggedIn, setIsLoggedIn] = useState(
-    !!localStorage.getItem("token")
+    isAuthenticated()
   );
 
   useEffect(() => {
     const checkAuth = () => {
-      setIsLoggedIn(!!localStorage.getItem("token"));
+      setIsLoggedIn(isAuthenticated());
     };
 
     window.addEventListener("storage", checkAuth);
@@ -36,23 +38,24 @@ const Navigation = () => {
         {/* Right side */}
         <div className="flex items-center gap-4">
           {/* Navigation links */}
-          {[
-            { path: "/catalog", label: "Catalog" },
-            { path: "/recommendations", label: "For You" },
-            { path: "/swiping", label: "Swiping" },
-          ].map(({ path, label }) => (
-            <Link
-              key={path}
-              to={path}
-              className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
-                isActive(path)
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              {label}
-            </Link>
-          ))}
+          {isLoggedIn &&
+            [
+              { path: "/catalog", label: "Catalog" },
+              { path: "/recommendations", label: "For You" },
+              { path: "/swiping", label: "Swiping" },
+            ].map(({ path, label }) => (
+              <Link
+                key={path}
+                to={path}
+                className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
+                  isActive(path)
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                {label}
+              </Link>
+            ))}
 
           {/* Auth buttons */}
           {!isLoggedIn ? (
@@ -74,15 +77,8 @@ const Navigation = () => {
           ) : (
             <>
               <button
-                onClick={() => navigate("/profile")}
-                className="text-foreground hover:text-primary"
-              >
-                👤
-              </button>
-
-              <button
                 onClick={() => {
-                  localStorage.removeItem("token");
+                  logout();
                   setIsLoggedIn(false);
                   navigate("/");
                 }}

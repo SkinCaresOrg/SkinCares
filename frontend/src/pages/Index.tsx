@@ -6,7 +6,6 @@ import Navigation from "@/components/Navigation";
 
 const Index = () => {
   const navigate = useNavigate();
-  const token = localStorage.getItem("token"); // Check if user is logged in
 
   return (
     <div className="min-h-screen bg-background">
@@ -32,39 +31,19 @@ const Index = () => {
           </p>
 
           <div className="flex flex-col gap-3 sm:flex-row">
-            {token ? (
-              <>
-                <button
-                  onClick={() => navigate("/recommendations")}
-                  className="flex items-center gap-2 rounded-2xl bg-primary px-8 py-4 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:bg-primary-hover hover:shadow-xl"
-                >
-                  View Recommendations <ArrowRight className="h-4 w-4" />
-                </button>
+            <button
+              onClick={() => navigate("/login")}
+              className="flex items-center gap-2 rounded-2xl bg-primary px-8 py-4 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:bg-primary-hover hover:shadow-xl"
+            >
+              Login <ArrowRight className="h-4 w-4" />
+            </button>
 
-                <button
-                  onClick={() => navigate("/catalog")}
-                  className="flex items-center gap-2 rounded-2xl border border-border bg-card px-8 py-4 text-sm font-semibold text-foreground transition-all hover:bg-muted"
-                >
-                  Browse Catalog
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => navigate("/login")}
-                  className="flex items-center gap-2 rounded-2xl bg-primary px-8 py-4 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:bg-primary-hover hover:shadow-xl"
-                >
-                  Login <ArrowRight className="h-4 w-4" />
-                </button>
-
-                <button
-                  onClick={() => navigate("/onboarding")}
-                  className="flex items-center gap-2 rounded-2xl border border-border bg-card px-8 py-4 text-sm font-semibold text-foreground transition-all hover:bg-muted"
-                >
-                  Get Started <ArrowRight className="h-4 w-4" />
-                </button>
-              </>
-            )}
+            <button
+              onClick={() => navigate("/register")}
+              className="flex items-center gap-2 rounded-2xl border border-border bg-card px-8 py-4 text-sm font-semibold text-foreground transition-all hover:bg-muted"
+            >
+              Sign Up <ArrowRight className="h-4 w-4" />
+            </button>
           </div>
         </motion.div>
       </main>

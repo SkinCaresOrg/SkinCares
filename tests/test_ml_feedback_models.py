@@ -7,6 +7,7 @@ import pytest
 
 from skincarelib.ml_system.ml_feedback_model import (
     UserState,
+    VW_AVAILABLE,
     update_user_state,
     compute_user_vector,
     LogisticRegressionFeedback,
@@ -204,6 +205,7 @@ class TestGradientBoostingFeedback:
         assert all(i >= 0 for i in importance)
 
 
+@pytest.mark.skipif(not VW_AVAILABLE, reason="vowpalwabbit is not installed")
 class TestContextualBanditFeedback:
     """Tests for ContextualBanditFeedback model."""
 
@@ -324,15 +326,18 @@ class TestModelComparison:
             LogisticRegressionFeedback(),
             RandomForestFeedback(n_estimators=5),
             GradientBoostingFeedback(n_estimators=5),
-            ContextualBanditFeedback(dim=50),
         ]
+        if VW_AVAILABLE:
+            models.append(ContextualBanditFeedback(dim=50))
 
-        for model in models[:-1]:  # Skip bandit for now
+        trainable_models = models[:-1] if VW_AVAILABLE else models
+        for model in trainable_models:  # Bandit doesn't need fit
             success = model.fit(user_with_interactions)
             assert success is True
 
-        # Bandit doesn't need fit
-        models[-1].total_updates = 1  # Mark as "trained"
+        if VW_AVAILABLE:
+            # Bandit doesn't need fit
+            models[-1].total_updates = 1  # Mark as "trained"
 
     def test_all_models_produce_scores(self, user_with_interactions, sample_vectors):
         """Test that all models produce reasonable scores."""
@@ -340,10 +345,12 @@ class TestModelComparison:
             LogisticRegressionFeedback(),
             RandomForestFeedback(n_estimators=5),
             GradientBoostingFeedback(n_estimators=5),
-            ContextualBanditFeedback(dim=50),
         ]
+        if VW_AVAILABLE:
+            models.append(ContextualBanditFeedback(dim=50))
 
-        for model in models[:-1]:
+        trainable_models = models[:-1] if VW_AVAILABLE else models
+        for model in trainable_models:
             model.fit(user_with_interactions)
 
         for model in models:

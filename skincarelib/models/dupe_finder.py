@@ -141,15 +141,7 @@ CATEGORY_TO_SUBTYPE = {
     "OIntments":                     "balm",
 }
 
-# Categories too broad to map directly — fall back to keyword matching
-BROAD_CATEGORIES = {
-    "Creams", "Gels", "Skin Care", "Skin Treatments",
-    "Alternative/Natural Skin Care", "Sets & Kits",
-    "Anti-Wrinkle", "Ethnic Soaps",
-}
-
-# Keyword fallback — used only when category is broad or missing.
-# More comprehensive than the original to cover edge cases.
+# Keyword fallback — used when category is missing or not in the mapping.
 PRODUCT_TYPE_PATTERNS = {
     "eye_treatment":  ["eye cream", "eye gel", "eye serum", "eye oil",
                        "eye lift", "eye mask", "eye treatment", "eye complex",
@@ -184,13 +176,12 @@ PRODUCT_TYPE_PATTERNS = {
 def infer_product_subtype(product_name: str, category: str = None):
     """Infer product subtype using category label as primary signal.
 
-    Category-based detection is preferred since it is an explicit label from
-    the dataset rather than a guess from the product name. Keyword matching
-    on the product name is used only when the category is missing, broad,
-    or not in the mapping.
+    Category mapping is always checked first — if the category has an explicit
+    mapping it is used directly. Keyword matching on the product name is only
+    used when the category is missing or not in the mapping.
     """
-    # Primary: use category if it maps directly to a known subtype
-    if category and category not in BROAD_CATEGORIES:
+    # Primary: use category mapping directly
+    if category:
         subtype = CATEGORY_TO_SUBTYPE.get(category)
         if subtype:
             return subtype

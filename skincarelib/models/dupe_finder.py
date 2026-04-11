@@ -13,7 +13,8 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 VECTORS_PATH = ROOT / "artifacts" / "product_vectors.npy"
 INDEX_PATH = ROOT / "artifacts" / "product_index.json"
 SCHEMA_PATH = ROOT / "artifacts" / "feature_schema.json"
-METADATA_PATH = ROOT / "data" / "processed" / "cosmetics_processed_clean_tokens.csv"
+# Updated to use the new dataset with proper category + product_name columns
+METADATA_PATH = ROOT / "data" / "processed" / "products_with_signals.csv"
 
 
 def load_artifacts():
@@ -33,21 +34,10 @@ def load_artifacts():
     # product_id comes from the row index to match keys in product_index.json
     metadata["product_id"] = metadata.index.astype(str)
 
-    needed = {"product_id", "brand", "price"}
+    needed = {"product_id", "brand", "price", "product_name", "category"}
     missing = needed - set(metadata.columns)
     if missing:
-        raise ValueError(f"products_dataset_processed.csv missing columns: {missing}")
-
-    # Use 'action' as category if it exists, otherwise use 'label' or 'name'
-    if "action" not in metadata.columns:
-        if "label" in metadata.columns:
-            metadata["category"] = metadata["label"]
-        elif "name" in metadata.columns:
-            metadata["category"] = metadata["name"]
-        else:
-            metadata["category"] = "unknown"
-    else:
-        metadata["category"] = metadata["action"]
+        raise ValueError(f"products_with_signals.csv missing columns: {missing}")
 
     metadata["price"] = pd.to_numeric(metadata["price"], errors="coerce")
 
@@ -58,14 +48,27 @@ def load_artifacts():
     return vectors, product_index, feature_schema, metadata
 
 
-VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA = load_artifacts()
+try:
+    VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA = load_artifacts()
+except FileNotFoundError as e:
+    import warnings
+    warnings.warn(f"Could not load artifacts: {e}. Running in degraded mode.")
+
+    VECTORS = None
+    PRODUCT_INDEX = {}
+    FEATURE_SCHEMA = None
+    METADATA = pd.DataFrame(
+        columns=["product_id", "product_name", "brand", "category", "price"]
+    )
 
 INDEX_TO_ID = {v: k for k, v in PRODUCT_INDEX.items()}
 
-# price lookup built here so DupeScorer doesn't need to import from this module
 _PRICE_LOOKUP = METADATA.set_index("product_id")["price"].to_dict()
 
-SCORER = DupeScorer(VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, _PRICE_LOOKUP)
+if FEATURE_SCHEMA is not None and PRODUCT_INDEX:
+    SCORER = DupeScorer(VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, _PRICE_LOOKUP)
+else:
+    SCORER = None
 
 
 def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
@@ -82,6 +85,9 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
     explain : bool
         If True, adds a plain-English explanation column to the results.
     """
+    if SCORER is None:
+        raise RuntimeError("Artifacts not loaded — run vectorizer.py first.")
+
     if product_id not in PRODUCT_INDEX:
         raise ValueError(f"Unknown product_id: {product_id!r}")
 
@@ -147,6 +153,10 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
         )
 
     return results
+
+
+def get_artifacts():
+    return VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA
 
 
 if __name__ == "__main__":

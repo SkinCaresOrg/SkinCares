@@ -73,10 +73,16 @@ def load_artifacts():
     return vectors, product_index, feature_schema, metadata
 
 
+# Capture the original exception so find_dupes() can surface a actionable
+# error message instead of a generic "not initialized" with no context.
+_LOAD_ERROR: Exception | None = None
+
 try:
     VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA = load_artifacts()
 except FileNotFoundError as e:
     import warnings
+
+    _LOAD_ERROR = e
     warnings.warn(f"Could not load artifacts: {e}. Running in degraded mode.")
 
     VECTORS = None
@@ -101,7 +107,16 @@ else:
 # ---------------------------
 def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
     if SCORER is None:
-        raise RuntimeError("Artifacts not loaded — run vectorizer.py first.")
+        raise RuntimeError(
+            "DupeScorer not initialized — artifacts failed to load at import time.\n"
+            f"Expected files:\n"
+            f"  {VECTORS_PATH}\n"
+            f"  {INDEX_PATH}\n"
+            f"  {SCHEMA_PATH}\n"
+            f"  {METADATA_PATH}\n"
+            f"Original error: {_LOAD_ERROR}\n"
+            "Run vectorizer.py to regenerate missing artifacts."
+        )
 
     if product_id not in PRODUCT_INDEX:
         raise ValueError(f"Unknown product_id: {product_id!r}")

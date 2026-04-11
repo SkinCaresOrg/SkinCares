@@ -96,6 +96,8 @@ export async function getProducts(params?: {
   search?: string;
   min_price?: number;
   max_price?: number;
+  limit?: number;
+  offset?: number;
 }): Promise<{ products: Product[]; total: number }> {
   const query = new URLSearchParams();
   if (params?.category) query.set("category", params.category);
@@ -107,6 +109,12 @@ export async function getProducts(params?: {
   if (params?.max_price !== undefined) {
     query.set("max_price", String(params.max_price));
   }
+  if (params?.limit !== undefined) {
+    query.set("limit", String(params.limit));
+  }
+  if (params?.offset !== undefined) {
+    query.set("offset", String(params.offset));
+  }
   const qs = query.toString();
   return fetchApi(`/products${qs ? `?${qs}` : ""}`);
 }
@@ -115,9 +123,16 @@ export async function getProductDetail(productId: number): Promise<ProductDetail
   return fetchApi(`/products/${productId}`);
 }
 
-export async function getRecommendations(userId: string, category?: Category): Promise<{ products: RecommendedProduct[] }> {
-  const qs = category ? `?category=${category}` : "";
-  return fetchApi(`/recommendations/${userId}${qs}`);
+export async function getRecommendations(
+  userId: string,
+  category?: Category,
+  limit?: number
+): Promise<{ products: RecommendedProduct[] }> {
+  const query = new URLSearchParams();
+  if (category) query.set("category", category);
+  if (limit !== undefined) query.set("limit", String(limit));
+  const qs = query.toString();
+  return fetchApi(`/recommendations/${userId}${qs ? `?${qs}` : ""}`);
 }
 
 export async function getDupes(productId: number): Promise<{ source_product_id: number; dupes: DupeProduct[] }> {

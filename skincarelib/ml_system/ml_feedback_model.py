@@ -42,6 +42,14 @@ class UserState:
         self.liked_reasons: List[str] = []
         self.disliked_reasons: List[str] = []
         self.irritation_reasons: List[str] = []
+        self.reason_tag_preferences: Dict[str, float] = {}
+
+        # Structured preference signals derived from questionnaire reasons
+        self.avoid_ingredients: Dict[str, float] = {}
+        self.preferred_ingredients: Dict[str, float] = {}
+        self.price_sensitivity: float = 0.0
+        self.price_preference_center: Optional[float] = None
+        self.skin_type_affinity: float = 0.0
 
         # Interaction counts
         self.interactions: int = 0
@@ -49,10 +57,47 @@ class UserState:
         self.disliked_count: int = 0
         self.irritation_count: int = 0
 
+    def _ensure_reason_state(self) -> None:
+        if not hasattr(self, "reason_tag_preferences") or self.reason_tag_preferences is None:
+            self.reason_tag_preferences = {}
+        if not hasattr(self, "avoid_ingredients") or self.avoid_ingredients is None:
+            self.avoid_ingredients = {}
+        if not hasattr(self, "preferred_ingredients") or self.preferred_ingredients is None:
+            self.preferred_ingredients = {}
+        if not hasattr(self, "price_sensitivity") or self.price_sensitivity is None:
+            self.price_sensitivity = 0.0
+        if not hasattr(self, "price_preference_center"):
+            self.price_preference_center = None
+        if not hasattr(self, "skin_type_affinity") or self.skin_type_affinity is None:
+            self.skin_type_affinity = 0.0
+
+    def _normalize_reason_tag(self, reason: str) -> Optional[str]:
+        normalized = reason.strip().lower()
+        if not normalized:
+            return None
+        if any(ch.isspace() for ch in normalized):
+            return None
+        if not all(ch.isalnum() or ch == "_" for ch in normalized):
+            return None
+        return normalized
+
+    def _update_reason_preferences(self, reasons: List[str] | None, delta: float) -> None:
+        self._ensure_reason_state()
+        if not reasons:
+            return
+        for reason in reasons:
+            normalized = self._normalize_reason_tag(reason)
+            if not normalized:
+                continue
+            self.reason_tag_preferences[normalized] = (
+                self.reason_tag_preferences.get(normalized, 0.0) + delta
+            )
+
     def add_liked(self, vec: np.ndarray, reasons: List[str] | None = None):
         self.liked_vectors.append(vec.astype(np.float32))
         if reasons:
             self.liked_reasons.extend(reasons)
+        self._update_reason_preferences(reasons, delta=1.0)
         self.interactions += 1
         self.liked_count += 1
 
@@ -60,6 +105,7 @@ class UserState:
         self.disliked_vectors.append(vec.astype(np.float32))
         if reasons:
             self.disliked_reasons.extend(reasons)
+        self._update_reason_preferences(reasons, delta=-1.0)
         self.interactions += 1
         self.disliked_count += 1
 
@@ -67,6 +113,7 @@ class UserState:
         self.irritation_vectors.append(vec.astype(np.float32))
         if reasons:
             self.irritation_reasons.extend(reasons)
+        self._update_reason_preferences(reasons, delta=-1.0)
         self.interactions += 1
         self.irritation_count += 1
 

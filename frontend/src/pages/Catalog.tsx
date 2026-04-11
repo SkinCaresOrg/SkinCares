@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { getProducts } from "@/lib/api";
 import { Product, Category, SortValue } from "@/lib/types";
 import ProductCard from "@/components/ProductCard";
@@ -7,28 +8,63 @@ import FilterBar from "@/components/FilterBar";
 import Navigation from "@/components/Navigation";
 import { Package } from "lucide-react";
 
+const CATALOG_PAGE_SIZE = 500;
+
 const Catalog = () => {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [category, setCategory] = useState<Category | null>(null);
   const [sort, setSort] = useState<SortValue | "">("");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   useEffect(() => {
-    setLoading(true);
     const timer = setTimeout(() => {
-      getProducts({
-        category: category || undefined,
-        sort: sort || undefined,
-        search: search || undefined,
-      }).then((res) => {
-        setProducts(res.products);
-        setLoading(false);
-      });
+      setDebouncedSearch(search);
     }, 300);
-    return () => clearTimeout(timer);
-  }, [search, category, sort]);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [search]);
+
+  const {
+    data: products,
+    isLoading,
+    isFetching,
+  } = useQuery({
+    queryKey: ["catalog-products", debouncedSearch, category, sort],
+    queryFn: async () => {
+      const merged: Product[] = [];
+      let offset = 0;
+      let total = Number.POSITIVE_INFINITY;
+
+      while (offset < total) {
+        const res = await getProducts({
+          category: category || undefined,
+          sort: sort || undefined,
+          search: debouncedSearch || undefined,
+          limit: CATALOG_PAGE_SIZE,
+          offset,
+        });
+
+        merged.push(...res.products);
+        total = res.total;
+        offset += res.products.length;
+
+        if (res.products.length === 0) {
+          break;
+        }
+      }
+
+      return merged;
+    },
+    staleTime: 2 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  });
+
+  const productList = products ?? [];
 
   return (
     <div className="min-h-screen">
@@ -49,13 +85,13 @@ const Catalog = () => {
         />
 
         <div className="mt-8">
-          {loading ? (
+          {isLoading ? (
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {[1, 2, 3, 4, 5, 6].map((i) => (
                 <div key={i} className="h-72 animate-pulse rounded-2xl bg-muted" />
               ))}
             </div>
-          ) : products.length === 0 ? (
+          ) : productList.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20">
               <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
                 <Package className="h-8 w-8 text-muted-foreground" />
@@ -65,10 +101,14 @@ const Catalog = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {products.map((product) => (
+              {productList.map((product) => (
                 <ProductCard key={product.product_id} product={product} onClick={setSelectedProduct} />
               ))}
             </div>
+          )}
+
+          {isFetching && !isLoading && (
+            <p className="mt-4 text-xs text-muted-foreground">Updating products…</p>
           )}
         </div>
       </main>

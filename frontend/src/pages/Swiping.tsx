@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import Navigation from "@/components/Navigation";
 import { Product, Category, Reaction, REACTION_TAGS, IRRITATION_TAGS, CATEGORY_LABELS, formatTagLabel, formatPrice } from "@/lib/types";
 import { getProducts, submitFeedback } from "@/lib/api";
 import { getUserId } from "@/lib/wishlist";
+import { hydrateOnboardingForCurrentUser } from "@/lib/session";
 import { ModelMonitor } from "@/components/ModelMonitor";
 import { motion, useMotionValue, useTransform, AnimatePresence } from "framer-motion";
 import { ThumbsUp, ThumbsDown, AlertTriangle, SkipForward, Undo2, Check } from "lucide-react";
@@ -21,19 +23,45 @@ type SwipeStep = "swipe" | "tags" | "submitting" | "done";
 
 const SWIPE_THRESHOLD = 100;
 const SWIPE_Y_THRESHOLD = -80;
+const SWIPE_PAGE_SIZE = 500;
+const SWIPE_MAX_FETCH_PAGES = 3;
+
+const getSeenProductsKey = (uid: string) => `skincares_swiped_products_${uid}`;
+
+const readSeenProducts = (uid: string): Set<number> => {
+  try {
+    const raw = localStorage.getItem(getSeenProductsKey(uid));
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) {
+      return new Set<number>();
+    }
+    return new Set<number>(
+      parsed
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0)
+    );
+  } catch {
+    return new Set<number>();
+  }
+};
+
+const writeSeenProduct = (uid: string, productId: number): void => {
+  const seen = readSeenProducts(uid);
+  seen.add(productId);
+  localStorage.setItem(getSeenProductsKey(uid), JSON.stringify(Array.from(seen)));
+};
 
 const Swiping = () => {
   const navigate = useNavigate();
   const userId = getUserId();
+  const resolvedUserId = userId || (hydrateOnboardingForCurrentUser() ? getUserId() : null);
   const shouldShowModelMonitor =
     import.meta.env.DEV || localStorage.getItem("skincares_debug_monitor") === "1";
-  const [products, setProducts] = useState<Product[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [step, setStep] = useState<SwipeStep>("swipe");
   const [reaction, setReaction] = useState<Reaction | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [freeText, setFreeText] = useState("");
-  const [loading, setLoading] = useState(true);
   const [direction, setDirection] = useState<"left" | "right" | "up" | null>(null);
 
   const x = useMotionValue(0);
@@ -44,15 +72,46 @@ const Swiping = () => {
   const irritationOpacity = useTransform(y, [SWIPE_Y_THRESHOLD, 0], [1, 0]);
 
   useEffect(() => {
-    if (!userId) {
+    if (!resolvedUserId) {
       navigate("/onboarding");
-      return;
     }
-    getProducts({}).then((res) => {
-      setProducts(res.products);
-      setLoading(false);
-    });
-  }, [userId, navigate]);
+  }, [resolvedUserId, navigate]);
+
+  const { data: products = [], isLoading: loading } = useQuery({
+    queryKey: ["swipe-products", resolvedUserId],
+    queryFn: async () => {
+      const seen = readSeenProducts(resolvedUserId as string);
+      const mergedProducts: Product[] = [];
+      const added = new Set<number>();
+
+      for (let page = 0; page < SWIPE_MAX_FETCH_PAGES; page += 1) {
+        const offset = page * SWIPE_PAGE_SIZE;
+        const response = await getProducts({
+          limit: SWIPE_PAGE_SIZE,
+          offset,
+        });
+
+        for (const product of response.products) {
+          if (seen.has(product.product_id) || added.has(product.product_id)) {
+            continue;
+          }
+          added.add(product.product_id);
+          mergedProducts.push(product);
+        }
+
+        if (response.products.length < SWIPE_PAGE_SIZE) {
+          break;
+        }
+      }
+
+      return mergedProducts;
+    },
+    enabled: !!resolvedUserId,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  });
 
   // Reset motion values when moving to next product
   useEffect(() => {
@@ -77,6 +136,7 @@ const Swiping = () => {
     if (r === "skip") {
       setDirection("left");
       await submitFeedback({ user_id: userId, product_id: currentProduct.product_id, has_tried: false });
+      writeSeenProduct(userId, currentProduct.product_id);
       setTimeout(() => {
         setCurrentIndex((i) => i + 1);
         resetCardState();
@@ -114,6 +174,7 @@ const Swiping = () => {
       reason_tags: selectedTags,
       free_text: freeText,
     });
+    writeSeenProduct(userId, currentProduct.product_id);
     setStep("done");
     setTimeout(() => {
       setCurrentIndex((i) => i + 1);

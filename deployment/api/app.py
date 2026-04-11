@@ -1,5 +1,6 @@
 import csv
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 import logging
 import os
 from pathlib import Path
@@ -17,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from deployment.api.auth.routes import router as auth_router
 from deployment.api.db.init_db import init_db
-from deployment.api.db.session import get_db
+from deployment.api.db.session import SessionLocal, get_db
 from deployment.api.persistence.models import UserFeedbackEvent, UserProfileState
 
 from skincarelib.ml_system.ml_feedback_model import (
@@ -235,6 +236,469 @@ EARLY_STAGE_THRESHOLD = 5  # Minimum interactions to start using complex models
 MID_STAGE_THRESHOLD = 20  # Minimum interactions to use online learning
 MAX_ONBOARDING_SEED_LIKES = 40
 MAX_ONBOARDING_SEED_DISLIKES = 40
+DEBUG_ENDPOINTS_ENABLED = os.getenv("DEBUG_ENDPOINTS_ENABLED", "1").lower() in {
+    "1",
+    "true",
+    "yes",
+}
+
+_PRICE_NEGATIVE_TRIGGERS = {"price too high", "too expensive", "expensive"}
+_PRICE_POSITIVE_TRIGGERS = {"good value", "great value", "affordable"}
+_SKIN_TYPE_POSITIVE_TRIGGERS = {"non irritating", "very gentle", "gentle"}
+_INGREDIENT_POSITIVE_TRIGGERS = {
+    "hydrating",
+    "moisturizing",
+    "absorbed well",
+    "absorbed quickly",
+}
+_AVOID_INGREDIENT_TRIGGERS = {
+    "contains fragrance": "fragrance",
+    "fragrance": "fragrance",
+}
+
+_PROFILE_EXCLUSION_TO_INGREDIENT = {
+    "fragrance": "fragrance",
+    "alcohol": "alcohol",
+    "essential_oils": "essential oil",
+    "sulfates": "sulfate",
+    "parabens": "paraben",
+}
+
+_FRONTEND_REASON_TAGS = {
+    "hydrated well",
+    "absorbed quickly",
+    "felt lightweight",
+    "non irritating",
+    "good value",
+    "too greasy",
+    "not moisturizing enough",
+    "felt sticky",
+    "broke me out",
+    "price too high",
+    "not drying",
+    "very gentle",
+    "helped oil control",
+    "other",
+    "made skin dry tight",
+    "didnt clean well",
+    "irritated skin",
+    "skin felt smoother",
+    "more hydrated",
+    "looked brighter",
+    "helped oil acne",
+    "smelled bad",
+    "burned or stung",
+    "too drying",
+    "didnt see results",
+    "uncomfortable",
+    "helped acne",
+    "helped dark spots",
+    "helped hydration",
+    "helped texture",
+    "helped wrinkles",
+    "didnt work",
+    "too strong",
+    "improved dryness",
+    "improved dark circles",
+    "improved puffiness",
+    "improved fine lines",
+    "improved eye bags",
+    "moisturizing",
+    "irritated eyes",
+    "too heavy",
+    "caused bumps",
+    "absorbed well",
+    "no white cast",
+    "left white cast",
+    "felt greasy",
+    "caused sunburn",
+    "burning",
+    "stinging",
+    "redness",
+    "itching",
+    "rash",
+}
+
+_IRRITANT_KEYWORDS = {
+    "fragrance",
+    "parfum",
+    "alcohol",
+    "menthol",
+    "limonene",
+    "linalool",
+    "citral",
+    "eugenol",
+    "essential oil",
+}
+_COMEDOGENIC_KEYWORDS = {
+    "isopropyl",
+    "coconut",
+    "lanolin",
+    "myristate",
+    "oleic",
+    "stearic",
+    "butter",
+    "silicone",
+}
+_HYDRATION_KEYWORDS = {
+    "hyaluronic",
+    "glycerin",
+    "ceramide",
+    "panthenol",
+    "squalane",
+    "urea",
+    "betaine",
+}
+_BRIGHTENING_KEYWORDS = {
+    "niacinamide",
+    "vitamin c",
+    "ascorb",
+    "tranexamic",
+    "arbutin",
+    "kojic",
+    "licorice",
+}
+_ANTI_AGING_KEYWORDS = {
+    "retinol",
+    "retinal",
+    "peptide",
+    "bakuchiol",
+    "collagen",
+    "adenosine",
+}
+_SOOTHING_KEYWORDS = {
+    "centella",
+    "allantoin",
+    "madecassoside",
+    "bisabolol",
+    "oat",
+    "chamomile",
+    "aloe",
+}
+_MINERAL_FILTER_KEYWORDS = {"zinc", "titanium", "oxide"}
+
+_HEAVY_OR_GREASY_TAGS = {"too greasy", "felt greasy", "felt sticky", "too heavy"}
+_DRYNESS_NEGATIVE_TAGS = {
+    "not moisturizing enough",
+    "made skin dry tight",
+    "too drying",
+}
+_IRRITATION_NEGATIVE_TAGS = {
+    "irritated skin",
+    "burned or stung",
+    "too strong",
+    "irritated eyes",
+    "burning",
+    "stinging",
+    "redness",
+    "itching",
+    "rash",
+    "smelled bad",
+    "uncomfortable",
+}
+_ACNE_NEGATIVE_TAGS = {"broke me out", "caused bumps"}
+_LOW_EFFICACY_TAGS = {
+    "didnt clean well",
+    "didnt see results",
+    "didnt work",
+    "caused sunburn",
+    "left white cast",
+}
+_HYDRATION_POSITIVE_TAGS = {
+    "hydrated well",
+    "more hydrated",
+    "helped hydration",
+    "moisturizing",
+    "improved dryness",
+    "not drying",
+}
+_GENTLE_POSITIVE_TAGS = {
+    "non irritating",
+    "very gentle",
+    "absorbed quickly",
+    "absorbed well",
+    "felt lightweight",
+}
+_ACNE_POSITIVE_TAGS = {"helped acne", "helped oil acne", "helped oil control"}
+_BRIGHTENING_POSITIVE_TAGS = {
+    "looked brighter",
+    "helped dark spots",
+    "improved dark circles",
+}
+_TEXTURE_POSITIVE_TAGS = {
+    "skin felt smoother",
+    "helped texture",
+    "improved fine lines",
+    "helped wrinkles",
+    "improved eye bags",
+    "improved puffiness",
+}
+_UV_POSITIVE_TAGS = {"no white cast"}
+
+_EXPLICIT_REASON_TAGS = (
+    _HEAVY_OR_GREASY_TAGS
+    | _DRYNESS_NEGATIVE_TAGS
+    | _IRRITATION_NEGATIVE_TAGS
+    | _ACNE_NEGATIVE_TAGS
+    | _LOW_EFFICACY_TAGS
+    | _HYDRATION_POSITIVE_TAGS
+    | _GENTLE_POSITIVE_TAGS
+    | _ACNE_POSITIVE_TAGS
+    | _BRIGHTENING_POSITIVE_TAGS
+    | _TEXTURE_POSITIVE_TAGS
+    | _UV_POSITIVE_TAGS
+    | {"price too high", "good value", "other", "contains fragrance", "fragrance"}
+)
+
+_UNMAPPED_REASON_TAGS = sorted(_FRONTEND_REASON_TAGS - _EXPLICIT_REASON_TAGS)
+if _UNMAPPED_REASON_TAGS:
+    logger.warning("Unmapped reason tags detected: %s", _UNMAPPED_REASON_TAGS)
+
+
+def _normalize_phrase(value: str) -> str:
+    return value.lower().replace("_", " ").strip()
+
+
+def _normalize_ingredient_name(value: str) -> Optional[str]:
+    normalized = re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+    return normalized or None
+
+
+def _parse_iso_timestamp(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _get_decay(last_seen_at: Optional[str], half_life_days: float = 180.0) -> float:
+    if not last_seen_at:
+        return 1.0
+    parsed = _parse_iso_timestamp(last_seen_at)
+    if parsed is None:
+        return 1.0
+    age_days = max(0.0, (datetime.now(timezone.utc) - parsed).total_seconds() / 86400.0)
+    return float(np.exp(-age_days / half_life_days))
+
+
+def _product_ingredient_tokens(product: ProductDetail) -> set[str]:
+    tokens: set[str] = set()
+    for ingredient in product.ingredients:
+        normalized = _normalize_ingredient_name(ingredient)
+        if not normalized:
+            continue
+        tokens.add(normalized)
+        for token in normalized.split():
+            if len(token) >= 3:
+                tokens.add(token)
+    return tokens
+
+
+def _product_has_token(product: ProductDetail, token: str) -> bool:
+    ingredient_tokens = _product_ingredient_tokens(product)
+    return token in ingredient_tokens
+
+
+def _phrase_matches_any(phrase: str, phrases: set[str]) -> bool:
+    return any(candidate in phrase for candidate in phrases)
+
+
+def _score_bool(flag: bool, present: float = 1.0, absent: float = -0.35) -> float:
+    return present if flag else absent
+
+
+def _product_features(product: ProductDetail) -> dict[str, bool]:
+    product_tokens = _product_ingredient_tokens(product)
+    combined_text = (
+        f"{product.product_name.lower()} {product.brand.lower()} {product.category.lower()} "
+        + " ".join(product_tokens)
+    )
+
+    price_values = [p.price for p in PRODUCTS.values() if p.price > 0]
+    median_price = float(np.median(price_values)) if price_values else 30.0
+
+    return {
+        "expensive": product.price > median_price,
+        "irritant": _phrase_matches_any(combined_text, _IRRITANT_KEYWORDS),
+        "comedogenic": _phrase_matches_any(combined_text, _COMEDOGENIC_KEYWORDS),
+        "hydrating": _phrase_matches_any(combined_text, _HYDRATION_KEYWORDS),
+        "brightening": _phrase_matches_any(combined_text, _BRIGHTENING_KEYWORDS),
+        "anti_aging": _phrase_matches_any(combined_text, _ANTI_AGING_KEYWORDS),
+        "soothing": _phrase_matches_any(combined_text, _SOOTHING_KEYWORDS),
+        "mineral_filter": _phrase_matches_any(combined_text, _MINERAL_FILTER_KEYWORDS),
+        "sunscreen": product.category == "sunscreen" or "spf" in combined_text,
+        "lightweight": any(
+            marker in combined_text for marker in ["gel", "water", "serum", "fluid"]
+        ),
+        "heavy": any(
+            marker in combined_text
+            for marker in ["butter", "oil", "rich", "occlusive", "wax"]
+        ),
+    }
+
+
+def _reason_feature_signal(phrase: str, product: ProductDetail) -> float:
+    if phrase in {"other"}:
+        return 0.0
+
+    features = _product_features(product)
+    has_fragrance = _product_has_token(product, "fragrance")
+
+    if phrase in {"contains fragrance", "fragrance"}:
+        return _score_bool(has_fragrance)
+    if phrase == "price too high":
+        return _score_bool(features["expensive"])
+    if phrase == "good value":
+        return _score_bool(not features["expensive"])
+
+    if phrase in _HEAVY_OR_GREASY_TAGS:
+        return _score_bool(features["heavy"] or features["comedogenic"])
+    if phrase in _DRYNESS_NEGATIVE_TAGS:
+        return _score_bool(not features["hydrating"])
+    if phrase in _IRRITATION_NEGATIVE_TAGS:
+        return _score_bool(features["irritant"])
+    if phrase in _ACNE_NEGATIVE_TAGS:
+        return _score_bool(features["comedogenic"] or features["irritant"])
+    if phrase in _LOW_EFFICACY_TAGS:
+        if phrase == "caused sunburn":
+            return _score_bool(not features["sunscreen"])
+        if phrase == "left white cast":
+            return _score_bool(features["mineral_filter"])
+        return _score_bool(not (features["hydrating"] or features["soothing"]))
+
+    if phrase in _HYDRATION_POSITIVE_TAGS:
+        return _score_bool(features["hydrating"])
+    if phrase in _GENTLE_POSITIVE_TAGS:
+        return _score_bool(features["soothing"] or not features["irritant"])
+    if phrase in _ACNE_POSITIVE_TAGS:
+        return _score_bool(not features["comedogenic"])
+    if phrase in _BRIGHTENING_POSITIVE_TAGS:
+        return _score_bool(features["brightening"])
+    if phrase in _TEXTURE_POSITIVE_TAGS:
+        return _score_bool(features["anti_aging"] or features["hydrating"])
+    if phrase in _UV_POSITIVE_TAGS:
+        return _score_bool(not features["mineral_filter"])
+
+    return 0.0
+
+
+def _update_user_structured_preferences(
+    user_state: UserState,
+    reasons: List[str],
+    reaction: Optional[str],
+) -> None:
+    if not reasons or reaction not in {"like", "dislike", "irritation"}:
+        return
+
+    if not hasattr(user_state, "avoid_ingredient_last_seen_at"):
+        user_state.avoid_ingredient_last_seen_at = {}
+    if not hasattr(user_state, "preferred_ingredient_last_seen_at"):
+        user_state.preferred_ingredient_last_seen_at = {}
+    if not hasattr(user_state, "reason_tag_last_seen_at"):
+        user_state.reason_tag_last_seen_at = {}
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    for reason in reasons:
+        phrase = _normalize_phrase(reason)
+        if not phrase:
+            continue
+
+        reason_key = phrase.replace(" ", "_")
+        user_state.reason_tag_last_seen_at[reason_key] = now_iso
+
+        if phrase in _AVOID_INGREDIENT_TRIGGERS and reaction in {"dislike", "irritation"}:
+            ingredient_key = _AVOID_INGREDIENT_TRIGGERS[phrase]
+            user_state.avoid_ingredients[ingredient_key] = (
+                user_state.avoid_ingredients.get(ingredient_key, 0.0) + 1.0
+            )
+            user_state.avoid_ingredient_last_seen_at[ingredient_key] = now_iso
+
+        if phrase in _PRICE_NEGATIVE_TRIGGERS and reaction in {"dislike", "irritation"}:
+            user_state.price_sensitivity = min(5.0, user_state.price_sensitivity + 0.5)
+        elif phrase in _PRICE_POSITIVE_TRIGGERS and reaction == "like":
+            user_state.price_sensitivity = max(-5.0, user_state.price_sensitivity - 0.25)
+
+        if phrase in _INGREDIENT_POSITIVE_TRIGGERS and reaction == "like":
+            user_state.preferred_ingredients[phrase] = (
+                user_state.preferred_ingredients.get(phrase, 0.0) + 0.5
+            )
+            user_state.preferred_ingredient_last_seen_at[phrase] = now_iso
+
+
+def _compute_reason_adjustment(product: ProductDetail, user_state: UserState) -> float:
+    if not user_state.reason_tag_preferences:
+        return 0.0
+
+    reason_last_seen = getattr(user_state, "reason_tag_last_seen_at", {}) or {}
+    adjustment = 0.0
+
+    for reason_tag, weight in user_state.reason_tag_preferences.items():
+        phrase = _normalize_phrase(reason_tag)
+        decay = _get_decay(reason_last_seen.get(reason_tag))
+        signal = _reason_feature_signal(phrase, product)
+        if signal == 0.0:
+            continue
+        adjustment += float(weight) * 0.08 * signal * decay
+
+    return adjustment
+
+
+def _compute_structured_adjustment(
+    product: ProductDetail,
+    user_state: UserState,
+    user_profile: OnboardingRequest,
+) -> float:
+    adjustment = 0.0
+    product_tokens = _product_ingredient_tokens(product)
+
+    avoid_last_seen = getattr(user_state, "avoid_ingredient_last_seen_at", {}) or {}
+    preferred_last_seen = (
+        getattr(user_state, "preferred_ingredient_last_seen_at", {}) or {}
+    )
+
+    avoid_keys = set(user_state.avoid_ingredients.keys())
+    for ingredient, weight in user_state.avoid_ingredients.items():
+        if ingredient in product_tokens:
+            decay = _get_decay(avoid_last_seen.get(ingredient))
+            adjustment -= min(0.45, 0.18 * float(weight) * decay)
+
+    for ingredient, weight in user_state.preferred_ingredients.items():
+        if ingredient in avoid_keys:
+            continue
+        if ingredient in product_tokens:
+            decay = _get_decay(preferred_last_seen.get(ingredient))
+            adjustment += min(0.25, 0.05 * float(weight) * decay)
+
+    if "fragrance" in user_profile.ingredient_exclusions and "fragrance" in product_tokens:
+        adjustment -= 2.0
+
+    return adjustment
+
+
+def _product_allowed_for_profile(
+    product: ProductDetail,
+    user_profile: OnboardingRequest,
+) -> bool:
+    if not user_profile.ingredient_exclusions:
+        return True
+
+    product_tokens = _product_ingredient_tokens(product)
+    for exclusion in user_profile.ingredient_exclusions:
+        token = _PROFILE_EXCLUSION_TO_INGREDIENT.get(exclusion)
+        if token and token in product_tokens:
+            return False
+    return True
+
+
+def _ensure_debug_enabled() -> None:
+    if not DEBUG_ENDPOINTS_ENABLED:
+        raise HTTPException(status_code=404, detail="Not found")
 
 
 def normalize_category(raw_category: str, product_name: str = "") -> Category:
@@ -367,6 +831,15 @@ USER_STATES: Dict[str, UserState] = {}
 USER_PROFILES: Dict[str, OnboardingRequest] = {}
 USER_FEEDBACK: List[FeedbackRequest] = []
 DB_INITIALIZED = False
+PROCESSED_QUESTIONNAIRE_RESPONSE_IDS: set[int] = set()
+QUESTIONNAIRE_PIPELINE_STATUS: Dict[str, object] = {
+    "startup_replay_processed": 0,
+    "startup_replay_skipped": 0,
+    "startup_replay_errors": 0,
+    "last_run_processed_ids": [],
+    "last_run_timestamp": None,
+    "last_run_source": None,
+}
 
 
 def get_user_session(user_id: str) -> SwipeSession:
@@ -510,8 +983,176 @@ def _load_user_state_from_db(db: Session, user_id: str) -> UserState:
         elif feedback.reaction == "irritation":
             user_state.add_irritation(vec, reasons=reasons if reasons else None)
 
+        _update_user_structured_preferences(
+            user_state,
+            reasons=reasons,
+            reaction=feedback.reaction,
+        )
+
     USER_STATES[user_id] = user_state
     return user_state
+
+
+def _replay_questionnaire_feedback_from_db(source: str = "startup") -> dict:
+    processed_ids: List[int] = []
+    skipped = 0
+    errors = 0
+
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(UserFeedbackEvent)
+            .filter(UserFeedbackEvent.has_tried.is_(True))
+            .order_by(UserFeedbackEvent.id.asc())
+            .all()
+        )
+
+        product_index = _build_product_index()
+        for row in rows:
+            if row.id in PROCESSED_QUESTIONNAIRE_RESPONSE_IDS:
+                skipped += 1
+                continue
+
+            try:
+                state = USER_STATES.get(row.user_id) or _load_user_state_from_db(db, row.user_id)
+                vec = get_product_vector_safe(row.product_id, product_index)
+                if vec is None:
+                    skipped += 1
+                    PROCESSED_QUESTIONNAIRE_RESPONSE_IDS.add(row.id)
+                    continue
+
+                reasons = list(row.reason_tags or [])
+                if row.free_text:
+                    reasons.append(row.free_text)
+
+                if row.reaction == "like":
+                    state.add_liked(vec, reasons=reasons if reasons else None)
+                elif row.reaction == "dislike":
+                    state.add_disliked(vec, reasons=reasons if reasons else None)
+                elif row.reaction == "irritation":
+                    state.add_irritation(vec, reasons=reasons if reasons else None)
+
+                _update_user_structured_preferences(
+                    state,
+                    reasons=reasons,
+                    reaction=row.reaction,
+                )
+                PROCESSED_QUESTIONNAIRE_RESPONSE_IDS.add(row.id)
+                processed_ids.append(row.id)
+            except Exception:
+                errors += 1
+
+        QUESTIONNAIRE_PIPELINE_STATUS["startup_replay_processed"] = (
+            int(QUESTIONNAIRE_PIPELINE_STATUS.get("startup_replay_processed", 0))
+            + len(processed_ids)
+        )
+        QUESTIONNAIRE_PIPELINE_STATUS["startup_replay_skipped"] = (
+            int(QUESTIONNAIRE_PIPELINE_STATUS.get("startup_replay_skipped", 0)) + skipped
+        )
+        QUESTIONNAIRE_PIPELINE_STATUS["startup_replay_errors"] = (
+            int(QUESTIONNAIRE_PIPELINE_STATUS.get("startup_replay_errors", 0)) + errors
+        )
+        QUESTIONNAIRE_PIPELINE_STATUS["last_run_processed_ids"] = processed_ids
+        QUESTIONNAIRE_PIPELINE_STATUS["last_run_timestamp"] = datetime.now(
+            timezone.utc
+        ).isoformat()
+        QUESTIONNAIRE_PIPELINE_STATUS["last_run_source"] = source
+
+        return {
+            "processed_response_ids_count": len(PROCESSED_QUESTIONNAIRE_RESPONSE_IDS),
+            **QUESTIONNAIRE_PIPELINE_STATUS,
+        }
+    finally:
+        db.close()
+
+
+def _compute_completion_metrics(db: Session) -> dict:
+    total_swipes = db.query(UserFeedbackEvent).count()
+    completed = (
+        db.query(UserFeedbackEvent).filter(UserFeedbackEvent.has_tried.is_(True)).count()
+    )
+    skipped = total_swipes - completed
+    completion_rate = (float(completed) / float(total_swipes)) if total_swipes else 0.0
+    return {
+        "all_time": {
+            "total_swipes": total_swipes,
+            "completed_questionnaires": completed,
+            "skipped_questionnaires": skipped,
+            "completion_rate": completion_rate,
+        }
+    }
+
+
+def _compute_outcome_metrics(db: Session) -> dict:
+    rows = (
+        db.query(UserFeedbackEvent)
+        .order_by(UserFeedbackEvent.user_id.asc(), UserFeedbackEvent.id.asc())
+        .all()
+    )
+
+    per_user: Dict[str, List[UserFeedbackEvent]] = {}
+    for row in rows:
+        per_user.setdefault(row.user_id, []).append(row)
+
+    after_skipped_samples = 0
+    after_skipped_likes = 0
+    after_completed_samples = 0
+    after_completed_likes = 0
+
+    for user_rows in per_user.values():
+        for idx in range(len(user_rows) - 1):
+            current = user_rows[idx]
+            next_row = user_rows[idx + 1]
+
+            if not next_row.has_tried:
+                continue
+
+            if current.has_tried:
+                after_completed_samples += 1
+                if next_row.reaction == "like":
+                    after_completed_likes += 1
+            else:
+                after_skipped_samples += 1
+                if next_row.reaction == "like":
+                    after_skipped_likes += 1
+
+    after_skipped_like_rate = (
+        float(after_skipped_likes) / float(after_skipped_samples)
+        if after_skipped_samples
+        else 0.0
+    )
+    after_completed_like_rate = (
+        float(after_completed_likes) / float(after_completed_samples)
+        if after_completed_samples
+        else 0.0
+    )
+
+    absolute_uplift = after_completed_like_rate - after_skipped_like_rate
+    relative_uplift = (
+        (absolute_uplift / after_skipped_like_rate)
+        if after_skipped_like_rate > 0
+        else 0.0
+    )
+
+    completion = _compute_completion_metrics(db)["all_time"]
+
+    return {
+        "overall": completion,
+        "cohorts": {
+            "after_skipped": {
+                "samples": after_skipped_samples,
+                "like_rate": after_skipped_like_rate,
+            },
+            "after_completed": {
+                "samples": after_completed_samples,
+                "like_rate": after_completed_like_rate,
+            },
+        },
+        "uplift": {
+            "absolute_like_rate_uplift": absolute_uplift,
+            "relative_like_rate_uplift": relative_uplift,
+        },
+    }
 
 
 def _product_to_card(product: ProductDetail) -> ProductCard:
@@ -677,7 +1318,7 @@ def list_products(
     search: Optional[str] = None,
     min_price: Optional[float] = Query(default=None, ge=0),
     max_price: Optional[float] = Query(default=None, ge=0),
-    limit: int = Query(default=24, ge=1, le=100),
+    limit: int = Query(default=24, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> ProductListResponse:
     items = list(PRODUCTS.values())
@@ -731,10 +1372,25 @@ def get_recommendations(
             raise HTTPException(status_code=404, detail="User not found")
         USER_PROFILES[user_id] = db_profile
 
+    user_profile = USER_PROFILES[user_id]
+    real_feedback_count = (
+        db.query(UserFeedbackEvent)
+        .filter(UserFeedbackEvent.user_id == user_id)
+        .filter(UserFeedbackEvent.has_tried.is_(True))
+        .count()
+    )
+
     user_state = USER_STATES.get(user_id) or _load_user_state_from_db(db, user_id)
     candidates = [product for product in PRODUCTS.values()]
     if category is not None:
         candidates = [product for product in candidates if product.category == category]
+    candidates = [
+        product for product in candidates if _product_allowed_for_profile(product, user_profile)
+    ]
+    if user_state.avoid_ingredients.get("fragrance", 0.0) > 0:
+        candidates = [
+            product for product in candidates if not _product_has_token(product, "fragrance")
+        ]
 
     # Score products using adaptive/conditional model based on interaction count
     scores = []
@@ -763,6 +1419,12 @@ def get_recommendations(
                         vec = get_product_vector_safe(product.product_id, product_index)
                         if vec is not None:
                             score = float(model.predict_preference(vec))
+                            score += _compute_reason_adjustment(product, user_state)
+                            score += _compute_structured_adjustment(
+                                product,
+                                user_state,
+                                user_profile,
+                            )
                             scores.append(max(0.1, score))
                         else:
                             scores.append(0.5)
@@ -773,10 +1435,30 @@ def get_recommendations(
             )
             scores = [0.5] * len(candidates)
     else:
-        scores = [0.5] * len(candidates)
+        scores = [
+            min(
+                1.0,
+                max(
+                    0.1,
+                    0.5 + _compute_reason_adjustment(product, user_state)
+                    + _compute_structured_adjustment(product, user_state, user_profile),
+                ),
+            )
+            for product in candidates
+        ]
 
     # Sort by score (highest first)
-    ranked = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)
+    if real_feedback_count > 0:
+        ranked = sorted(
+            zip(candidates, scores),
+            key=lambda x: (
+                x[1],
+                ((x[0].product_id * 31 + real_feedback_count) % 997) / 997.0,
+            ),
+            reverse=True,
+        )
+    else:
+        ranked = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)
 
     result = [
         RecommendationsProduct(
@@ -868,6 +1550,12 @@ def submit_feedback(
                     user_state.add_disliked(vec, reasons=reasons if reasons else None)
                 elif payload.reaction == "irritation":
                     user_state.add_irritation(vec, reasons=reasons if reasons else None)
+
+                _update_user_structured_preferences(
+                    user_state,
+                    reasons=reasons,
+                    reaction=payload.reaction,
+                )
     except Exception as e:
         logger.warning(
             "Could not update ML model state for user_id=%s product_id=%s: %s",
@@ -882,6 +1570,7 @@ def submit_feedback(
 @app.get("/api/debug/user-state/{user_id}")
 def get_user_debug_state(user_id: str, db: Session = Depends(get_db)) -> dict:
     """Debug endpoint to inspect ML model learning state."""
+    _ensure_debug_enabled()
     if user_id not in USER_PROFILES:
         db_profile = _load_profile_from_db(db, user_id)
         if db_profile is None:
@@ -890,14 +1579,50 @@ def get_user_debug_state(user_id: str, db: Session = Depends(get_db)) -> dict:
 
     user_state = USER_STATES.get(user_id) or _load_user_state_from_db(db, user_id)
 
+    real_feedback_rows = (
+        db.query(UserFeedbackEvent)
+        .filter(UserFeedbackEvent.user_id == user_id)
+        .filter(UserFeedbackEvent.has_tried.is_(True))
+        .all()
+    )
+
+    real_interactions = len(real_feedback_rows)
+    real_liked = sum(1 for row in real_feedback_rows if row.reaction == "like")
+    real_disliked = sum(
+        1 for row in real_feedback_rows if row.reaction == "dislike"
+    )
+    real_irritation = sum(
+        1 for row in real_feedback_rows if row.reaction == "irritation"
+    )
+
+    seeded_interactions = max(0, user_state.interactions - real_interactions)
+    seeded_liked = max(0, user_state.liked_count - real_liked)
+    seeded_disliked = max(0, user_state.disliked_count - real_disliked)
+    seeded_irritation = max(0, user_state.irritation_count - real_irritation)
+    reason_signal_count = len(getattr(user_state, "reason_tag_preferences", {}) or {})
+    avoid_ingredient_count = len(getattr(user_state, "avoid_ingredients", {}) or {})
+    preferred_ingredient_count = len(
+        getattr(user_state, "preferred_ingredients", {}) or {}
+    )
+
     return {
         "user_id": user_id,
         "interactions": user_state.interactions,
-        "liked_count": user_state.liked_count,
-        "disliked_count": user_state.disliked_count,
-        "irritation_count": user_state.irritation_count,
-        "has_training_data": user_state.interactions >= 2,
-        "model_ready": user_state.liked_count > 0 and user_state.disliked_count > 0,
+        "real_interactions": real_interactions,
+        "seeded_interactions": seeded_interactions,
+        "liked_count": real_liked,
+        "disliked_count": real_disliked,
+        "irritation_count": real_irritation,
+        "seeded_liked_count": seeded_liked,
+        "seeded_disliked_count": seeded_disliked,
+        "seeded_irritation_count": seeded_irritation,
+        "reason_signal_count": reason_signal_count,
+        "avoid_ingredient_count": avoid_ingredient_count,
+        "preferred_ingredient_count": preferred_ingredient_count,
+        "has_training_data": real_interactions >= 2,
+        "model_ready": real_liked > 0 and real_disliked > 0,
+        "seeded_model_ready": user_state.liked_count > 0
+        and user_state.disliked_count > 0,
     }
 
 
@@ -908,6 +1633,7 @@ def get_product_score(
     db: Session = Depends(get_db),
 ) -> dict:
     """Debug endpoint to get ML model score for a specific product."""
+    _ensure_debug_enabled()
     if user_id not in USER_PROFILES:
         db_profile = _load_profile_from_db(db, user_id)
         if db_profile is None:
@@ -950,6 +1676,33 @@ def get_product_score(
         "training_data_available": user_state.liked_count > 0
         and user_state.disliked_count > 0,
     }
+
+
+@app.get("/api/debug/questionnaire-pipeline-status")
+def get_questionnaire_pipeline_status() -> dict:
+    _ensure_debug_enabled()
+    return {
+        **QUESTIONNAIRE_PIPELINE_STATUS,
+        "processed_response_ids_count": len(PROCESSED_QUESTIONNAIRE_RESPONSE_IDS),
+    }
+
+
+@app.post("/api/debug/questionnaire-pipeline-replay")
+def run_questionnaire_pipeline_replay() -> dict:
+    _ensure_debug_enabled()
+    return _replay_questionnaire_feedback_from_db(source="manual")
+
+
+@app.get("/api/debug/questionnaire-completion-metrics")
+def get_questionnaire_completion_metrics(db: Session = Depends(get_db)) -> dict:
+    _ensure_debug_enabled()
+    return _compute_completion_metrics(db)
+
+
+@app.get("/api/debug/questionnaire-outcome-metrics")
+def get_questionnaire_outcome_metrics(db: Session = Depends(get_db)) -> dict:
+    _ensure_debug_enabled()
+    return _compute_outcome_metrics(db)
 
 
 @app.post("/api/chat", response_model=ChatResponse)

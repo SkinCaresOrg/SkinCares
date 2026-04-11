@@ -1,18 +1,20 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { ApiError, getRecommendations, getUserDebugState } from "@/lib/api";
 import { RecommendedProduct, Category, Product } from "@/lib/types";
 import { clearUserId, getUserId } from "@/lib/wishlist";
+import { hydrateOnboardingForCurrentUser } from "@/lib/session";
 import ProductCard from "@/components/ProductCard";
 import ProductModal from "@/components/ProductModal";
 import Navigation from "@/components/Navigation";
 import { CATEGORIES, CATEGORY_LABELS } from "@/lib/types";
 import { Sparkles, Frown, Zap } from "lucide-react";
 
+const RECOMMENDATIONS_LIMIT = 60;
+
 const Recommendations = () => {
   const navigate = useNavigate();
-  const [products, setProducts] = useState<RecommendedProduct[]>([]);
-  const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState<Category | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [debugState, setDebugState] = useState<any>(null);
@@ -20,30 +22,64 @@ const Recommendations = () => {
 
   const userId = getUserId();
 
+  const resolveRecommendationUserId = () => {
+    if (userId) {
+      return userId;
+    }
+
+    if (hydrateOnboardingForCurrentUser()) {
+      return getUserId();
+    }
+
+    return null;
+  };
+
+  const resolvedUserId = resolveRecommendationUserId();
+
+  const {
+    data: recommendationsData,
+    error: recommendationsError,
+    isLoading,
+    isFetching,
+  } = useQuery({
+    queryKey: ["recommendations", resolvedUserId, category, RECOMMENDATIONS_LIMIT],
+    queryFn: () => getRecommendations(resolvedUserId as string, category || undefined, RECOMMENDATIONS_LIMIT),
+    enabled: !!resolvedUserId,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  });
+
+  const products: RecommendedProduct[] = recommendationsData?.products ?? [];
+
   useEffect(() => {
-    if (!userId) {
+    if (!resolvedUserId) {
       navigate("/onboarding");
+    }
+  }, [resolvedUserId, navigate]);
+
+  useEffect(() => {
+    if (!(recommendationsError instanceof ApiError) || recommendationsError.status !== 404) {
       return;
     }
-    setLoading(true);
-    Promise.all([
-      getRecommendations(userId, category || undefined),
-      getUserDebugState(userId)
-    ])
-      .then(([res, debug]) => {
-        setProducts(res.products);
+    clearUserId();
+    navigate("/onboarding");
+  }, [recommendationsError, navigate]);
+
+  useEffect(() => {
+    if (!resolvedUserId || !showDebug) {
+      return;
+    }
+
+    getUserDebugState(resolvedUserId)
+      .then((debug) => {
         setDebugState(debug);
       })
-      .catch((error: unknown) => {
-        if (error instanceof ApiError && error.status === 404) {
-          clearUserId();
-          navigate("/onboarding");
-        }
-      })
-      .finally(() => {
-        setLoading(false);
+      .catch(() => {
+        setDebugState(null);
       });
-  }, [userId, category, navigate]);
+  }, [resolvedUserId, showDebug]);
 
   return (
     <div className="min-h-screen">
@@ -124,7 +160,7 @@ const Recommendations = () => {
         </button>
 
         <div className="mt-8">
-          {loading ? (
+          {isLoading ? (
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {[1, 2, 3, 4].map((i) => (
                 <div key={i} className="h-72 animate-pulse rounded-2xl bg-muted" />
@@ -142,12 +178,6 @@ const Recommendations = () => {
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {products.map((product) => (
                 <div key={product.product_id} className="relative">
-                  {/* ML Score badge */}
-                  {debugState?.model_ready && (
-                    <div className="absolute right-3 top-3 z-10 rounded-lg bg-blue-500 px-2.5 py-1 text-xs font-bold text-white shadow-md">
-                      {(product.recommendation_score * 100).toFixed(0)}%
-                    </div>
-                  )}
                   <ProductCard
                     key={product.product_id}
                     product={product}
@@ -159,6 +189,10 @@ const Recommendations = () => {
                 </div>
               ))}
             </div>
+          )}
+
+          {isFetching && !isLoading && (
+            <p className="mt-4 text-xs text-muted-foreground">Updating recommendations…</p>
           )}
         </div>
       </main>

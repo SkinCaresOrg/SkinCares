@@ -3,7 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 
-import { login } from "@/lib/auth";
+import { getCurrentUser, login } from "@/lib/auth";
+import {
+  hasCompletedOnboardingForCurrentUser,
+  hydrateOnboardingForCurrentUser,
+  setAuthSession,
+} from "@/lib/session";
 
 // ⚠️ import your Navigation (adjust path if needed)
 import Navigation from "@/components/Navigation";
@@ -16,9 +21,23 @@ export default function Login() {
   const handleLogin = async () => {
     try {
       const data = await login(email, password);
-      localStorage.setItem("token", data.access_token);
-      window.dispatchEvent(new Event("storage"));
-      navigate("/catalog");
+
+      let authUserId: string | undefined;
+      try {
+        const me = await getCurrentUser();
+        authUserId = me.id;
+      } catch {
+        authUserId = undefined;
+      }
+
+      setAuthSession(data.access_token, authUserId);
+
+      if (hasCompletedOnboardingForCurrentUser()) {
+        hydrateOnboardingForCurrentUser();
+        navigate("/catalog");
+      } else {
+        navigate("/onboarding");
+      }
     } catch (error) {
       console.error("Login failed:", error);
       alert("Login failed. Please check your credentials.");

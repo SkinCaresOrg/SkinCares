@@ -6,6 +6,8 @@ services:
     image: skincares-api:latest
     ports:
       - "8000:8000"
+    volumes:
+      - ./data/processed/products_dataset_processed.csv:/app/data/processed/products_dataset_processed.csv:ro
 
   frontend:
     build:

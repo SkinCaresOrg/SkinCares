@@ -17,6 +17,34 @@ To run only API + frontend locally:
 docker compose up --build api frontend
 ```
 
+## Local staging DB (Supabase-like)
+
+`docker compose up` now includes a local Postgres service (`db`) that initializes
+the Supabase-like staging schema from:
+
+- `deployment/sql/002_local_staging_supabase_schema.sql`
+
+Connection settings used by the API container in compose:
+
+- Host: `db`
+- Port: `5432`
+- DB: `skincares`
+- User: `skincares`
+- Password: `skincares`
+
+Run full local stack:
+
+```bash
+docker compose up --build
+```
+
+If you change init SQL and need a fresh database initialization, reset the volume:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
 The API image no longer bakes in the full `data/` directory. In local compose, the required
 product CSV is mounted as a read-only volume. You can also override the CSV path with:
 

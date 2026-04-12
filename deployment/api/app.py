@@ -15,6 +15,8 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from deployment.api.auth.models import User
+from deployment.api.auth.security import hash_password
 from deployment.api.auth.routes import router as auth_router
 from deployment.api.db.init_db import init_db
 from deployment.api.db.session import get_db
@@ -440,7 +442,21 @@ def _ensure_db_initialized() -> None:
 
 
 def _generate_user_id() -> str:
-    return f"user_{uuid4().hex[:12]}"
+    return str(uuid4())
+
+
+def _ensure_user_exists(db: Session, user_id: str) -> None:
+    existing = db.query(User).filter(User.id == user_id).first()
+    if existing is not None:
+        return
+
+    db.add(
+        User(
+            id=user_id,
+            email=f"onboarding+{user_id}@local.test",
+            hashed_password=hash_password(uuid4().hex),
+        )
+    )
 
 
 def _load_profile_from_db(db: Session, user_id: str) -> Optional[OnboardingRequest]:
@@ -650,6 +666,7 @@ def submit_onboarding(
     USER_PROFILES[user_id] = payload
 
     try:
+        _ensure_user_exists(db, user_id)
         _save_profile_to_db(db, user_id, payload)
         db.commit()
     except SQLAlchemyError as exc:

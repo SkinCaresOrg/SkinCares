@@ -1,13 +1,35 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: skincares
+      POSTGRES_USER: skincares
+      POSTGRES_PASSWORD: skincares
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./deployment/sql/002_local_staging_supabase_schema.sql:/docker-entrypoint-initdb.d/002_local_staging_supabase_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skincares -d skincares"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   api:
     build:
       context: .
       dockerfile: deployment/Dockerfile.api
     image: skincares-api:latest
+    environment:
+      DATABASE_URL: postgresql+psycopg://skincares:skincares@db:5432/skincares
     ports:
       - "8000:8000"
     volumes:
       - ./data/processed/products_dataset_processed.csv:/app/data/processed/products_dataset_processed.csv:ro
+    depends_on:
+      db:
+        condition: service_healthy
 
   frontend:
     build:
@@ -29,3 +51,6 @@ services:
       - ./features:/app/features
       - ./skincarelib:/app/skincarelib
       - ./scripts:/app/scripts
+
+volumes:
+  pgdata:

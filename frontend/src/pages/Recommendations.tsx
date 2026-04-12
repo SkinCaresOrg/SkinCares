@@ -16,7 +16,7 @@ const Recommendations = () => {
   const [category, setCategory] = useState<Category | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [debugState, setDebugState] = useState<any>(null);
-  const [showDebug, setShowDebug] = useState(false);
+
 
   const userId = getUserId();
 
@@ -84,44 +84,7 @@ const Recommendations = () => {
           ))}
         </div>
 
-        {/* Debug Panel */}
-        {showDebug && debugState && (
-          <div className="mb-6 mt-6 rounded-lg border border-dashed border-yellow-300 bg-yellow-50 p-4">
-            <h3 className="mb-2 flex items-center gap-2 font-semibold text-yellow-900">
-              <Zap className="h-4 w-4" />
-              Model Learning Status
-            </h3>
-            <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
-              <div>
-                <div className="text-xs font-medium text-yellow-700">Total Interactions</div>
-                <div className="text-xl font-bold text-yellow-900">{debugState.interactions}</div>
-              </div>
-              <div>
-                <div className="text-xs font-medium text-yellow-700">Liked</div>
-                <div className="text-xl font-bold text-green-600">{debugState.liked_count}</div>
-              </div>
-              <div>
-                <div className="text-xs font-medium text-yellow-700">Disliked</div>
-                <div className="text-xl font-bold text-red-600">{debugState.disliked_count}</div>
-              </div>
-              <div>
-                <div className="text-xs font-medium text-yellow-700">Model Ready</div>
-                <div className="text-xl font-bold">{debugState.model_ready ? "✓" : "✗"}</div>
-              </div>
-            </div>
-            <p className="mt-3 text-xs text-yellow-700">
-              {debugState.model_ready 
-                ? "Model is learning! Blue percentages below are ML scores."
-                : "Need more feedback (at least 1 like + 1 dislike) for personalized scores."}
-            </p>
-          </div>
-        )}
-        <button
-          onClick={() => setShowDebug(!showDebug)}
-          className="mb-4 text-xs text-muted-foreground hover:text-foreground"
-        >
-          {showDebug ? "Hide" : "Show"} model debug info
-        </button>
+        
 
         <div className="mt-8">
           {loading ? (
@@ -142,20 +105,12 @@ const Recommendations = () => {
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {products.map((product) => (
                 <div key={product.product_id} className="relative">
-                  {/* ML Score badge */}
-                  {debugState?.model_ready && (
-                    <div className="absolute right-3 top-3 z-10 rounded-lg bg-blue-500 px-2.5 py-1 text-xs font-bold text-white shadow-md">
-                      {(product.recommendation_score * 100).toFixed(0)}%
-                    </div>
-                  )}
+                  
                   <ProductCard
-                    key={product.product_id}
-                    product={product}
-                    onClick={setSelectedProduct}
-                    explanation={product.explanation}
-                    score={product.recommendation_score}
-                    scoreLabel="Match"
-                  />
+                  product={product}
+                  onClick={setSelectedProduct}
+                  explanation={product.explanation}
+                />
                 </div>
               ))}
             </div>

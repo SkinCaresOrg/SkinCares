@@ -1,18 +1,24 @@
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
-COPY setup.py /app/
-COPY skincarelib /app/skincarelib
-COPY deployment /app/deployment
-COPY artifacts /app/artifacts
-COPY features /app/features
+RUN addgroup --system app && adduser --system --ingroup app app
+
+COPY --chown=app:app setup.py /app/
+COPY --chown=app:app skincarelib /app/skincarelib
+COPY --chown=app:app deployment /app/deployment
+COPY --chown=app:app artifacts /app/artifacts
+COPY --chown=app:app features /app/features
 
 RUN python -m pip install --upgrade pip \
     && pip install -e .[api]
+
+USER app
 
 EXPOSE 8000
 CMD ["uvicorn", "deployment.api:app", "--host", "0.0.0.0", "--port", "8000"]

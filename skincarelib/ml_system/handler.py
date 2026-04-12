@@ -3,7 +3,11 @@ import requests
 from typing import Optional, Dict, Any
 
 from skincarelib.ml_system.intent import detect_intent
-from skincarelib.models.dupe_finder import find_dupes
+
+try:
+    from skincarelib.models.dupe_finder import find_dupes
+except ImportError:
+    find_dupes = None
 
 # Initialize OpenAI client lazily (only when needed)
 _client = None
@@ -74,6 +78,9 @@ def handle_chat(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
 
 def handle_dupe(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
     """Handle product dupe finding requests."""
+    if find_dupes is None:
+        return "Dupe search is temporarily unavailable in this environment. Please try recommendations instead."
+
     # Extract product name from message
     product_name = message.replace("dupe", "").replace("find", "").strip().lower()
 

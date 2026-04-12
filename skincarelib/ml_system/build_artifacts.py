@@ -12,8 +12,7 @@ from skincarelib.models import vectorizer
 
 def _default_data_paths(root: Path) -> List[Path]:
     return [
-        root / "skincarelib" / "datasets" / "datasets" / "products_clean.csv",
-        root / "skincarelib" / "datasets" / "datasets" / "products_tokens.csv",
+        root / "data" / "processed" / "products_dataset_processed.csv",
         root / "features" / "ingredient_groups.json",
     ]
 

@@ -25,4 +25,34 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) {
+            return;
+          }
+          if (id.includes("react-router-dom")) {
+            return "router";
+          }
+          if (id.includes("@tanstack/react-query")) {
+            return "react-query";
+          }
+          if (id.includes("recharts")) {
+            return "charts";
+          }
+          if (id.includes("framer-motion")) {
+            return "motion";
+          }
+          if (id.includes("@radix-ui")) {
+            return "radix";
+          }
+          if (id.includes("react") || id.includes("react-dom")) {
+            return "react";
+          }
+          return "vendor";
+        },
+      },
+    },
+  },
 }));

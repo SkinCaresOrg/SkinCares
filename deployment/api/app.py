@@ -16,6 +16,13 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
+    Client = None
+
 from deployment.api.auth.routes import router as auth_router
 from deployment.api.auth.dependencies import get_current_user, get_current_user_optional
 from deployment.api.auth.models import User
@@ -31,6 +38,7 @@ from deployment.api.persistence.models import (
 from skincarelib.ml_system.ml_feedback_model import (
     LogisticRegressionFeedback,
     RandomForestFeedback,
+    GradientBoostingFeedback,
     ContextualBanditFeedback,
     UserState,
 )
@@ -270,6 +278,85 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Initialize Supabase for ML monitoring
+supabase_client: Optional[Client] = None
+if SUPABASE_AVAILABLE:
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_KEY")
+    if supabase_url and supabase_key:
+        supabase_client = create_client(supabase_url, supabase_key)
+        logger.info("✓ Supabase connected for ML monitoring")
+    else:
+        logger.warning("⚠ Supabase credentials not found")
+
+
+# Helper functions for ML monitoring
+def log_prediction_to_supabase(
+    user_id: str,
+    product_id: int,
+    predicted_score: float,
+    actual_reaction: str,
+    model_version: str = "vowpal_wabbit",
+) -> bool:
+    """Log prediction to Supabase for model evaluation"""
+    if not supabase_client:
+        return False
+    
+    try:
+        # Determine if prediction was correct
+        is_correct = (
+            (predicted_score > 0.5 and actual_reaction == "like") or
+            (predicted_score <= 0.5 and actual_reaction != "like")
+        )
+        
+        supabase_client.table("model_predictions_audit").insert({
+            "user_id": user_id,
+            "product_id": product_id,
+            "predicted_score": float(predicted_score),
+            "actual_reaction": actual_reaction,
+            "model_version": model_version,
+            "is_correct": is_correct,
+        }).execute()
+        
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to log prediction: {e}")
+        return False
+
+
+def get_model_metrics_from_supabase() -> Dict:
+    """Fetch current model accuracy metrics from Supabase"""
+    if not supabase_client:
+        return {"error": "Supabase not connected"}
+    
+    try:
+        # Get accuracy by model
+        response = supabase_client.table("model_predictions_audit").select(
+            "model_version, is_correct"
+        ).execute()
+        
+        if not response.data:
+            return {"message": "No predictions logged yet"}
+        
+        df = pd.DataFrame(response.data)
+        metrics = {}
+        
+        for model_type in df["model_version"].unique():
+            model_data = df[df["model_version"] == model_type]
+            accuracy = model_data["is_correct"].mean()
+            total = len(model_data)
+            
+            metrics[model_type] = {
+                "accuracy": float(accuracy),
+                "total_predictions": int(total),
+                "correct": int(model_data["is_correct"].sum()),
+            }
+        
+        return metrics
+    except Exception as e:
+        logger.warning(f"Failed to get metrics: {e}")
+        return {"error": str(e)}
 
 
 # Model selection thresholds (based on data availability patterns)
@@ -1342,26 +1429,59 @@ def _product_to_card(product: ProductDetail) -> ProductCard:
 
 def get_best_model(user_state: UserState):
     """
-    Select the best model based on user's learning stage.
+    Select the best model based on user's learning stage and dataset size.
 
-    Strategy:
+    Adaptive strategy with scaling:
     - Early stage (< 5 interactions): LogisticRegression (fast, lightweight)
     - Mid stage (5-20 interactions): RandomForest (captures complex patterns)
-    - Experienced (20+ interactions): ContextualBandit (online learning, exploration)
+    - Experienced (20-100 interactions): GradientBoosting (better accuracy)
+    - Power users (100-500 interactions): LightGBM (optimized for large datasets)
+    - Super users (500+ interactions): XLearn FFM (online learning, feature interactions)
+    
+    Falls back gracefully if advanced models unavailable.
     """
     interactions = user_state.interactions
 
-    if interactions < EARLY_STAGE_THRESHOLD:
-        # Early stage: need fast feedback (< 5 interactions)
-        return LogisticRegressionFeedback(), "LogisticRegression (Early Stage)"
-    elif interactions < MID_STAGE_THRESHOLD:
-        # Mid stage: more data available, can handle complexity (5-20 interactions)
-        return RandomForestFeedback(), "RandomForest (Mid Stage)"
-    else:
-        # Experienced user: use online learning with exploration
+    try:
+        if interactions < EARLY_STAGE_THRESHOLD:  # < 5
+            # Early stage: need fast feedback
+            return LogisticRegressionFeedback(), "LogisticRegression (Early Stage)"
+        elif interactions < MID_STAGE_THRESHOLD:  # 5-20
+            # Mid stage: more data available, can handle complexity
+            return RandomForestFeedback(), "RandomForest (Mid Stage)"
+        elif interactions < 100:  # 20-100
+            # Experienced: capture complex nonlinear patterns
+            return GradientBoostingFeedback(), "GradientBoosting (Experienced)"
+        elif interactions < 500:  # 100-500
+            # Power user: LightGBM for large datasets
+            from skincarelib.ml_system.ml_feedback_model import LIGHTGBM_AVAILABLE
+            if LIGHTGBM_AVAILABLE:
+                from skincarelib.ml_system.ml_feedback_model import LightGBMFeedback
+                return LightGBMFeedback(), "LightGBM (Power User)"
+            else:
+                # Fallback to GradientBoosting
+                return GradientBoostingFeedback(), "GradientBoosting (Power User - LightGBM unavailable)"
+        else:  # 500+
+            # Super user: XLearn FFM for ultra-large datasets
+            from skincarelib.ml_system.ml_feedback_model import XLEARN_AVAILABLE
+            if XLEARN_AVAILABLE:
+                from skincarelib.ml_system.ml_feedback_model import XLearnFeedback
+                return XLearnFeedback(), "XLearn FFM (Super User)"
+            else:
+                # Fallback to LightGBM
+                from skincarelib.ml_system.ml_feedback_model import LIGHTGBM_AVAILABLE
+                if LIGHTGBM_AVAILABLE:
+                    from skincarelib.ml_system.ml_feedback_model import LightGBMFeedback
+                    return LightGBMFeedback(), "LightGBM (Super User - XLearn unavailable)"
+                else:
+                    return ContextualBanditFeedback(
+                        dim=PRODUCT_VECTORS.shape[1]
+                    ), "ContextualBandit (Super User - advanced models unavailable)"
+    except Exception as e:
+        print(f"Warning selecting advanced model: {e}, falling back to ContextualBandit")
         return ContextualBanditFeedback(
             dim=PRODUCT_VECTORS.shape[1]
-        ), "ContextualBandit (Online Learning)"
+        ), "ContextualBandit (Fallback - error in model selection)"
 
 
 @app.options("/api/onboarding")
@@ -2157,6 +2277,54 @@ def get_questionnaire_completion_metrics(db: Session = Depends(get_db)) -> dict:
 def get_questionnaire_outcome_metrics(db: Session = Depends(get_db)) -> dict:
     _ensure_debug_enabled()
     return _compute_outcome_metrics(db)
+
+
+# ==================== ML Model Monitoring Endpoints ====================
+
+@app.get("/api/ml/model-metrics")
+def get_model_metrics() -> Dict:
+    """Get current accuracy and performance metrics for all ML models"""
+    return get_model_metrics_from_supabase()
+
+
+@app.post("/api/ml/log-prediction")
+def log_prediction(
+    user_id: str,
+    product_id: int,
+    predicted_score: float,
+    actual_reaction: str,
+    model_version: str = "vowpal_wabbit",
+):
+    """Manually log a prediction for evaluation"""
+    success = log_prediction_to_supabase(
+        user_id, product_id, predicted_score, actual_reaction, model_version
+    )
+    return {"logged": success}
+
+
+@app.get("/api/ml/compare-models")
+def compare_models_endpoint() -> Dict:
+    """Compare performance across all trained models"""
+    metrics = get_model_metrics_from_supabase()
+    
+    if "error" in metrics:
+        return metrics
+    
+    # Calculate best model
+    if metrics:
+        best_model = max(
+            metrics.items(),
+            key=lambda x: x[1].get("accuracy", 0)
+        )
+        return {
+            "all_models": metrics,
+            "best_model": {
+                "name": best_model[0],
+                "accuracy": best_model[1]["accuracy"],
+            }
+        }
+    
+    return {"message": "No models evaluated yet"}
 
 
 @app.post("/api/chat", response_model=ChatResponse)

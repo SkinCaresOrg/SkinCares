@@ -1,13 +1,44 @@
 {
-  "scenarios": [
+  "timestamp": "/Users/geethika/projects/SkinCares/SkinCares",
+  "test_users": 3,
+  "train_users": 7,
+  "products_tested": 50,
+  "results": [
     {
-      "scenario": "baseline_moisturizer_budget",
-      "top_n": 10,
-      "metrics": {
-        "constraint_compliance": 1.0,
-        "category_diversity": 0.1,
-        "avg_similarity": 0.9264841079711914
-      }
+      "model": "logistic_regression",
+      "accuracy": 0.625,
+      "precision": 0.625,
+      "recall": 1.0,
+      "f1": 0.7692307692307693,
+      "test_samples": 24,
+      "correct_predictions": 15
+    },
+    {
+      "model": "random_forest",
+      "accuracy": 0.625,
+      "precision": 0.625,
+      "recall": 1.0,
+      "f1": 0.7692307692307693,
+      "test_samples": 24,
+      "correct_predictions": 15
+    },
+    {
+      "model": "gradient_boosting",
+      "accuracy": 0.625,
+      "precision": 0.6363636363636364,
+      "recall": 0.9333333333333333,
+      "f1": 0.7567567567567568,
+      "test_samples": 24,
+      "correct_predictions": 15
+    },
+    {
+      "model": "vowpal_wabbit",
+      "accuracy": 0.5416666666666666,
+      "precision": 0.6666666666666666,
+      "recall": 0.5333333333333333,
+      "f1": 0.5925925925925926,
+      "test_samples": 24,
+      "correct_predictions": 13
     }
   ]
 }

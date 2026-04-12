@@ -1817,16 +1817,29 @@ def get_recommendations(
     else:
         ranked = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)
 
-    result = [
-        RecommendationsProduct(
+    result = []
+    for product, score in ranked[:limit]:
+        rec_product = RecommendationsProduct(
             **_product_to_card(product).model_dump(),
             recommendation_score=score,
             explanation=_build_recommendation_explanation(
                 product, user_profile, user_state
             ),
         )
-        for product, score in ranked[:limit]
-    ]
+        result.append(rec_product)
+        
+        # Log recommendation prediction for model monitoring
+        try:
+            model, model_name = get_best_model(user_state)
+            log_prediction_to_supabase(
+                user_id=user_id,
+                product_id=product.product_id,
+                predicted_score=float(score),
+                actual_reaction="pending",  # Will be updated when user swipes
+                model_version=model_name,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log prediction for user {user_id}: {e}")
 
     return RecommendationsResponse(products=result)
 
@@ -2082,6 +2095,19 @@ def submit_swipe_questionnaire(
                 reasons=reasons,
                 reaction=feedback_payload.reaction,
             )
+            
+            # Log actual user reaction to update model accuracy in Supabase
+            try:
+                model, model_name = get_best_model(user_state)
+                log_prediction_to_supabase(
+                    user_id=user_id,
+                    product_id=event.product_id,
+                    predicted_score=0.5,  # Placeholder (real score would be from recommendation)
+                    actual_reaction=feedback_payload.reaction,
+                    model_version=model_name,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to log feedback for user {user_id}: {e}")
 
     return FeedbackResponse(success=True, message="Questionnaire recorded")
 
@@ -2283,8 +2309,30 @@ def get_questionnaire_outcome_metrics(db: Session = Depends(get_db)) -> dict:
 
 @app.get("/api/ml/model-metrics")
 def get_model_metrics() -> Dict:
-    """Get current accuracy and performance metrics for all ML models"""
-    return get_model_metrics_from_supabase()
+    """Get current accuracy and performance metrics for all ML models with availability info"""
+    metrics = get_model_metrics_from_supabase()
+    
+    # Add model availability
+    from skincarelib.ml_system.ml_feedback_model import (
+        LIGHTGBM_AVAILABLE,
+        XLEARN_AVAILABLE,
+        VW_AVAILABLE,
+    )
+    
+    metrics["available_models"] = {
+        "logistic_regression": True,
+        "random_forest": True,
+        "gradient_boosting": True,
+        "contextual_bandit_vowpal_wabbit": VW_AVAILABLE,
+        "lightgbm": LIGHTGBM_AVAILABLE,
+        "xlearn_ffm": XLEARN_AVAILABLE,
+    }
+    
+    # Add current time for cache awareness
+    from datetime import datetime, timezone
+    metrics["last_updated"] = datetime.now(timezone.utc).isoformat()
+    
+    return metrics
 
 
 @app.post("/api/ml/log-prediction")
@@ -2304,27 +2352,104 @@ def log_prediction(
 
 @app.get("/api/ml/compare-models")
 def compare_models_endpoint() -> Dict:
-    """Compare performance across all trained models"""
+    """Compare performance across all trained models with ranking and metadata"""
     metrics = get_model_metrics_from_supabase()
     
     if "error" in metrics:
         return metrics
     
-    # Calculate best model
+    # Model metadata for ranking display
+    model_metadata = {
+        "logistic_regression": {
+            "threshold_interactions": 5,
+            "description": "Fast & lightweight, early stage",
+            "speed": "Fast",
+            "memory": "Low",
+        },
+        "random_forest": {
+            "threshold_interactions": 20,
+            "description": "Captures patterns, medium stage",
+            "speed": "Medium",
+            "memory": "Medium",
+        },
+        "gradient_boosting": {
+            "threshold_interactions": 100,
+            "description": "Complex patterns, experienced users",
+            "speed": "Medium",
+            "memory": "Medium",
+        },
+        "contextual_bandit_vowpal_wabbit": {
+            "threshold_interactions": 20,
+            "description": "Online learning, real-time updates",
+            "speed": "Fast",
+            "memory": "Low",
+        },
+        "lightgbm": {
+            "threshold_interactions": 500,
+            "description": "Large datasets, power users",
+            "speed": "Fast",
+            "memory": "Low",
+        },
+        "xlearn_ffm": {
+            "threshold_interactions": 5000,
+            "description": "Feature interactions, super users",
+            "speed": "Medium",
+            "memory": "Medium",
+        },
+    }
+    
+    # Rank models by accuracy
+    ranked_models = []
     if metrics:
-        best_model = max(
-            metrics.items(),
-            key=lambda x: x[1].get("accuracy", 0)
+        # Filter out non-model entries
+        model_entries = {k: v for k, v in metrics.items() 
+                        if k not in ["error", "message", "available_models", "last_updated"]
+                        and isinstance(v, dict) and "accuracy" in v}
+        
+        sorted_models = sorted(
+            model_entries.items(),
+            key=lambda x: x[1].get("accuracy", 0),
+            reverse=True
         )
+        
+        for rank, (name, data) in enumerate(sorted_models, 1):
+            ranked_models.append({
+                "rank": rank,
+                "name": name,
+                "accuracy": float(data.get("accuracy", 0)),
+                "total_predictions": int(data.get("total_predictions", 0)),
+                "correct_predictions": int(data.get("correct", 0)),
+                "metadata": model_metadata.get(name, {}),
+            })
+        
+        best_name = sorted_models[0][0] if sorted_models else None
+        best_accuracy = sorted_models[0][1].get("accuracy", 0) if sorted_models else 0
+        
         return {
-            "all_models": metrics,
+            "all_metrics": metrics,
+            "ranked_models": ranked_models,
             "best_model": {
-                "name": best_model[0],
-                "accuracy": best_model[1]["accuracy"],
+                "name": best_name,
+                "accuracy": float(best_accuracy),
+                "rank": 1,
+            } if best_name else None,
+            "summary": {
+                "total_models_compared": len(ranked_models),
+                "models_with_predictions": len([m for m in ranked_models if m["total_predictions"] > 0]),
+                "average_accuracy": float(sum(m["accuracy"] for m in ranked_models) / len(ranked_models)) if ranked_models else 0,
             }
         }
     
-    return {"message": "No models evaluated yet"}
+    return {
+        "message": "No models evaluated yet",
+        "ranked_models": [],
+        "best_model": None,
+        "summary": {
+            "total_models_compared": 0,
+            "models_with_predictions": 0,
+            "average_accuracy": 0,
+        }
+    }
 
 
 @app.post("/api/chat", response_model=ChatResponse)

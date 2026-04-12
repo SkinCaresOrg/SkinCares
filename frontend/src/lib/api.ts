@@ -210,3 +210,53 @@ export async function sendChatMessage(message: string): Promise<{ response: stri
   const profile = getUserProfile();
   return fetchApi("/chat", { method: "POST", body: JSON.stringify({ message, profile }) });
 }
+
+// ML Model Metrics endpoints
+export interface ModelMetric {
+  accuracy: number;
+  total_predictions: number;
+  correct: number;
+}
+
+export interface MLMetrics {
+  [modelName: string]: ModelMetric;
+  available_models?: {
+    [modelName: string]: boolean;
+  };
+}
+
+export interface RankedModel {
+  rank: number;
+  name: string;
+  accuracy: number;
+  total_predictions: number;
+  correct: number;
+  model_info?: {
+    threshold_interactions?: number;
+    description?: string;
+  };
+}
+
+export interface ModelComparison {
+  all_metrics: MLMetrics;
+  ranked_models: RankedModel[];
+  best_model: string;
+}
+
+export async function getMLModelMetrics(): Promise<MLMetrics> {
+  try {
+    return fetchApi("/ml/model-metrics");
+  } catch (error) {
+    console.warn("Failed to fetch ML metrics:", error);
+    return {};
+  }
+}
+
+export async function compareMLModels(): Promise<ModelComparison> {
+  try {
+    return fetchApi("/ml/compare-models");
+  } catch (error) {
+    console.warn("Failed to compare ML models:", error);
+    return { all_metrics: {}, ranked_models: [], best_model: "" };
+  }
+}

@@ -24,6 +24,7 @@ install_requires = [
     "python-dotenv>=0.21,<1",
     "psycopg[binary]>=3.2,<4",
     "vowpalwabbit>=9.0,<10",
+    "faiss-cpu>=1.7,<2",
     "requests>=2.31,<3",  # For Ollama integration (local AI)
 ]
 

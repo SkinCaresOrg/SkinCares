@@ -9,8 +9,13 @@ import {
   SortValue,
 } from "./types";
 import { getUserProfile } from "./wishlist";
+import { getAuthToken } from "./session";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class ApiError extends Error {
   status: number;
@@ -25,10 +30,45 @@ export class ApiError extends Error {
 }
 
 export async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${url}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+  let res: Response | null = null;
+  let fetchError: unknown;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const token = getAuthToken();
+      const defaultHeaders: HeadersInit = {
+        "Content-Type": "application/json",
+      };
+
+      if (token) {
+        defaultHeaders.Authorization = `Bearer ${token}`;
+      }
+
+      res = await fetch(`${BASE_URL}${url}`, {
+        headers: {
+          ...defaultHeaders,
+          ...(options?.headers || {}),
+        },
+        ...options,
+      });
+
+      if (res.ok || !RETRYABLE_STATUS.has(res.status) || attempt === 2) {
+        break;
+      }
+    } catch (error) {
+      fetchError = error;
+      if (attempt === 2) {
+        throw error;
+      }
+    }
+
+    await sleep(250 * (attempt + 1));
+  }
+
+  if (!res) {
+    throw fetchError instanceof Error ? fetchError : new Error("Network request failed");
+  }
+
   if (!res.ok) {
     let detail = "Request failed";
     try {

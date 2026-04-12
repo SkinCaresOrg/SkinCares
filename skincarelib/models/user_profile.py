@@ -14,12 +14,15 @@ TFIDF_START = 0
 TFIDF_END = None  # set by _init_layout() from feature_schema.json
 GROUPS_START = None
 TOTAL_DIMS = None
+PRICE_DIM = (
+    None  # set by _init_layout() — always schema["price_index"], NOT TOTAL_DIMS - 1
+)
 
 _schema = None  # cached parsed schema
 
 
 def _init_layout():
-    global _schema, TFIDF_END, GROUPS_START, TOTAL_DIMS
+    global _schema, TFIDF_END, GROUPS_START, TOTAL_DIMS, PRICE_DIM
     if not SCHEMA_PATH.exists():
         raise FileNotFoundError(
             f"feature_schema.json not found at {SCHEMA_PATH}. "
@@ -30,6 +33,7 @@ def _init_layout():
     TFIDF_END = len(_schema["tfidf"])
     GROUPS_START = TFIDF_END
     TOTAL_DIMS = _schema["total_features"]
+    PRICE_DIM = _schema["price_index"]
 
 
 _init_layout()
@@ -49,12 +53,27 @@ SKIN_TYPE_PREFS = {
     "normal": (["active", "antioxidant"], []),
 }
 
+# Skin type -> (signal dims to boost, signal dims to suppress)
+# Derived from the 7-dim CosIng signal space: hydration, barrier, acne_control,
+# soothing, exfoliation, antioxidant, irritation_risk
+SKIN_TYPE_SIGNAL_PREFS = {
+    "dry": (
+        ["hydration", "barrier", "soothing"],
+        ["acne_control", "exfoliation", "irritation_risk"],
+    ),
+    "oily": (["acne_control", "exfoliation"], ["barrier", "hydration"]),
+    "sensitive": (["soothing", "barrier"], ["irritation_risk", "exfoliation"]),
+    "combination": (["hydration", "acne_control"], ["irritation_risk"]),
+    "normal": (["antioxidant", "hydration"], ["irritation_risk"]),
+}
+
 # Module-level caches — populated lazily on first call
 _group_map = None  # ingredient -> group name
 _group_names = None  # sorted list of unique group names
 _group_dim = None  # group name -> absolute dim index
 _cat_dim = None  # category name -> absolute dim index
 _tfidf_vocab = None  # token -> dim index (0-511)
+_signal_dim = None  # signal name -> absolute dim index
 
 
 def _load_group_info():
@@ -102,6 +121,20 @@ def _load_tfidf_vocab():
     _tfidf_vocab = vec.vocabulary_  # token -> dim index (0-511)
 
 
+def _load_signal_info():
+    global _signal_dim
+    if _signal_dim is not None:
+        return
+    if _schema is not None:
+        signals = _schema.get("signals", {})
+    elif SCHEMA_PATH.exists():
+        with open(SCHEMA_PATH) as f:
+            signals = json.load(f).get("signals", {})
+    else:
+        signals = {}
+    _signal_dim = {name: info["start"] for name, info in signals.items()}
+
+
 def build_user_vector(
     liked_product_ids, explicit_prefs, product_vectors, product_index
 ):
@@ -124,6 +157,7 @@ def build_user_vector(
     """
     _load_group_info()
     _load_cat_info()
+    _load_signal_info()
 
     # --- Step 1: Base vector from liked products ---
     valid_ids = [pid for pid in (liked_product_ids or []) if pid in product_index]
@@ -155,6 +189,18 @@ def build_user_vector(
                 continue
             base_vector[_group_dim[grp]] *= SUPPRESS_FACTOR
 
+    # --- Step 2b: Skin type -> signal dim boost/suppress ---
+    if skin_type in SKIN_TYPE_SIGNAL_PREFS and _signal_dim:
+        boost_sigs, suppress_sigs = SKIN_TYPE_SIGNAL_PREFS[skin_type]
+        SIGNAL_BOOST = 0.25
+        SIGNAL_SUPPRESS = 0.5
+        for sig in boost_sigs:
+            if sig in _signal_dim:
+                base_vector[_signal_dim[sig]] += SIGNAL_BOOST
+        for sig in suppress_sigs:
+            if sig in _signal_dim:
+                base_vector[_signal_dim[sig]] *= SIGNAL_SUPPRESS
+
     # --- Step 3: preferred_ingredients -> TF-IDF dim boost ---
     preferred_ingredients = explicit_prefs.get("preferred_ingredients") or []
     if preferred_ingredients and TFIDF_PATH.exists():
@@ -174,7 +220,7 @@ def build_user_vector(
 
     # --- Step 5: budget -> price dim (cold start only) ---
     budget = explicit_prefs.get("budget")
-    price_dim = TOTAL_DIMS - 1
+    price_dim = PRICE_DIM
     if budget is not None and not valid_ids:
         budget = float(budget)
         if budget <= 20:

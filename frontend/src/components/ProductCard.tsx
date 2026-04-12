@@ -20,10 +20,6 @@ const CATEGORY_GRADIENTS: Record<Category, string> = {
 
 const ProductCard = ({ product, onClick, explanation, score, scoreLabel }: ProductCardProps) => {
   const hasImage = product.image_url && product.image_url.trim().length > 0;
-  const normalizedScore =
-    score !== undefined
-      ? Math.max(0, Math.min(100, Math.round(score * 100)))
-      : undefined;
 
   return (
     <button
@@ -51,7 +47,7 @@ const ProductCard = ({ product, onClick, explanation, score, scoreLabel }: Produ
         </div>
         {score !== undefined && (
           <div className="absolute left-3 top-3 rounded-xl bg-card/90 px-2.5 py-1 text-xs font-semibold text-primary backdrop-blur-sm">
-            {scoreLabel || "Score"}: {normalizedScore}%
+            {scoreLabel || "Score"}: {Math.round(score * 100)}%
           </div>
         )}
       </div>

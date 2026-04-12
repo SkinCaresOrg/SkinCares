@@ -4,7 +4,6 @@ import { ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 
 import { register } from "@/lib/auth";
-import { ApiError } from "@/lib/api";
 import Navigation from "@/components/Navigation";
 
 
@@ -32,11 +31,14 @@ export default function Register() {
 
       // Success → redirect to login
       navigate("/login");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Registration failed:", error);
 
-      if (error instanceof ApiError) {
-        setErrorMsg(error.detail || "Registration failed. Check your input.");
+      // Handle 422 validation errors from FastAPI
+      if (error?.response?.status === 422) {
+        const data = await error.response.json();
+        const messages = data.detail?.map((d: any) => d.msg).join("\n");
+        setErrorMsg(messages || "Registration failed. Check your input.");
       } else {
         setErrorMsg("Registration failed. Please try again.");
       }

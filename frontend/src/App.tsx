@@ -45,7 +45,7 @@ const RequireOnboarding = ({ children }: { children: JSX.Element }) => {
 const PublicOnly = ({ children }: { children: JSX.Element }) => {
   if (isAuthenticated()) {
     if (hasCompletedOnboardingForCurrentUser()) {
-      return <Navigate to="/swiping" replace />;
+      return <Navigate to="/catalog" replace />;
     }
     return <Navigate to="/onboarding" replace />;
   }

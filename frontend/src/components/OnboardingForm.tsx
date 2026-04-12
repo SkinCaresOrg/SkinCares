@@ -51,16 +51,12 @@ const OnboardingForm = () => {
 
   const handleSubmit = async () => {
     setSubmitting(true);
-    try {
-      const res = await submitOnboarding(profile);
-      saveOnboardingForCurrentUser({
-        recommendationUserId: res.user_id,
-        profile,
-      });
-      navigate("/swiping");
-    } finally {
-      setSubmitting(false);
-    }
+    const res = await submitOnboarding(profile);
+    saveOnboardingForCurrentUser({
+      recommendationUserId: res.user_id,
+      profile,
+    });
+    navigate("/recommendations");
   };
 
   const isLast = step === TOTAL_STEPS - 1;

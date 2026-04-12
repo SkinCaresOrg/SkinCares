@@ -86,7 +86,7 @@ export async function submitOnboarding(profile: OnboardingProfile): Promise<{ us
   return fetchApi("/onboarding", { method: "POST", body: JSON.stringify(profile) });
 }
 
-export async function getUserDebugState(userId: string): Promise<Record<string, unknown>> {
+export async function getUserDebugState(userId: string): Promise<any> {
   return fetchApi(`/debug/user-state/${userId}`);
 }
 
@@ -94,108 +94,34 @@ export async function getProducts(params?: {
   category?: Category;
   sort?: SortValue;
   search?: string;
-  skin_type?: string;
-  concern?: string;
-  brand?: string;
-  ingredient?: string;
   min_price?: number;
   max_price?: number;
-  page?: number;
-  limit?: number;
   offset?: number;
-}): Promise<{ items: Product[]; products: Product[]; total: number; hasMore: boolean; page: number }> {
+}): Promise<{ products: Product[]; total: number }> {
   const query = new URLSearchParams();
   if (params?.category) query.set("category", params.category);
   if (params?.sort) query.set("sort", params.sort);
   if (params?.search) query.set("search", params.search);
-  if (params?.skin_type) query.set("skin_type", params.skin_type);
-  if (params?.concern) query.set("concern", params.concern);
-  if (params?.brand) query.set("brand", params.brand);
-  if (params?.ingredient) query.set("ingredient", params.ingredient);
   if (params?.min_price !== undefined) {
     query.set("min_price", String(params.min_price));
   }
   if (params?.max_price !== undefined) {
     query.set("max_price", String(params.max_price));
   }
-  if (params?.limit !== undefined) {
-    query.set("limit", String(params.limit));
-  }
-  if (params?.page !== undefined) {
-    query.set("page", String(params.page));
-  } else if (params?.offset !== undefined) {
-    const fallbackLimit = params?.limit ?? 20;
-    query.set("page", String(Math.floor(params.offset / fallbackLimit) + 1));
-    query.set("limit", String(fallbackLimit));
-  }
+  if (params?.offset !== undefined) {
+  query.set("offset", String(params.offset));
+}
   const qs = query.toString();
-  return fetchApi<{ items?: Product[]; products?: Product[]; total: number; hasMore?: boolean; page?: number }>(
-    `/products${qs ? `?${qs}` : ""}`
-  ).then((payload) => {
-    const items = payload.items ?? payload.products ?? [];
-    const resolvedLimit = params?.limit ?? 20;
-    const resolvedPage = payload.page ?? params?.page ?? 1;
-    const hasMore = payload.hasMore ?? resolvedPage * resolvedLimit < payload.total;
-
-    return {
-      items,
-      products: items,
-      total: payload.total,
-      hasMore,
-      page: resolvedPage,
-    };
-  });
-}
-
-export async function getSwipeQueue(limit = 6): Promise<{ products: RecommendedProduct[]; hasMore: boolean; remaining: number }> {
-  const query = new URLSearchParams();
-  query.set("limit", String(limit));
-  return fetchApi(`/swipe/queue?${query.toString()}`);
-}
-
-export async function createSwipe(productId: number, direction: "like" | "dislike" | "irritation" | "skip"): Promise<{ swipe_event_id: number; success: boolean }> {
-  return fetchApi("/swipe", {
-    method: "POST",
-    body: JSON.stringify({ product_id: productId, direction }),
-  });
-}
-
-export async function submitSwipeQuestionnaire(
-  swipeEventId: number,
-  payload: { reason_tags?: string[]; free_text?: string; skipped?: boolean }
-): Promise<{ success: boolean; message: string }> {
-  return fetchApi(`/swipe/${swipeEventId}/questionnaire`, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function getWishlistItems(): Promise<{ items: Product[] }> {
-  return fetchApi("/wishlist");
-}
-
-export async function addToWishlist(productId: number): Promise<{ success: boolean; product_id: number }> {
-  return fetchApi(`/wishlist/${productId}`, { method: "POST" });
-}
-
-export async function removeFromWishlist(productId: number): Promise<{ success: boolean; product_id: number }> {
-  return fetchApi(`/wishlist/${productId}`, { method: "DELETE" });
+  return fetchApi(`/products${qs ? `?${qs}` : ""}`);
 }
 
 export async function getProductDetail(productId: number): Promise<ProductDetail> {
   return fetchApi(`/products/${productId}`);
 }
 
-export async function getRecommendations(
-  userId: string,
-  category?: Category,
-  limit?: number
-): Promise<{ products: RecommendedProduct[] }> {
-  const query = new URLSearchParams();
-  if (category) query.set("category", category);
-  if (limit !== undefined) query.set("limit", String(limit));
-  const qs = query.toString();
-  return fetchApi(`/recommendations/${userId}${qs ? `?${qs}` : ""}`);
+export async function getRecommendations(userId: string, category?: Category): Promise<{ products: RecommendedProduct[] }> {
+  const qs = category ? `?category=${category}` : "";
+  return fetchApi(`/recommendations/${userId}${qs}`);
 }
 
 export async function getDupes(productId: number): Promise<{ source_product_id: number; dupes: DupeProduct[] }> {
@@ -209,54 +135,4 @@ export async function submitFeedback(feedback: FeedbackRequest): Promise<{ succe
 export async function sendChatMessage(message: string): Promise<{ response: string }> {
   const profile = getUserProfile();
   return fetchApi("/chat", { method: "POST", body: JSON.stringify({ message, profile }) });
-}
-
-// ML Model Metrics endpoints
-export interface ModelMetric {
-  accuracy: number;
-  total_predictions: number;
-  correct: number;
-}
-
-export interface MLMetrics {
-  [modelName: string]: ModelMetric;
-  available_models?: {
-    [modelName: string]: boolean;
-  };
-}
-
-export interface RankedModel {
-  rank: number;
-  name: string;
-  accuracy: number;
-  total_predictions: number;
-  correct: number;
-  model_info?: {
-    threshold_interactions?: number;
-    description?: string;
-  };
-}
-
-export interface ModelComparison {
-  all_metrics: MLMetrics;
-  ranked_models: RankedModel[];
-  best_model: string;
-}
-
-export async function getMLModelMetrics(): Promise<MLMetrics> {
-  try {
-    return fetchApi("/ml/model-metrics");
-  } catch (error) {
-    console.warn("Failed to fetch ML metrics:", error);
-    return {};
-  }
-}
-
-export async function compareMLModels(): Promise<ModelComparison> {
-  try {
-    return fetchApi("/ml/compare-models");
-  } catch (error) {
-    console.warn("Failed to compare ML models:", error);
-    return { all_metrics: {}, ranked_models: [], best_model: "" };
-  }
 }

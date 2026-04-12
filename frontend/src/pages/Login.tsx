@@ -7,7 +7,6 @@ import { getCurrentUser, login } from "@/lib/auth";
 import {
   hasCompletedOnboardingForCurrentUser,
   hydrateOnboardingForCurrentUser,
-  setOnboardingCompletedForCurrentUser,
   setAuthSession,
 } from "@/lib/session";
 
@@ -33,13 +32,9 @@ export default function Login() {
 
       setAuthSession(data.access_token, authUserId);
 
-      if (authUserId) {
-        setOnboardingCompletedForCurrentUser(!!me?.onboarding_completed);
-      }
-
-      if (me?.onboarding_completed || hasCompletedOnboardingForCurrentUser()) {
+      if (hasCompletedOnboardingForCurrentUser()) {
         hydrateOnboardingForCurrentUser();
-        navigate("/swiping");
+        navigate("/catalog");
       } else {
         navigate("/onboarding");
       }

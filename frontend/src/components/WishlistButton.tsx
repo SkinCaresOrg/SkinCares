@@ -1,6 +1,6 @@
 import { Heart } from "lucide-react";
 import { useState, useEffect } from "react";
-import { addToWishlist, getWishlistItems, removeFromWishlist } from "@/lib/api";
+import { isInWishlist, toggleWishlist } from "@/lib/wishlist";
 import { cn } from "@/lib/utils";
 
 interface WishlistButtonProps {
@@ -12,36 +12,13 @@ const WishlistButton = ({ productId, className }: WishlistButtonProps) => {
   const [wishlisted, setWishlisted] = useState(false);
 
   useEffect(() => {
-    let mounted = true;
-    getWishlistItems()
-      .then((payload) => {
-        if (!mounted) return;
-        setWishlisted(payload.items.some((item) => item.product_id === productId));
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setWishlisted(false);
-      });
-
-    return () => {
-      mounted = false;
-    };
+    setWishlisted(isInWishlist(productId));
   }, [productId]);
 
-  const handleToggle = async (e: React.MouseEvent) => {
+  const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const next = !wishlisted;
-    setWishlisted(next);
-    try {
-      if (next) {
-        await addToWishlist(productId);
-      } else {
-        await removeFromWishlist(productId);
-      }
-      window.dispatchEvent(new CustomEvent("skincares-wishlist-updated"));
-    } catch {
-      setWishlisted(!next);
-    }
+    toggleWishlist(productId);
+    setWishlisted(!wishlisted);
   };
 
   return (

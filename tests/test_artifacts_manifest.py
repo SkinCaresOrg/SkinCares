@@ -36,6 +36,8 @@ def test_build_manifest_hashes(tmp_path: Path):
 def test_find_project_root_from_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     root = tmp_path / "repo"
     (root / "artifacts").mkdir(parents=True)
+    monkeypatch.delenv("SKINCARES_PROJECT_ROOT", raising=False)
+    monkeypatch.delenv("GITHUB_WORKSPACE", raising=False)
     monkeypatch.chdir(root)
 
     assert find_project_root() == root

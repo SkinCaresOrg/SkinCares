@@ -30,6 +30,12 @@ if not DATABASE_URL:
         )
     DATABASE_URL = "sqlite:///./local.db"
 
+if (
+    DATABASE_URL.startswith("postgresql://")
+    and "+" not in DATABASE_URL.split("://", 1)[0]
+):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+
 connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}

@@ -21,6 +21,7 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
+    dedupe: ["react", "react-dom"],
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
@@ -31,6 +32,15 @@ export default defineConfig(({ mode }) => ({
         manualChunks(id) {
           if (!id.includes("node_modules")) {
             return;
+          }
+          if (
+            id.includes("/react/") ||
+            id.includes("/react-dom/") ||
+            id.includes("react/jsx-runtime") ||
+            id.includes("react/jsx-dev-runtime") ||
+            id.includes("scheduler")
+          ) {
+            return "react-vendor";
           }
           if (id.includes("react-router-dom")) {
             return "router";
@@ -46,9 +56,6 @@ export default defineConfig(({ mode }) => ({
           }
           if (id.includes("@radix-ui")) {
             return "radix";
-          }
-          if (id.includes("react") || id.includes("react-dom")) {
-            return "react";
           }
           return "vendor";
         },

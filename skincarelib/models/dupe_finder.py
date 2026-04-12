@@ -4,6 +4,7 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
+import faiss
 
 from .dupe_scorer import DupeScorer
 from .dupe_explainer import explain_dupe
@@ -11,34 +12,184 @@ from .dupe_explainer import explain_dupe
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
-VECTORS_PATH = ROOT / "artifacts" / "product_vectors.npy"
-INDEX_PATH = ROOT / "artifacts" / "product_index.json"
-SCHEMA_PATH = ROOT / "artifacts" / "feature_schema.json"
-METADATA_PATH = ROOT / "data" / "processed" / "products_with_signals.csv"
+VECTORS_PATH     = ROOT / "artifacts" / "product_vectors.npy"
+INDEX_PATH       = ROOT / "artifacts" / "product_index.json"
+SCHEMA_PATH      = ROOT / "artifacts" / "feature_schema.json"
+METADATA_PATH    = ROOT / "data" / "processed" / "products_with_signals.csv"
+FAISS_INDEX_PATH = ROOT / "artifacts" / "faiss.index"
+
+# How many ANN neighbours to fetch from FAISS before price/subtype filtering.
+FAISS_RETRIEVAL_K = 2500  # ~5% of the catalogue
 
 
 # ---------------------------
 # Product subtype detection
 # ---------------------------
+
+# Direct mapping from dataset category labels to internal subtypes.
+# Used as the primary signal — more reliable than keyword matching since
+# it uses the explicit label already assigned to the product.
+CATEGORY_TO_SUBTYPE = {
+    # Eye
+    "Eye Cream, Gel, Oils, & Serum": "eye_treatment",
+    "Eye Masks & Pads":              "eye_treatment",
+    "Eyes":                          "eye_treatment",
+    "Dark Circle Treatments":        "eye_treatment",
+    "Puffiness Treatments":          "eye_treatment",
+    "Eyelid + Lash":                 "eye_treatment",
+    # Lip
+    "Lip Balms, Gels, Moisturizers & Oils": "lip_treatment",
+    "Lip Care":                      "lip_treatment",
+    "Lip Exfoliators + Scrubs":      "lip_treatment",
+    "Lip Mask":                      "lip_treatment",
+    "Lips":                          "lip_treatment",
+    # Hand & foot
+    "Hand":                          "hand_care",
+    "Hand Masks":                    "hand_care",
+    "Moisturizing Gloves":           "hand_care",
+    "Liquid or Cream Hand Soaps":    "hand_soap",
+    "Feet":                          "foot_care",
+    "Foot Mask":                     "foot_care",
+    # Neck
+    "Neck & Décolleté":              "neck_care",
+    # Masks
+    "Facial Masks":                  "mask",
+    "Face":                          "mask",
+    # Exfoliators
+    "Facial Scrubs":                 "exfoliator",
+    "Exfoliators":                   "exfoliator",
+    "Exfoliators & Scrubs":          "exfoliator",
+    "Exfoliators, Polishes, & Scrubs": "exfoliator",
+    "Microdermabrasion":             "exfoliator",
+    "Polishes":                      "exfoliator",
+    "Scrubs":                        "exfoliator",
+    # Peels
+    "Acids & Peels":                 "peel",
+    "Peels":                         "peel",
+    "Glycolic Acid":                 "peel",
+    "Salicylic Acid":                "peel",
+    "Alpha Beta":                    "peel",
+    # Cleansers
+    "Facial Cleansers":              "cleanser",
+    "Facial Cleansing Milks":        "cleanser",
+    "Facial Foaming Cleansers":      "cleanser",
+    "Facial Washes":                 "cleanser",
+    "Foaming Cleansers":             "cleanser",
+    "Cleansers":                     "cleanser",
+    "Pore Cleansing":                "cleanser",
+    "Facial Cleansing Oil":          "cleansing_oil",
+    "Micellar Water":                "micellar",
+    "Facial Wipes":                  "wipes",
+    "Cloths, Towelettes, & Wipes":   "wipes",
+    "Facial Bar Soap":               "soap",
+    "Bar Soaps":                     "soap",
+    "Liquid Cleansers & Soaps":      "soap",
+    # Serums
+    "Serums":                        "serum",
+    "Serum":                         "serum",
+    "Moisturizing Serums":           "serum",
+    "Complexes":                     "serum",
+    "Drops":                         "serum",
+    "Ampoules":                      "serum",
+    # Retinol
+    "Retinol":                       "retinol",
+    # Toners
+    "Toners":                        "toner",
+    "Toners & Astringents":          "toner",
+    "Astringents":                   "toner",
+    "Essence":                       "toner",
+    # Mists
+    "Mists":                         "mist",
+    "Spray Moisturizer":             "mist",
+    "Spray Moisturizers":            "mist",
+    # Oils
+    "Oils":                          "face_oil",
+    # Gels
+    "Facial Gels":                   "gel",
+    # Moisturizers
+    "Emulsions":                     "moisturizer",
+    "Daytime Moisturizers":          "moisturizer",
+    "Nighttime Moisturizers":        "moisturizer",
+    "Moisturizers":                  "moisturizer",
+    "Tinted Moisturizers":           "tinted_moisturizer",
+    "Moisturizers with SPF":         "sunscreen",
+    # Anti-aging
+    "Anti-Aging":                    "anti_aging",
+    "Anti-Aging/Anti-Wrinkle":       "anti_aging",
+    "Anti-Aging/Anti-Wrinkle (RX)":  "anti_aging",
+    "Anti-Wrinkle":                  "anti_aging",
+    "Anti-Wrinkle Treatments":       "anti_aging",
+    "Firming Treatments":            "anti_aging",
+    # Treatments
+    "Dark Spot Corrector & Pigment Corrector": "spot_treatment",
+    "Spot Treatments":               "spot_treatment",
+    "Skin Lightening":               "spot_treatment",
+    "Acne Care (OTC)":               "acne_treatment",
+    "Pore Treatments":               "pore_treatment",
+    "Pore Refining":                 "pore_treatment",
+    "Pore Strips":                   "pore_treatment",
+    "Lash & Brow Growth":            "lash_brow",
+    # Body
+    "Body":                          "body_care",
+    "Lotions":                       "body_care",
+    "Butters":                       "body_care",
+    "Body Wipes":                    "body_care",
+    "Stretch Marks":                 "body_care",
+    "Ethnic Creams, Lotions & Oils": "body_care",
+    "Balms":                         "balm",
+    "Balms, Ointments & Salves":     "balm",
+    "OIntments":                     "balm",
+}
+
+# Keyword fallback — used when category is missing or not in the mapping.
 PRODUCT_TYPE_PATTERNS = {
-    "eye_treatment": ["eye"],
-    "lip_treatment": ["lip"],
-    "hand_care": ["hand"],
-    "body_care": ["body"],
-    "cleanser": ["cleanser", "face wash", "wash"],
-    "serum": ["serum", "ampoule"],
-    "sunscreen": ["spf", "sunscreen", "sun screen"],
-    "mask": ["mask"],
-    "toner": ["toner", "essence"],
+    "eye_treatment":  ["eye cream", "eye gel", "eye serum", "eye oil",
+                       "eye lift", "eye mask", "eye treatment", "eye complex",
+                       "eye repair", "dark circle", "depuff", "de-puff",
+                       "under eye", "undereye"],
+    "lip_treatment":  ["lip balm", "lip mask", "lip oil", "lip gloss",
+                       "lip care", "lip serum", "lip butter", "lip treatment"],
+    "hand_care":      ["hand cream", "hand butter", "hand lotion",
+                       "hand mask", "hand treatment"],
+    "foot_care":      ["foot cream", "foot mask", "foot balm", "heel cream"],
+    "neck_care":      ["neck cream", "neck serum", "décolleté", "decolletage"],
+    "body_care":      ["body cream", "body lotion", "body butter",
+                       "body oil", "body wash", "body treatment"],
+    "cleanser":       ["cleanser", "face wash", "cleansing milk",
+                       "micellar", "cleansing water", "cleansing foam"],
+    "serum":          ["serum", "ampoule", "booster", "concentrate"],
+    "sunscreen":      ["spf", "sunscreen", "sun screen", "sun protection"],
+    "mask":           ["sheet mask", "face mask", "facial mask",
+                       "sleeping mask", "overnight mask", "mud mask",
+                       "clay mask", "peel off mask", "masque", "treatment mask"],
+    "toner":          ["toner", "essence", "lotion toner"],
+    "peel":           ["peel", "exfoliant", "aha", "bha", "lactic acid",
+                       "glycolic acid", "salicylic acid"],
+    "retinol":        ["retinol", "retinoid", "retin-a", "tretinoin"],
+    "face_oil":       ["face oil", "facial oil", "dry oil"],
+    "spot_treatment": ["spot treatment", "blemish treatment",
+                       "acne treatment", "dark spot"],
+    "mist":           ["face mist", "facial mist", "setting spray", "toning mist"],
 }
 
 
-def infer_product_subtype(product_name: str):
-    """Infer a more specific product subtype from product name."""
-    name = str(product_name).lower()
+def infer_product_subtype(product_name: str, category: str = None):
+    """Infer product subtype using category label as primary signal.
 
+    Category mapping is always checked first — if the category has an explicit
+    mapping it is used directly. Keyword matching on the product name is only
+    used when the category is missing or not in the mapping.
+    """
+    # Primary: use category mapping directly
+    if category:
+        subtype = CATEGORY_TO_SUBTYPE.get(category)
+        if subtype:
+            return subtype
+
+    # Fallback: keyword match on product name
+    name = str(product_name).lower()
     for subtype, keywords in PRODUCT_TYPE_PATTERNS.items():
-        if any(keyword in name for keyword in keywords):
+        if any(kw in name for kw in keywords):
             return subtype
 
     return None
@@ -57,7 +208,6 @@ def load_artifacts():
         feature_schema = json.load(f)
 
     metadata = pd.read_csv(METADATA_PATH)
-
     metadata.columns = metadata.columns.str.lower()
     metadata["product_id"] = metadata.index.astype(str)
 
@@ -67,34 +217,35 @@ def load_artifacts():
         raise ValueError(f"products_with_signals.csv missing columns: {missing}")
 
     metadata["price"] = pd.to_numeric(metadata["price"], errors="coerce")
-
     metadata = metadata[metadata["product_id"].isin(product_index)].copy()
     metadata = metadata.reset_index(drop=True)
 
-    return vectors, product_index, feature_schema, metadata
+    # faiss.read_index raises RuntimeError if the file is missing,
+    # not FileNotFoundError, so we catch both at the call site
+    faiss_index = faiss.read_index(str(FAISS_INDEX_PATH))
+
+    return vectors, product_index, feature_schema, metadata, faiss_index
 
 
-# Capture the original exception so find_dupes() can surface an actionable
-# error message instead of a generic "not initialized" with no context.
 _LOAD_ERROR: Optional[Exception] = None
 
 try:
-    VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA = load_artifacts()
-except FileNotFoundError as e:
+    VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA, FAISS_INDEX = load_artifacts()
+except (FileNotFoundError, RuntimeError) as e:
     import warnings
 
     _LOAD_ERROR = e
     warnings.warn(f"Could not load artifacts: {e}. Running in degraded mode.")
 
-    VECTORS = None
-    PRODUCT_INDEX = {}
+    VECTORS        = None
+    PRODUCT_INDEX  = {}
     FEATURE_SCHEMA = None
+    FAISS_INDEX    = None
     METADATA = pd.DataFrame(
         columns=["product_id", "product_name", "brand", "category", "price"]
     )
 
-
-INDEX_TO_ID = {v: k for k, v in PRODUCT_INDEX.items()}
+INDEX_TO_ID   = {v: k for k, v in PRODUCT_INDEX.items()}
 _PRICE_LOOKUP = METADATA.set_index("product_id")["price"].to_dict()
 
 if FEATURE_SCHEMA is not None and PRODUCT_INDEX:
@@ -104,10 +255,34 @@ else:
 
 
 # ---------------------------
+# FAISS-based candidate retrieval
+# ---------------------------
+def _faiss_candidates(source_id: str, k: int = FAISS_RETRIEVAL_K) -> list:
+    """Return up to k product IDs nearest to source via FAISS ANN search.
+
+    Vectors are L2-normalised at index build time so inner product == cosine
+    similarity. Replaces the previous full dataframe scan, which does not
+    scale beyond ~50k products.
+    """
+    source_idx = PRODUCT_INDEX[source_id]
+    query = VECTORS[source_idx].reshape(1, -1).copy().astype(np.float32)
+    faiss.normalize_L2(query)
+
+    _, neighbour_indices = FAISS_INDEX.search(query, k + 1)
+    neighbour_indices = neighbour_indices.flatten()
+
+    return [
+        INDEX_TO_ID[idx]
+        for idx in neighbour_indices
+        if idx in INDEX_TO_ID and INDEX_TO_ID[idx] != source_id
+    ]
+
+
+# ---------------------------
 # Main dupe finder
 # ---------------------------
 def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
-    if SCORER is None:
+    if SCORER is None or FAISS_INDEX is None:
         raise RuntimeError(
             "DupeScorer not initialized — artifacts failed to load at import time.\n"
             f"Expected files:\n"
@@ -115,6 +290,7 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
             f"  {INDEX_PATH}\n"
             f"  {SCHEMA_PATH}\n"
             f"  {METADATA_PATH}\n"
+            f"  {FAISS_INDEX_PATH}\n"
             f"Original error: {_LOAD_ERROR}\n"
             "Run vectorizer.py to regenerate missing artifacts."
         )
@@ -122,29 +298,34 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
     if product_id not in PRODUCT_INDEX:
         raise ValueError(f"Unknown product_id: {product_id!r}")
 
-    source_row = METADATA[METADATA["product_id"] == product_id].iloc[0]
+    source_row      = METADATA[METADATA["product_id"] == product_id].iloc[0]
     source_category = source_row["category"]
-    source_price = source_row["price"]
+    source_price    = source_row["price"]
+    source_subtype  = infer_product_subtype(source_row["product_name"], source_category)
 
-    # detect subtype
-    source_subtype = infer_product_subtype(source_row["product_name"])
+    # --- Retrieval: FAISS ANN instead of full dataframe scan ---
+    candidate_ids = _faiss_candidates(product_id, k=FAISS_RETRIEVAL_K)
 
-    # Base filtering (same category + cheaper)
-    candidates = METADATA[
-        (METADATA["product_id"] != product_id)
-        & (METADATA["category"] == source_category)
-        & (METADATA["price"] < source_price)
-    ].copy()
+    # --- Filtering ---
+    candidates = METADATA[METADATA["product_id"].isin(candidate_ids)].copy()
 
-    # subtype filtering (only if detected)
+    # Must be same category and cheaper
+    candidates = candidates[
+        (candidates["category"] == source_category)
+        & (candidates["price"] < source_price)
+    ]
+
+    # Subtype filter — category-first with keyword fallback
     if source_subtype is not None:
         filtered = candidates[
-            candidates["product_name"].str.lower().apply(
-                lambda name: infer_product_subtype(name) == source_subtype
+            candidates.apply(
+                lambda row: infer_product_subtype(
+                    row["product_name"], row["category"]
+                ) == source_subtype,
+                axis=1,
             )
         ].copy()
 
-        # fallback if too restrictive
         if not filtered.empty:
             candidates = filtered
 
@@ -154,15 +335,8 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
     if candidates.empty:
         return pd.DataFrame(
             columns=[
-                "product_id",
-                "product_name",
-                "brand",
-                "category",
-                "price",
-                "dupe_score",
-                "cosine_sim",
-                "price_score",
-                "ingredient_group_score",
+                "product_id", "product_name", "brand", "category", "price",
+                "dupe_score", "cosine_sim", "price_score", "ingredient_group_score",
             ]
         )
 
@@ -174,26 +348,15 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
     )
 
     results = candidates.merge(scored, on="product_id", how="inner")
-
     results = (
         results.sort_values("dupe_score", ascending=False)
         .head(top_n)
         .reset_index(drop=True)
     )
-
-    results = results[
-        [
-            "product_id",
-            "product_name",
-            "brand",
-            "category",
-            "price",
-            "dupe_score",
-            "cosine_sim",
-            "price_score",
-            "ingredient_group_score",
-        ]
-    ]
+    results = results[[
+        "product_id", "product_name", "brand", "category", "price",
+        "dupe_score", "cosine_sim", "price_score", "ingredient_group_score",
+    ]]
 
     if explain:
         results["explanation"] = results.apply(
@@ -211,7 +374,7 @@ def get_artifacts():
 # Demo run
 # ---------------------------
 if __name__ == "__main__":
-    demo_id = next(iter(PRODUCT_INDEX))
+    demo_id  = next(iter(PRODUCT_INDEX))
     demo_row = METADATA[METADATA["product_id"] == demo_id].iloc[0]
 
     print("Finding dupes for:")

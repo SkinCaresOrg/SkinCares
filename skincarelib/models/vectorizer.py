@@ -20,18 +20,10 @@ ARTIFACT_DIR = ROOT / "artifacts"
 
 
 def _resolve_products_path() -> Path:
-    candidates = [
-        ROOT / "data" / "processed" / "products_with_signals.csv",
-        ROOT / "data" / "processed" / "products_dataset_processed.csv",
-        ROOT / "data" / "processed" / "products_clean.csv",
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    raise FileNotFoundError(
-        "No supported product dataset found under data/processed. "
-        f"Tried: {[str(path) for path in candidates]}"
-    )
+    path = ROOT / "data" / "processed" / "products_with_signals.csv"
+    if path.exists():
+        return path
+    raise FileNotFoundError(f"Missing dataset required for artifact build: {path}")
 
 
 def load_data():

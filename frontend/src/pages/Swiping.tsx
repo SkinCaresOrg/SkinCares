@@ -31,7 +31,7 @@ const Swiping = () => {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [freeText, setFreeText] = useState("");
   const [loading, setLoading] = useState(true);
-  const [direction, setDirection] = useState<"left" | "right" | "up" | null>(null);
+  const [direction, setDirection] = useState<"left" | "right" | "up" | "skip" | null>(null);
   const [offset, setOffset] = useState(0); // tracks how many products we've fetched so far
   const [hasMore, setHasMore] = useState(true); // false when backend says no more products
 
@@ -49,6 +49,14 @@ const Swiping = () => {
   const likeOpacity = useTransform(x, [0, SWIPE_THRESHOLD], [0, 1]);
   const dislikeOpacity = useTransform(x, [-SWIPE_THRESHOLD, 0], [1, 0]);
   const irritationOpacity = useTransform(y, [SWIPE_Y_THRESHOLD, 0], [1, 0]);
+  const skipOpacity = useTransform(
+    [x, y] as any,
+    ([latestX, latestY]: number[]) => {
+      // only show SKIP if dragging mostly downward, not sideways
+      if (Math.abs(latestX) > 30) return 0;
+      return Math.min(1, Math.max(0, latestY / 80));
+    }
+  );
 
 useEffect(() => {
     if (!userId) {
@@ -107,13 +115,16 @@ useEffect(() => {
     if (!currentProduct || !userId) return;
 
     if (r === "skip") {
-      setDirection("left");
-      await submitFeedback({ user_id: userId, product_id: currentProduct.product_id, has_tried: false });
+      setDirection("skip");
+      setStep("submitting"); 
 
-      // Persist seen product so it's skipped on refresh
+      // Persist seen product
       const updated = Array.from(seenIds).concat(currentProduct.product_id);
       localStorage.setItem("skincares_seen_products", JSON.stringify(updated));
       seenIds.add(currentProduct.product_id);
+
+      // Fire in background — no await so animation isn't blocked
+      submitFeedback({ user_id: userId, product_id: currentProduct.product_id, has_tried: false });
 
       setTimeout(() => {
         setCurrentIndex((i) => i + 1);
@@ -128,14 +139,16 @@ useEffect(() => {
   }, [currentProduct, userId, resetCardState]);
 
   const handleDragEnd = useCallback((_: any, info: { offset: { x: number; y: number } }) => {
-    if (info.offset.y < SWIPE_Y_THRESHOLD) {
-      handleReaction("irritation");
-    } else if (info.offset.x > SWIPE_THRESHOLD) {
-      handleReaction("like");
-    } else if (info.offset.x < -SWIPE_THRESHOLD) {
-      handleReaction("dislike");
-    }
-  }, [handleReaction]);
+  if (info.offset.y < SWIPE_Y_THRESHOLD) {
+    handleReaction("irritation");
+  } else if (info.offset.y > 80) {  // ← ADD THIS
+    handleReaction("skip");
+  } else if (info.offset.x > SWIPE_THRESHOLD) {
+    handleReaction("like");
+  } else if (info.offset.x < -SWIPE_THRESHOLD) {
+    handleReaction("dislike");
+  }
+}, [handleReaction]);
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) => prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]);
@@ -234,8 +247,8 @@ useEffect(() => {
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{
-                  x: direction === "right" ? 300 : direction === "left" ? -300 : 0,
-                  y: direction === "up" ? -300 : 0,
+                    x: direction === "right" ? 300 : direction === "left" ? -300 : 0,
+                    y: direction === "up" ? -300 : direction === "skip" ? 300 : 0,
                   opacity: 0,
                   transition: { duration: 0.3 },
                 }}
@@ -258,6 +271,13 @@ useEffect(() => {
                   style={{ opacity: irritationOpacity }}
                 >
                   <span className="rounded-xl bg-destructive px-4 py-2 text-lg font-bold text-white">IRRITATION</span>
+                </motion.div>
+                {/* Skip indicator overlay */}
+              <motion.div
+                  className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-3xl border-4 border-gray-400 bg-gray-400/5"
+                  style={{ opacity: skipOpacity }}
+                >
+                  <span className="rounded-xl bg-gray-400 px-4 py-2 text-lg font-bold text-white">SKIP</span>
                 </motion.div>
 
                 {/* Product card */}
@@ -400,7 +420,8 @@ useEffect(() => {
         {/* Hint */}
         {step === "swipe" && (
           <p className="mt-4 text-center text-xs text-muted-foreground">
-            Drag right to like · left to dislike · up for irritation · or use the buttons
+            Drag right to like · left to dislike · up for irritation · down to skip 
+             or use the buttons
           </p>
         )}
 

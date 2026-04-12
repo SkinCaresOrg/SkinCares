@@ -4,7 +4,6 @@ import Navigation from "@/components/Navigation";
 import { Product, Category, Reaction, REACTION_TAGS, IRRITATION_TAGS, CATEGORY_LABELS, formatTagLabel, formatPrice } from "@/lib/types";
 import { getProducts, submitFeedback } from "@/lib/api";
 import { getUserId } from "@/lib/wishlist";
-import { ModelMonitor } from "@/components/ModelMonitor";
 import { motion, useMotionValue, useTransform, AnimatePresence } from "framer-motion";
 import { ThumbsUp, ThumbsDown, AlertTriangle, SkipForward, Undo2, Check } from "lucide-react";
 
@@ -25,8 +24,6 @@ const SWIPE_Y_THRESHOLD = -80;
 const Swiping = () => {
   const navigate = useNavigate();
   const userId = getUserId();
-  const shouldShowModelMonitor =
-    import.meta.env.DEV || localStorage.getItem("skincares_debug_monitor") === "1";
   const [products, setProducts] = useState<Product[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [step, setStep] = useState<SwipeStep>("swipe");
@@ -35,6 +32,16 @@ const Swiping = () => {
   const [freeText, setFreeText] = useState("");
   const [loading, setLoading] = useState(true);
   const [direction, setDirection] = useState<"left" | "right" | "up" | null>(null);
+  const [offset, setOffset] = useState(0); // tracks how many products we've fetched so far
+  const [hasMore, setHasMore] = useState(true); // false when backend says no more products
+
+// Load seen product IDs from localStorage so we don't show them again after refresh
+  const [seenIds] = useState<Set<number>>(() => {
+  const stored = localStorage.getItem("skincares_seen_products");
+  return stored ? new Set(JSON.parse(stored)) : new Set();
+});
+
+
 
   const x = useMotionValue(0);
   const y = useMotionValue(0);
@@ -43,16 +50,41 @@ const Swiping = () => {
   const dislikeOpacity = useTransform(x, [-SWIPE_THRESHOLD, 0], [1, 0]);
   const irritationOpacity = useTransform(y, [SWIPE_Y_THRESHOLD, 0], [1, 0]);
 
-  useEffect(() => {
+useEffect(() => {
     if (!userId) {
       navigate("/onboarding");
       return;
     }
-    getProducts({}).then((res) => {
-      setProducts(res.products);
+    // Initial load — fetch first 24 products
+    getProducts({ offset: 0 }).then((res) => {
+      setProducts(res.products.filter(p => !seenIds.has(p.product_id)));
+      setOffset(res.products.length);
+      // if backend returned fewer than 24, there are no more pages
+      setHasMore(res.products.length === 24);
       setLoading(false);
     });
-  }, [userId, navigate]);
+}, [userId, navigate]);
+
+// Load more products when we are 5 cards from the end
+// This prevents showing "All done" too early and keeps the queue full
+useEffect(() => {
+    if (!hasMore || loading) return;
+    if (currentIndex >= products.length - 5) {
+      setLoading(true);
+      getProducts({offset}).then((res) => {
+        if (res.products.length === 0) {
+          // No more products available from the backend
+          setHasMore(false);
+        } else {
+          // Append new products to the existing list, never resetting to page 1
+          setProducts((prev) => [...prev, ...res.products.filter(p => !seenIds.has(p.product_id))]);
+          setOffset((prev) => prev + res.products.length);
+          setHasMore(res.products.length === 24);
+        }
+        setLoading(false);
+      });
+    }
+}, [currentIndex, products.length, offset, hasMore, loading]);
 
   // Reset motion values when moving to next product
   useEffect(() => {
@@ -77,6 +109,12 @@ const Swiping = () => {
     if (r === "skip") {
       setDirection("left");
       await submitFeedback({ user_id: userId, product_id: currentProduct.product_id, has_tried: false });
+
+      // Persist seen product so it's skipped on refresh
+      const updated = Array.from(seenIds).concat(currentProduct.product_id);
+      localStorage.setItem("skincares_seen_products", JSON.stringify(updated));
+      seenIds.add(currentProduct.product_id);
+
       setTimeout(() => {
         setCurrentIndex((i) => i + 1);
         resetCardState();
@@ -115,11 +153,16 @@ const Swiping = () => {
       free_text: freeText,
     });
     setStep("done");
-    setTimeout(() => {
-      setCurrentIndex((i) => i + 1);
-      resetCardState();
-    }, 800);
-  };
+    if (currentProduct) {
+    const updated = Array.from(seenIds).concat(currentProduct.product_id);
+    localStorage.setItem("skincares_seen_products", JSON.stringify(updated));
+    seenIds.add(currentProduct.product_id);
+  }
+      setTimeout(() => {
+        setCurrentIndex((i) => i + 1);
+        resetCardState();
+      }, 800);
+    };
 
   const getTags = (): string[] => {
     if (!reaction || !currentProduct) return [];
@@ -170,17 +213,11 @@ const Swiping = () => {
       <Navigation />
       <div className="container max-w-md py-6">
         {/* Progress */}
-        <div className="mb-4 flex items-center justify-between">
-          <p className="text-xs font-medium text-muted-foreground">
-            {currentIndex + 1} / {products.length}
-          </p>
-          <div className="h-1.5 flex-1 mx-4 rounded-full bg-muted overflow-hidden">
-            <div
-              className="h-full rounded-full bg-primary transition-all duration-500"
-              style={{ width: `${((currentIndex + 1) / products.length) * 100}%` }}
-            />
-          </div>
-        </div>
+        <div className="mb-4 flex items-center justify-center">
+        <p className="text-xs font-medium text-muted-foreground">
+          {currentIndex + 1} reviewed
+        </p>
+      </div>
 
         {/* Card area */}
         <div className="relative flex items-center justify-center" style={{ minHeight: 420 }}>
@@ -367,10 +404,7 @@ const Swiping = () => {
           </p>
         )}
 
-        {/* Real-time model monitoring */}
-        {userId && shouldShowModelMonitor && (
-          <ModelMonitor userId={userId} refreshInterval={10000} />
-        )}
+    
       </div>
     </div>
   );

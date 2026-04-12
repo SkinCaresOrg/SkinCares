@@ -52,6 +52,31 @@ product CSV is mounted as a read-only volume. You can also override the CSV path
 PRODUCTS_CSV_PATH=/absolute/path/to/products_dataset_processed.csv
 ```
 
+### API artifact bootstrap on startup
+
+The API container now starts through `deployment.api.startup`, which checks for required
+artifacts and rebuilds them if missing before launching `uvicorn`.
+
+Startup checks for:
+- `artifacts/product_vectors.npy`
+- `artifacts/product_index.json`
+- `artifacts/feature_schema.json`
+- `artifacts/tfidf.joblib`
+- `artifacts/faiss.index`
+
+If `data/processed/products_with_signals.csv` is missing but
+`data/processed/products_dataset_processed.csv` exists, it auto-creates a fallback
+signals dataset and then runs:
+
+```bash
+python scripts/build_artifacts.py --schema-version v1
+```
+
+Optional environment controls:
+- `SKINCARES_AUTO_BUILD_ARTIFACTS` (default: `true`) — set to `false` to skip auto-build.
+- `SKINCARES_REQUIRE_ARTIFACTS` (default: `false`) — set to `true` to fail container startup if artifact bootstrap fails.
+- `SKINCARES_ARTIFACT_SCHEMA_VERSION` (default: `v1`) — schema version passed to artifact build.
+
 Local URLs:
 - Frontend: `http://localhost:8080`
 - API docs: `http://localhost:8000/docs`

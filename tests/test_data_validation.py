@@ -29,7 +29,7 @@ def test_validate_artifact_inputs_success(tmp_path: Path):
         }
     )
 
-    _write_csv(root / "data" / "processed" / "products_dataset_processed.csv", products)
+    _write_csv(root / "data" / "processed" / "products_with_signals.csv", products)
     _write_json(root / "features" / "ingredient_groups.json")
 
     validate_artifact_inputs(root)
@@ -39,7 +39,7 @@ def test_validate_artifact_inputs_missing_columns(tmp_path: Path):
     root = tmp_path
     products = pd.DataFrame({"price": [10.0], "ingredients": ["water"]})
 
-    _write_csv(root / "data" / "processed" / "products_dataset_processed.csv", products)
+    _write_csv(root / "data" / "processed" / "products_with_signals.csv", products)
     _write_json(root / "features" / "ingredient_groups.json")
 
     with pytest.raises(DataValidationError) as exc:
@@ -58,7 +58,7 @@ def test_validate_artifact_inputs_empty_tokens(tmp_path: Path):
         }
     )
 
-    _write_csv(root / "data" / "processed" / "products_dataset_processed.csv", products)
+    _write_csv(root / "data" / "processed" / "products_with_signals.csv", products)
     _write_json(root / "features" / "ingredient_groups.json")
 
     with pytest.raises(DataValidationError) as exc:

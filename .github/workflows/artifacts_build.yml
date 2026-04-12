@@ -34,6 +34,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install .[dev]
 
+      - name: Ensure products_with_signals dataset
+        run: |
+          python scripts/ensure_products_with_signals.py
+
       - name: Validate artifact inputs
         run: |
           python -c "from skincarelib.ml_system.data_validation import validate_artifact_inputs; from skincarelib.ml_system.artifacts import find_project_root; validate_artifact_inputs(find_project_root())"

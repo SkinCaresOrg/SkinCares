@@ -58,7 +58,7 @@ def _assert_prices(series: pd.Series, issues: List[ValidationIssue]) -> None:
 
 
 def validate_artifact_inputs(root: Path) -> None:
-    data_products = root / "data" / "processed" / "products_dataset_processed.csv"
+    data_products = root / "data" / "processed" / "products_with_signals.csv"
     groups_path = root / "features" / "ingredient_groups.json"
 
     issues: List[ValidationIssue] = []
@@ -76,16 +76,16 @@ def validate_artifact_inputs(root: Path) -> None:
     _assert_columns(
         products,
         REQUIRED_PRODUCTS_COLUMNS,
-        "products_dataset_processed.csv",
+        "products_with_signals.csv",
         issues,
     )
-    _assert_non_empty(products, "products_dataset_processed.csv", issues)
+    _assert_non_empty(products, "products_with_signals.csv", issues)
 
     token_columns_present = TOKEN_COLUMN_OPTIONS.intersection(set(products.columns))
     if not token_columns_present:
         issues.append(
             ValidationIssue(
-                "products_dataset_processed.csv missing token text column; expected one of "
+                "products_with_signals.csv missing token text column; expected one of "
                 f"{sorted(TOKEN_COLUMN_OPTIONS)}"
             )
         )
@@ -97,19 +97,19 @@ def validate_artifact_inputs(root: Path) -> None:
     if "ingredient_tokens_clean" in products.columns:
         _assert_non_empty_strings(
             products["ingredient_tokens_clean"],
-            "products_dataset_processed.ingredient_tokens_clean",
+            "products_with_signals.ingredient_tokens_clean",
             issues,
         )
     elif "ingredient_tokens" in products.columns:
         _assert_non_empty_strings(
             products["ingredient_tokens"],
-            "products_dataset_processed.ingredient_tokens",
+            "products_with_signals.ingredient_tokens",
             issues,
         )
     elif "ingredients" in products.columns:
         _assert_non_empty_strings(
             products["ingredients"],
-            "products_dataset_processed.ingredients",
+            "products_with_signals.ingredients",
             issues,
         )
 

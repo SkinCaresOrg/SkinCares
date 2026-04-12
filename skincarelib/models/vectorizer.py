@@ -18,6 +18,16 @@ ROOT = find_project_root()
 GROUPS_PATH = ROOT / "features" / "ingredient_groups.json"
 ARTIFACT_DIR = ROOT / "artifacts"
 
+SIGNAL_KEYS = [
+    "hydration",
+    "barrier",
+    "acne_control",
+    "soothing",
+    "exfoliation",
+    "antioxidant",
+    "irritation_risk",
+]
+
 
 def _resolve_products_path() -> Path:
     path = ROOT / "data" / "processed" / "products_with_signals.csv"
@@ -62,6 +72,11 @@ def load_data():
         )
 
     df["ingredient_tokens"] = df[token_column]
+
+    # fill any missing signal columns with zero
+    for sig in SIGNAL_KEYS:
+        if sig not in df.columns:
+            df[sig] = 0.0
 
     return df.reset_index(drop=True)
 
@@ -149,8 +164,16 @@ def build_price_feature(series):
     return csr_matrix(scaled)
 
 
-def stack_all(X_tfidf, X_groups, X_cat, X_price):
-    return hstack([X_tfidf, X_groups, X_cat, X_price], format="csr")
+def build_signal_features(df):
+    """Stack the 7 CosIng-derived signal columns into a dense feature block.
+
+    Values are already normalised to [0, 1] by the skin-type mapping pipeline.
+    """
+    return csr_matrix(df[SIGNAL_KEYS].fillna(0.0).to_numpy(dtype=np.float32))
+
+
+def stack_all(X_tfidf, X_groups, X_cat, X_price, X_signals):
+    return hstack([X_tfidf, X_groups, X_cat, X_price, X_signals], format="csr")
 
 
 def build_schema(tfidf_vec, group_names, cat_names):
@@ -158,19 +181,27 @@ def build_schema(tfidf_vec, group_names, cat_names):
 
     Groups are stored as {name: {start, end}} rather than a flat list so
     that DupeScorer can slice out each group's dimensions by name.
+    Signals are stored the same way for use by user_profile.py.
     """
     tfidf_names = tfidf_vec.get_feature_names_out().tolist()
     n_tfidf = len(tfidf_names)
     n_groups = len(group_names)
     n_cats = len(cat_names)
+    n_signals = len(SIGNAL_KEYS)
 
     group_start = n_tfidf
     cat_start = group_start + n_groups
     price_idx = cat_start + n_cats
+    signal_start = price_idx + 1
 
     groups_schema = {
         name: {"start": group_start + i, "end": group_start + i + 1}
         for i, name in enumerate(group_names)
+    }
+
+    signals_schema = {
+        name: {"start": signal_start + i, "end": signal_start + i + 1}
+        for i, name in enumerate(SIGNAL_KEYS)
     }
 
     return {
@@ -178,7 +209,8 @@ def build_schema(tfidf_vec, group_names, cat_names):
         "groups": groups_schema,
         "categories": cat_names,
         "price_index": price_idx,
-        "total_features": price_idx + 1,
+        "signals": signals_schema,
+        "total_features": signal_start + n_signals,
     }
 
 
@@ -228,8 +260,9 @@ def run():
     X_groups, group_names = build_group_features(df["ingredient_tokens"], groups)
     X_cat, cat_names = build_category_features(df["category"])
     X_price = build_price_feature(df["price"])
+    X_signals = build_signal_features(df)
 
-    X = stack_all(X_tfidf, X_groups, X_cat, X_price)
+    X = stack_all(X_tfidf, X_groups, X_cat, X_price, X_signals)
     schema = build_schema(tfidf_vec, group_names, cat_names)
 
     save_outputs(X, df, schema, tfidf_vec)

@@ -7,7 +7,7 @@ interface ModelMonitorProps {
   refreshInterval?: number; // milliseconds
 }
 
-export const ModelMonitor = ({ userId, refreshInterval = 2000 }: ModelMonitorProps) => {
+export const ModelMonitor = ({ userId, refreshInterval = 10000 }: ModelMonitorProps) => {
   const [state, setState] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);

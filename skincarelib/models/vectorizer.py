@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import joblib
+import faiss
 from scipy.sparse import csr_matrix, hstack
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
@@ -65,8 +66,6 @@ def load_groups():
 
 
 def build_tfidf(token_series):
-    # tokens are stored as Python list strings: "['glycerin', 'water', ...]"
-    # parse them properly before joining into text for TF-IDF
     import ast
 
     def parse_tokens(row):
@@ -100,8 +99,6 @@ def build_group_features(token_series, group_map):
     rows, cols, data = [], [], []
 
     for i, row in enumerate(token_series.fillna("")):
-        # tokens are stored as a Python list string: "['glycerin', 'water', ...]"
-        # ast.literal_eval parses this safely; fall back to comma-split if it fails
         try:
             import ast
 
@@ -196,10 +193,27 @@ def build_schema(tfidf_vec, group_names, cat_names):
     }
 
 
+def build_faiss_index(vectors: np.ndarray) -> faiss.Index:
+    """Build a FAISS flat inner-product index over L2-normalised vectors.
+
+    Normalising first means inner product == cosine similarity, so the index
+    returns the same neighbours as a cosine search but scales to much larger
+    catalogues without slowing down.
+    """
+    vectors = vectors.copy().astype(np.float32)
+    faiss.normalize_L2(vectors)
+    dim = vectors.shape[1]
+    index = faiss.IndexFlatIP(dim)
+    index.add(vectors)
+    print(f"FAISS index built: {index.ntotal} vectors, dim={dim}")
+    return index
+
+
 def save_outputs(X, df, schema, tfidf_vec):
     ARTIFACT_DIR.mkdir(exist_ok=True)
 
-    np.save(ARTIFACT_DIR / "product_vectors.npy", X.toarray().astype(np.float32))
+    dense = X.toarray().astype(np.float32)
+    np.save(ARTIFACT_DIR / "product_vectors.npy", dense)
 
     product_index = {pid: i for i, pid in enumerate(df["product_id"])}
     with open(ARTIFACT_DIR / "product_index.json", "w") as f:
@@ -209,6 +223,10 @@ def save_outputs(X, df, schema, tfidf_vec):
         json.dump(schema, f, indent=2)
 
     joblib.dump(tfidf_vec, ARTIFACT_DIR / "tfidf.joblib")
+
+    # FAISS index — used in dupe_finder for fast ANN candidate retrieval
+    faiss_index = build_faiss_index(dense)
+    faiss.write_index(faiss_index, str(ARTIFACT_DIR / "faiss.index"))
 
     print(f"Artifacts saved to {ARTIFACT_DIR}")
 

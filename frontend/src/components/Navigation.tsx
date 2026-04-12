@@ -1,5 +1,4 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Sparkles } from "lucide-react";
 import { useState, useEffect } from "react";
 import { isAuthenticated } from "@/lib/session";
 import { logout } from "@/lib/auth";
@@ -25,12 +24,12 @@ const Navigation = () => {
   }, []);
 
   return (
-    <nav className="sticky top-0 z-50 border-b border-border bg-card/80 backdrop-blur-lg">
+    <nav className="sticky top-0 z-50 border-b border-border/50 bg-card/70 backdrop-blur-xl shadow-sm">
       <div className="container flex h-16 items-center justify-between">
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2">
-          <Sparkles className="h-5 w-5 text-primary" />
-          <span className="font-display text-xl font-bold text-foreground">
+          <img src="/logo.png" alt="SkinCares" className="h-7 w-auto" />
+          <span className="logo-font text-xl text-foreground">
             SkinCares
           </span>
         </Link>

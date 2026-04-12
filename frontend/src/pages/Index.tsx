@@ -18,8 +18,8 @@ const Index = () => {
           transition={{ duration: 0.6 }}
           className="flex max-w-lg flex-col items-center gap-6"
         >
-          <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-primary/10">
-            <Sparkles className="h-10 w-10 text-primary" />
+          <div className="mb-2 flex items-center justify-center">
+            <img src="/logo.png" alt="SkinCares" className="h-20 w-auto opacity-90" />
           </div>
 
           <h1 className="font-display text-4xl font-bold leading-tight text-foreground sm:text-5xl">

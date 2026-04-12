@@ -96,6 +96,7 @@ export async function getProducts(params?: {
   search?: string;
   min_price?: number;
   max_price?: number;
+  offset?: number;
 }): Promise<{ products: Product[]; total: number }> {
   const query = new URLSearchParams();
   if (params?.category) query.set("category", params.category);
@@ -107,6 +108,9 @@ export async function getProducts(params?: {
   if (params?.max_price !== undefined) {
     query.set("max_price", String(params.max_price));
   }
+  if (params?.offset !== undefined) {
+  query.set("offset", String(params.offset));
+}
   const qs = query.toString();
   return fetchApi(`/products${qs ? `?${qs}` : ""}`);
 }

@@ -86,7 +86,7 @@ export async function submitOnboarding(profile: OnboardingProfile): Promise<{ us
   return fetchApi("/onboarding", { method: "POST", body: JSON.stringify(profile) });
 }
 
-export async function getUserDebugState(userId: string): Promise<any> {
+export async function getUserDebugState(userId: string): Promise<Record<string, unknown>> {
   return fetchApi(`/debug/user-state/${userId}`);
 }
 
@@ -94,15 +94,24 @@ export async function getProducts(params?: {
   category?: Category;
   sort?: SortValue;
   search?: string;
+  skin_type?: string;
+  concern?: string;
+  brand?: string;
+  ingredient?: string;
   min_price?: number;
   max_price?: number;
+  page?: number;
   limit?: number;
   offset?: number;
-}): Promise<{ products: Product[]; total: number }> {
+}): Promise<{ items: Product[]; products: Product[]; total: number; hasMore: boolean; page: number }> {
   const query = new URLSearchParams();
   if (params?.category) query.set("category", params.category);
   if (params?.sort) query.set("sort", params.sort);
   if (params?.search) query.set("search", params.search);
+  if (params?.skin_type) query.set("skin_type", params.skin_type);
+  if (params?.concern) query.set("concern", params.concern);
+  if (params?.brand) query.set("brand", params.brand);
+  if (params?.ingredient) query.set("ingredient", params.ingredient);
   if (params?.min_price !== undefined) {
     query.set("min_price", String(params.min_price));
   }
@@ -112,11 +121,65 @@ export async function getProducts(params?: {
   if (params?.limit !== undefined) {
     query.set("limit", String(params.limit));
   }
-  if (params?.offset !== undefined) {
-    query.set("offset", String(params.offset));
+  if (params?.page !== undefined) {
+    query.set("page", String(params.page));
+  } else if (params?.offset !== undefined) {
+    const fallbackLimit = params?.limit ?? 20;
+    query.set("page", String(Math.floor(params.offset / fallbackLimit) + 1));
+    query.set("limit", String(fallbackLimit));
   }
   const qs = query.toString();
-  return fetchApi(`/products${qs ? `?${qs}` : ""}`);
+  return fetchApi<{ items?: Product[]; products?: Product[]; total: number; hasMore?: boolean; page?: number }>(
+    `/products${qs ? `?${qs}` : ""}`
+  ).then((payload) => {
+    const items = payload.items ?? payload.products ?? [];
+    const resolvedLimit = params?.limit ?? 20;
+    const resolvedPage = payload.page ?? params?.page ?? 1;
+    const hasMore = payload.hasMore ?? resolvedPage * resolvedLimit < payload.total;
+
+    return {
+      items,
+      products: items,
+      total: payload.total,
+      hasMore,
+      page: resolvedPage,
+    };
+  });
+}
+
+export async function getSwipeQueue(limit = 6): Promise<{ products: RecommendedProduct[]; hasMore: boolean; remaining: number }> {
+  const query = new URLSearchParams();
+  query.set("limit", String(limit));
+  return fetchApi(`/swipe/queue?${query.toString()}`);
+}
+
+export async function createSwipe(productId: number, direction: "like" | "dislike" | "irritation" | "skip"): Promise<{ swipe_event_id: number; success: boolean }> {
+  return fetchApi("/swipe", {
+    method: "POST",
+    body: JSON.stringify({ product_id: productId, direction }),
+  });
+}
+
+export async function submitSwipeQuestionnaire(
+  swipeEventId: number,
+  payload: { reason_tags?: string[]; free_text?: string; skipped?: boolean }
+): Promise<{ success: boolean; message: string }> {
+  return fetchApi(`/swipe/${swipeEventId}/questionnaire`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getWishlistItems(): Promise<{ items: Product[] }> {
+  return fetchApi("/wishlist");
+}
+
+export async function addToWishlist(productId: number): Promise<{ success: boolean; product_id: number }> {
+  return fetchApi(`/wishlist/${productId}`, { method: "POST" });
+}
+
+export async function removeFromWishlist(productId: number): Promise<{ success: boolean; product_id: number }> {
+  return fetchApi(`/wishlist/${productId}`, { method: "DELETE" });
 }
 
 export async function getProductDetail(productId: number): Promise<ProductDetail> {

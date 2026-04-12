@@ -52,6 +52,10 @@ const Recommendations = () => {
   });
 
   const products: RecommendedProduct[] = recommendationsData?.products ?? [];
+  const groupedProducts = CATEGORIES.map((cat) => ({
+    category: cat,
+    items: products.filter((product) => product.category === cat).slice(0, 8),
+  })).filter((group) => group.items.length > 0);
 
   useEffect(() => {
     if (!resolvedUserId) {
@@ -68,7 +72,7 @@ const Recommendations = () => {
   }, [recommendationsError, navigate]);
 
   useEffect(() => {
-    if (!resolvedUserId || !showDebug) {
+    if (!resolvedUserId) {
       return;
     }
 
@@ -159,6 +163,12 @@ const Recommendations = () => {
           {showDebug ? "Hide" : "Show"} model debug info
         </button>
 
+        {typeof debugState?.interactions === "number" && debugState.interactions < 5 && (
+          <div className="mb-6 rounded-xl border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+            Swipe a few more products to improve your personalized recommendations.
+          </div>
+        )}
+
         <div className="mt-8">
           {isLoading ? (
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -175,18 +185,27 @@ const Recommendations = () => {
               <p className="mt-1 text-sm text-muted-foreground">Try a different category filter</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {products.map((product) => (
-                <div key={product.product_id} className="relative">
-                  <ProductCard
-                    key={product.product_id}
-                    product={product}
-                    onClick={setSelectedProduct}
-                    explanation={product.explanation}
-                    score={product.recommendation_score}
-                    scoreLabel="Match"
-                  />
-                </div>
+            <div className="space-y-8">
+              {groupedProducts.map((group) => (
+                <section key={group.category}>
+                  <h2 className="mb-3 font-display text-xl font-bold text-foreground">
+                    Best {CATEGORY_LABELS[group.category]}s for You
+                  </h2>
+                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                    {group.items.map((product) => (
+                      <div key={product.product_id} className="relative">
+                        <ProductCard
+                          key={product.product_id}
+                          product={product}
+                          onClick={setSelectedProduct}
+                          explanation={product.explanation}
+                          score={product.recommendation_score}
+                          scoreLabel="Match"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </section>
               ))}
             </div>
           )}

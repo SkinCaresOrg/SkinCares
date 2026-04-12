@@ -85,8 +85,13 @@ def test_questionnaire_feedback_has_more_learning_signal_than_raw_swipe() -> Non
     assert after_questionnaire.status_code == 200
     after_questionnaire_state = after_questionnaire.json()
 
-    assert after_questionnaire_state["interactions"] >= after_raw_state["interactions"] + 1
-    assert after_questionnaire_state["reason_signal_count"] >= after_raw_state["reason_signal_count"] + 1
+    assert (
+        after_questionnaire_state["interactions"] >= after_raw_state["interactions"] + 1
+    )
+    assert (
+        after_questionnaire_state["reason_signal_count"]
+        >= after_raw_state["reason_signal_count"] + 1
+    )
     assert after_questionnaire_state["avoid_ingredient_count"] >= 1
 
 
@@ -449,9 +454,7 @@ def test_questionnaire_debug_endpoints_blocked_when_disabled(monkeypatch) -> Non
     outcome_response = client.get("/api/debug/questionnaire-outcome-metrics")
     replay_response = client.post("/api/debug/questionnaire-pipeline-replay")
     user_state_response = client.get("/api/debug/user-state/nonexistent_user")
-    product_score_response = client.get(
-        "/api/debug/product-score/nonexistent_user/1"
-    )
+    product_score_response = client.get("/api/debug/product-score/nonexistent_user/1")
 
     assert status_response.status_code == 404
     assert completion_response.status_code == 404

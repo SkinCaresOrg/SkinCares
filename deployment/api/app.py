@@ -17,9 +17,16 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from deployment.api.auth.routes import router as auth_router
+from deployment.api.auth.dependencies import get_current_user, get_current_user_optional
+from deployment.api.auth.models import User
 from deployment.api.db.init_db import init_db
 from deployment.api.db.session import SessionLocal, get_db
-from deployment.api.persistence.models import UserFeedbackEvent, UserProfileState
+from deployment.api.feedback.models import QuestionnaireResponse, SwipeEvent
+from deployment.api.persistence.models import (
+    UserFeedbackEvent,
+    UserProfileState,
+    WishlistItem,
+)
 
 from skincarelib.ml_system.ml_feedback_model import (
     LogisticRegressionFeedback,
@@ -119,6 +126,8 @@ class ProductCard(BaseModel):
     short_description: str = ""
     rating_count: int = 0
     wishlist_supported: bool = True
+    ingredient_highlights: List[str] = Field(default_factory=list)
+    skin_types_supported: List[SkinType] = Field(default_factory=list)
 
 
 class ProductDetail(ProductCard):
@@ -139,7 +148,10 @@ class DupeProduct(ProductCard):
 
 
 class ProductListResponse(BaseModel):
-    products: List[ProductCard]
+    items: List[ProductCard]
+    hasMore: bool
+    page: int
+    products: List[ProductCard] = Field(default_factory=list)
     total: int
 
 
@@ -174,6 +186,37 @@ class FeedbackRequest(BaseModel):
 class FeedbackResponse(BaseModel):
     success: bool
     message: str
+
+
+class SwipeRequest(BaseModel):
+    product_id: int
+    direction: Literal["like", "dislike", "irritation", "skip"]
+
+
+class SwipeResponse(BaseModel):
+    swipe_event_id: int
+    success: bool
+
+
+class SwipeQuestionnaireRequest(BaseModel):
+    reason_tags: List[str] = Field(default_factory=list)
+    free_text: str = ""
+    skipped: bool = False
+
+
+class SwipeQueueResponse(BaseModel):
+    products: List[RecommendationsProduct]
+    hasMore: bool
+    remaining: int
+
+
+class WishlistResponse(BaseModel):
+    items: List[ProductCard]
+
+
+class WishlistToggleResponse(BaseModel):
+    success: bool
+    product_id: int
 
 
 class ChatRequest(BaseModel):
@@ -514,8 +557,11 @@ def _score_bool(flag: bool, present: float = 1.0, absent: float = -0.35) -> floa
 
 def _product_features(product: ProductDetail) -> dict[str, bool]:
     product_tokens = _product_ingredient_tokens(product)
+    product_name_lower = product.product_name.lower()
+    brand_lower = product.brand.lower()
+    category_lower = product.category.lower()
     combined_text = (
-        f"{product.product_name.lower()} {product.brand.lower()} {product.category.lower()} "
+        f"{product_name_lower} {brand_lower} {category_lower} "
         + " ".join(product_tokens)
     )
 
@@ -612,7 +658,10 @@ def _update_user_structured_preferences(
         reason_key = phrase.replace(" ", "_")
         user_state.reason_tag_last_seen_at[reason_key] = now_iso
 
-        if phrase in _AVOID_INGREDIENT_TRIGGERS and reaction in {"dislike", "irritation"}:
+        if phrase in _AVOID_INGREDIENT_TRIGGERS and reaction in {
+            "dislike",
+            "irritation",
+        }:
             ingredient_key = _AVOID_INGREDIENT_TRIGGERS[phrase]
             user_state.avoid_ingredients[ingredient_key] = (
                 user_state.avoid_ingredients.get(ingredient_key, 0.0) + 1.0
@@ -622,7 +671,9 @@ def _update_user_structured_preferences(
         if phrase in _PRICE_NEGATIVE_TRIGGERS and reaction in {"dislike", "irritation"}:
             user_state.price_sensitivity = min(5.0, user_state.price_sensitivity + 0.5)
         elif phrase in _PRICE_POSITIVE_TRIGGERS and reaction == "like":
-            user_state.price_sensitivity = max(-5.0, user_state.price_sensitivity - 0.25)
+            user_state.price_sensitivity = max(
+                -5.0, user_state.price_sensitivity - 0.25
+            )
 
         if phrase in _INGREDIENT_POSITIVE_TRIGGERS and reaction == "like":
             user_state.preferred_ingredients[phrase] = (
@@ -675,7 +726,10 @@ def _compute_structured_adjustment(
             decay = _get_decay(preferred_last_seen.get(ingredient))
             adjustment += min(0.25, 0.05 * float(weight) * decay)
 
-    if "fragrance" in user_profile.ingredient_exclusions and "fragrance" in product_tokens:
+    if (
+        "fragrance" in user_profile.ingredient_exclusions
+        and "fragrance" in product_tokens
+    ):
         adjustment -= 2.0
 
     return adjustment
@@ -694,6 +748,129 @@ def _product_allowed_for_profile(
         if token and token in product_tokens:
             return False
     return True
+
+
+def _score_onboarding_match(
+    product: ProductDetail, profile: OnboardingRequest
+) -> float:
+    product_name_lower = product.product_name.lower()
+    brand_lower = product.brand.lower()
+    category_lower = product.category.lower()
+    ingredients_text = " ".join(_product_ingredient_tokens(product))
+    text = (
+        f"{product_name_lower} {brand_lower} {category_lower} "
+        f"{ingredients_text}"
+    )
+    score = 0.3
+
+    skin_rules = {
+        "oily": ["niacinamide", "salicylic", "clay"],
+        "dry": ["ceramide", "hyaluronic", "squalane"],
+        "sensitive": ["fragrance free", "centella", "aloe"],
+        "combination": ["lightweight", "gel", "balanced"],
+    }
+
+    for token in skin_rules.get(profile.skin_type, []):
+        if token in text:
+            score += 0.1
+
+    concern_rules = {
+        "acne": ["salicylic", "niacinamide", "acne", "blemish"],
+        "dark_spots": ["vitamin c", "niacinamide", "bright"],
+        "dryness": ["hyaluronic", "ceramide", "moistur"],
+        "fine_lines": ["retinol", "peptide", "firm"],
+        "redness": ["centella", "soothing", "calm"],
+    }
+
+    for concern in profile.concerns:
+        for token in concern_rules.get(concern, []):
+            if token in text:
+                score += 0.05
+
+    if profile.price_range == "budget" and product.price <= 20:
+        score += 0.05
+    if profile.price_range == "premium" and product.price >= 40:
+        score += 0.05
+
+    return max(0.0, min(1.0, score))
+
+
+def _score_swipe_preference(
+    product: ProductDetail,
+    user_state: UserState,
+    user_profile: OnboardingRequest,
+) -> float:
+    if user_state.interactions <= 0:
+        return 0.5
+
+    product_index = _build_product_index()
+    vec = get_product_vector_safe(product.product_id, product_index)
+    if vec is None:
+        return 0.5
+
+    score = 0.5
+    training_data = user_state.get_training_data()
+    if training_data is not None:
+        _, y = training_data
+        if len(np.unique(y)) >= 2:
+            model, _ = get_best_model(user_state)
+            model.fit(user_state)
+            score = float(model.predict_preference(vec))
+
+    score += _compute_reason_adjustment(product, user_state)
+    score += _compute_structured_adjustment(product, user_state, user_profile)
+    return max(0.0, min(1.0, score))
+
+
+def _score_popularity(product: ProductDetail) -> float:
+    raw = float(product.rating_count or 0)
+    return max(0.0, min(1.0, raw / 1000.0))
+
+
+def _compute_final_score(
+    onboarding_match_score: float,
+    swipe_preference_score: float,
+    popularity_score: float,
+    interactions: int,
+) -> float:
+    onboarding_weight = 0.4
+    swipe_weight = 0.4
+    popularity_weight = 0.2
+
+    if interactions > 20:
+        onboarding_weight = 0.2
+        swipe_weight = 0.6
+
+    return (
+        onboarding_match_score * onboarding_weight
+        + swipe_preference_score * swipe_weight
+        + popularity_score * popularity_weight
+    )
+
+
+def _build_recommendation_explanation(
+    product: ProductDetail,
+    profile: OnboardingRequest,
+    user_state: UserState,
+) -> str:
+    product_name_lower = product.product_name.lower()
+    ingredients_text = " ".join(_product_ingredient_tokens(product))
+    text = f"{product_name_lower} {ingredients_text}"
+    if profile.skin_type == "oily" and any(
+        token in text for token in ["niacinamide", "salicylic"]
+    ):
+        return "Recommended because it matches your oily-skin ingredient preferences."
+    if profile.skin_type == "dry" and any(
+        token in text for token in ["ceramide", "hyaluronic", "squalane"]
+    ):
+        return "Recommended because it supports your dry-skin hydration needs."
+    if profile.skin_type == "sensitive" and any(
+        token in text for token in ["centella", "aloe", "fragrance free"]
+    ):
+        return "Recommended because it aligns with your sensitive-skin profile."
+    if user_state.liked_count >= 1:
+        return "Recommended because it aligns with products you liked."
+    return "Recommended based on your onboarding profile."
 
 
 def _ensure_debug_enabled() -> None:
@@ -1014,7 +1191,9 @@ def _replay_questionnaire_feedback_from_db(source: str = "startup") -> dict:
                 continue
 
             try:
-                state = USER_STATES.get(row.user_id) or _load_user_state_from_db(db, row.user_id)
+                state = USER_STATES.get(row.user_id) or _load_user_state_from_db(
+                    db, row.user_id
+                )
                 vec = get_product_vector_safe(row.product_id, product_index)
                 if vec is None:
                     skipped += 1
@@ -1042,12 +1221,12 @@ def _replay_questionnaire_feedback_from_db(source: str = "startup") -> dict:
             except Exception:
                 errors += 1
 
-        QUESTIONNAIRE_PIPELINE_STATUS["startup_replay_processed"] = (
-            int(QUESTIONNAIRE_PIPELINE_STATUS.get("startup_replay_processed", 0))
-            + len(processed_ids)
-        )
+        QUESTIONNAIRE_PIPELINE_STATUS["startup_replay_processed"] = int(
+            QUESTIONNAIRE_PIPELINE_STATUS.get("startup_replay_processed", 0)
+        ) + len(processed_ids)
         QUESTIONNAIRE_PIPELINE_STATUS["startup_replay_skipped"] = (
-            int(QUESTIONNAIRE_PIPELINE_STATUS.get("startup_replay_skipped", 0)) + skipped
+            int(QUESTIONNAIRE_PIPELINE_STATUS.get("startup_replay_skipped", 0))
+            + skipped
         )
         QUESTIONNAIRE_PIPELINE_STATUS["startup_replay_errors"] = (
             int(QUESTIONNAIRE_PIPELINE_STATUS.get("startup_replay_errors", 0)) + errors
@@ -1069,7 +1248,9 @@ def _replay_questionnaire_feedback_from_db(source: str = "startup") -> dict:
 def _compute_completion_metrics(db: Session) -> dict:
     total_swipes = db.query(UserFeedbackEvent).count()
     completed = (
-        db.query(UserFeedbackEvent).filter(UserFeedbackEvent.has_tried.is_(True)).count()
+        db.query(UserFeedbackEvent)
+        .filter(UserFeedbackEvent.has_tried.is_(True))
+        .count()
     )
     skipped = total_swipes - completed
     completion_rate = (float(completed) / float(total_swipes)) if total_swipes else 0.0
@@ -1286,13 +1467,29 @@ def _seed_user_model_from_onboarding(
 def submit_onboarding(
     payload: OnboardingRequest,
     db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ) -> OnboardingResponse:
-    user_id = _generate_user_id()
+    # For tests or anonymous onboarding, generate a temp user_id if not authenticated
+    if current_user is None:
+        user_id = str(uuid4())
+    else:
+        user_id = str(current_user.id)
+        try:
+            current_user.onboarding_completed = True
+            db.add(current_user)
+            db.commit()
+        except SQLAlchemyError as exc:
+            db.rollback()
+            logger.exception("Could not persist onboarding profile for user_id=%s", user_id)
+            raise HTTPException(
+                status_code=500,
+                detail="Could not persist onboarding profile",
+            ) from exc
+
     USER_PROFILES[user_id] = payload
 
     try:
         _save_profile_to_db(db, user_id, payload)
-        db.commit()
     except SQLAlchemyError as exc:
         db.rollback()
         logger.exception("Could not persist onboarding profile for user_id=%s", user_id)
@@ -1316,11 +1513,18 @@ def list_products(
     category: Optional[Category] = None,
     sort: Optional[SortValue] = None,
     search: Optional[str] = None,
+    skin_type: Optional[str] = None,
+    concern: Optional[str] = None,
+    brand: Optional[str] = None,
+    ingredient: Optional[str] = None,
     min_price: Optional[float] = Query(default=None, ge=0),
     max_price: Optional[float] = Query(default=None, ge=0),
-    limit: int = Query(default=24, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=50),
 ) -> ProductListResponse:
+    limit = min(limit, 50)
+    offset = (page - 1) * limit
+
     items = list(PRODUCTS.values())
 
     if category is not None:
@@ -1331,8 +1535,68 @@ def list_products(
         items = [
             product
             for product in items
-            if query in product.product_name.lower() or query in product.brand.lower()
+            if query in product.product_name.lower()
+            or query in product.brand.lower()
+            or any(query in ing.lower() for ing in product.ingredients)
         ]
+
+    if brand:
+        brand_query = brand.lower().strip()
+        items = [product for product in items if brand_query in product.brand.lower()]
+
+    if ingredient:
+        ingredient_query = ingredient.lower().strip()
+        items = [
+            product
+            for product in items
+            if any(ingredient_query in ing.lower() for ing in product.ingredients)
+        ]
+
+    if skin_type:
+        skin_query = skin_type.lower().strip()
+        skin_type_keywords = {
+            "oily": ["niacinamide", "salicylic", "clay", "oil control"],
+            "dry": ["ceramide", "hyaluronic", "squalane", "hydrat"],
+            "sensitive": ["centella", "aloe", "soothing", "fragrance free"],
+            "combination": ["lightweight", "gel", "balanced"],
+            "normal": ["balance", "daily"],
+        }
+        keywords = skin_type_keywords.get(skin_query, [])
+        if keywords:
+            items = [
+                product
+                for product in items
+                if any(
+                    keyword
+                    in (
+                        f"{product.product_name.lower()} {' '.join(i.lower() for i in product.ingredients)}"
+                    )
+                    for keyword in keywords
+                )
+            ]
+
+    if concern:
+        concern_query = concern.lower().strip()
+        concern_keywords = {
+            "acne": ["acne", "salicylic", "niacinamide", "blemish"],
+            "pigmentation": ["vitamin c", "bright", "dark spot", "niacinamide"],
+            "dryness": ["hydrat", "ceramide", "hyaluronic", "squalane"],
+            "anti-aging": ["retinol", "peptide", "firm", "wrinkle"],
+            "sensitivity": ["soothing", "centella", "aloe", "fragrance free"],
+        }
+        keywords = concern_keywords.get(concern_query, [])
+        if keywords:
+            items = [
+                product
+                for product in items
+                if any(
+                    keyword
+                    in (
+                        f"{product.product_name.lower()} {' '.join(i.lower() for i in product.ingredients)}"
+                    )
+                    for keyword in keywords
+                )
+            ]
 
     if min_price is not None:
         items = [product for product in items if product.price >= min_price]
@@ -1347,8 +1611,15 @@ def list_products(
 
     total = len(items)
     paged = [_product_to_card(product) for product in items[offset : offset + limit]]
+    has_more = offset + len(paged) < total
 
-    return ProductListResponse(products=paged, total=total)
+    return ProductListResponse(
+        items=paged,
+        products=paged,
+        hasMore=has_more,
+        page=page,
+        total=total,
+    )
 
 
 @app.get("/api/products/{product_id}", response_model=ProductDetail)
@@ -1385,67 +1656,33 @@ def get_recommendations(
     if category is not None:
         candidates = [product for product in candidates if product.category == category]
     candidates = [
-        product for product in candidates if _product_allowed_for_profile(product, user_profile)
+        product
+        for product in candidates
+        if _product_allowed_for_profile(product, user_profile)
     ]
     if user_state.avoid_ingredients.get("fragrance", 0.0) > 0:
         candidates = [
-            product for product in candidates if not _product_has_token(product, "fragrance")
-        ]
-
-    # Score products using adaptive/conditional model based on interaction count
-    scores = []
-    model_name = "default"
-    if user_state.interactions > 0:
-        try:
-            training_data = user_state.get_training_data()
-            if training_data is None:
-                scores = [0.5] * len(candidates)
-            else:
-                _, y = training_data
-                if len(np.unique(y)) < 2:
-                    scores = [0.5] * len(candidates)
-                else:
-                    # Select best model based on learning stage
-                    model, model_name = get_best_model(user_state)
-                    model.fit(user_state)
-
-                    # Build product_index mapping for safe vector lookup
-                    product_index = {
-                        p.product_id: i for i, p in enumerate(PRODUCTS.values())
-                    }
-
-                    for product in candidates:
-                        # Get vector for this product using safe mapping
-                        vec = get_product_vector_safe(product.product_id, product_index)
-                        if vec is not None:
-                            score = float(model.predict_preference(vec))
-                            score += _compute_reason_adjustment(product, user_state)
-                            score += _compute_structured_adjustment(
-                                product,
-                                user_state,
-                                user_profile,
-                            )
-                            scores.append(max(0.1, score))
-                        else:
-                            scores.append(0.5)
-        except Exception as e:
-            # Fallback to neutral if model fails
-            logger.warning(
-                "Model error in recommendations for user_id=%s: %s", user_id, e
-            )
-            scores = [0.5] * len(candidates)
-    else:
-        scores = [
-            min(
-                1.0,
-                max(
-                    0.1,
-                    0.5 + _compute_reason_adjustment(product, user_state)
-                    + _compute_structured_adjustment(product, user_state, user_profile),
-                ),
-            )
+            product
             for product in candidates
+            if not _product_has_token(product, "fragrance")
         ]
+
+    scores: List[float] = []
+    for product in candidates:
+        onboarding_match_score = _score_onboarding_match(product, user_profile)
+        swipe_preference_score = _score_swipe_preference(
+            product,
+            user_state,
+            user_profile,
+        )
+        popularity_score = _score_popularity(product)
+        score = _compute_final_score(
+            onboarding_match_score=onboarding_match_score,
+            swipe_preference_score=swipe_preference_score,
+            popularity_score=popularity_score,
+            interactions=user_state.interactions,
+        )
+        scores.append(score)
 
     # Sort by score (highest first)
     if real_feedback_count > 0:
@@ -1464,9 +1701,9 @@ def get_recommendations(
         RecommendationsProduct(
             **_product_to_card(product).model_dump(),
             recommendation_score=score,
-            explanation="Personalized based on your feedback"
-            if score != 0.5
-            else "Matches profile preferences",
+            explanation=_build_recommendation_explanation(
+                product, user_profile, user_state
+            ),
         )
         for product, score in ranked[:limit]
     ]
@@ -1567,6 +1804,225 @@ def submit_feedback(
     return FeedbackResponse(success=True, message="Feedback recorded & model updated")
 
 
+@app.get("/api/swipe/queue", response_model=SwipeQueueResponse)
+def get_swipe_queue(
+    limit: int = Query(default=6, ge=1, le=20),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SwipeQueueResponse:
+    user_id = str(current_user.id)
+    if user_id not in USER_PROFILES:
+        db_profile = _load_profile_from_db(db, user_id)
+        if db_profile is None:
+            raise HTTPException(status_code=404, detail="User profile not found")
+        USER_PROFILES[user_id] = db_profile
+
+    profile = USER_PROFILES[user_id]
+    state = USER_STATES.get(user_id) or _load_user_state_from_db(db, user_id)
+
+    swiped_ids = {
+        row.product_id
+        for row in db.query(SwipeEvent.product_id)
+        .filter(SwipeEvent.user_id == user_id)
+        .all()
+    }
+
+    candidates = [
+        product
+        for product in PRODUCTS.values()
+        if product.product_id not in swiped_ids
+        and _product_allowed_for_profile(product, profile)
+    ]
+
+    scored: List[tuple[ProductDetail, float]] = []
+    for product in candidates:
+        onboarding_match_score = _score_onboarding_match(product, profile)
+        swipe_preference_score = _score_swipe_preference(product, state, profile)
+        popularity_score = _score_popularity(product)
+        final_score = _compute_final_score(
+            onboarding_match_score=onboarding_match_score,
+            swipe_preference_score=swipe_preference_score,
+            popularity_score=popularity_score,
+            interactions=state.interactions,
+        )
+        scored.append((product, final_score))
+
+    scored.sort(key=lambda item: item[1], reverse=True)
+    selected = scored[:limit]
+    remaining = max(0, len(scored) - len(selected))
+
+    return SwipeQueueResponse(
+        products=[
+            RecommendationsProduct(
+                **_product_to_card(product).model_dump(),
+                recommendation_score=score,
+                explanation=_build_recommendation_explanation(product, profile, state),
+            )
+            for product, score in selected
+        ],
+        hasMore=remaining > 0,
+        remaining=remaining,
+    )
+
+
+@app.post("/api/swipe", response_model=SwipeResponse)
+def create_swipe_event(
+    payload: SwipeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SwipeResponse:
+    user_id = str(current_user.id)
+    if payload.product_id not in PRODUCTS:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    has_tried = payload.direction != "skip"
+    reaction: Optional[str] = None if payload.direction == "skip" else payload.direction
+    event = SwipeEvent(
+        user_id=user_id,
+        product_id=payload.product_id,
+        has_tried=has_tried,
+        reaction=reaction,
+        skipped_questionnaire=payload.direction == "skip",
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+
+    if payload.direction == "skip":
+        feedback_payload = FeedbackRequest(
+            user_id=user_id,
+            product_id=payload.product_id,
+            has_tried=False,
+        )
+        USER_FEEDBACK.append(feedback_payload)
+        _save_feedback_to_db(db, feedback_payload)
+        db.commit()
+
+    return SwipeResponse(swipe_event_id=event.id, success=True)
+
+
+@app.post("/api/swipe/{swipe_event_id}/questionnaire", response_model=FeedbackResponse)
+def submit_swipe_questionnaire(
+    swipe_event_id: int,
+    payload: SwipeQuestionnaireRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> FeedbackResponse:
+    user_id = str(current_user.id)
+    event = (
+        db.query(SwipeEvent)
+        .filter(SwipeEvent.id == swipe_event_id, SwipeEvent.user_id == user_id)
+        .first()
+    )
+    if event is None:
+        raise HTTPException(status_code=404, detail="Swipe event not found")
+
+    event.skipped_questionnaire = payload.skipped
+    db.add(event)
+
+    response = QuestionnaireResponse(
+        swipe_event_id=event.id,
+        user_id=user_id,
+        product_id=event.product_id,
+        reaction=event.reaction or "dislike",
+        reason_tags=str(payload.reason_tags),
+        free_text=payload.free_text or "",
+    )
+    db.add(response)
+
+    feedback_payload = FeedbackRequest(
+        user_id=user_id,
+        product_id=event.product_id,
+        has_tried=event.has_tried,
+        reaction=(event.reaction if event.has_tried else None),
+        reason_tags=payload.reason_tags,
+        free_text=payload.free_text,
+    )
+
+    USER_FEEDBACK.append(feedback_payload)
+    _save_feedback_to_db(db, feedback_payload)
+    db.commit()
+
+    if feedback_payload.has_tried and feedback_payload.reaction is not None:
+        user_state = USER_STATES.get(user_id) or _load_user_state_from_db(db, user_id)
+        product_index = _build_product_index()
+        vec = get_product_vector_safe(event.product_id, product_index)
+        if vec is not None:
+            reasons = feedback_payload.reason_tags or []
+            if feedback_payload.free_text:
+                reasons = reasons + [feedback_payload.free_text]
+            if feedback_payload.reaction == "like":
+                user_state.add_liked(vec, reasons=reasons if reasons else None)
+            elif feedback_payload.reaction == "dislike":
+                user_state.add_disliked(vec, reasons=reasons if reasons else None)
+            elif feedback_payload.reaction == "irritation":
+                user_state.add_irritation(vec, reasons=reasons if reasons else None)
+            _update_user_structured_preferences(
+                user_state,
+                reasons=reasons,
+                reaction=feedback_payload.reaction,
+            )
+
+    return FeedbackResponse(success=True, message="Questionnaire recorded")
+
+
+@app.get("/api/wishlist", response_model=WishlistResponse)
+def get_wishlist(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WishlistResponse:
+    user_id = str(current_user.id)
+    rows = (
+        db.query(WishlistItem)
+        .filter(WishlistItem.user_id == user_id)
+        .order_by(WishlistItem.created_at.desc())
+        .all()
+    )
+    products = []
+    for row in rows:
+        product = PRODUCTS.get(row.product_id)
+        if product is not None:
+            products.append(_product_to_card(product))
+    return WishlistResponse(items=products)
+
+
+@app.post("/api/wishlist/{product_id}", response_model=WishlistToggleResponse)
+def add_to_wishlist(
+    product_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WishlistToggleResponse:
+    user_id = str(current_user.id)
+    if product_id not in PRODUCTS:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    existing = (
+        db.query(WishlistItem)
+        .filter(WishlistItem.user_id == user_id, WishlistItem.product_id == product_id)
+        .first()
+    )
+    if existing is None:
+        db.add(WishlistItem(user_id=user_id, product_id=product_id))
+        db.commit()
+    return WishlistToggleResponse(success=True, product_id=product_id)
+
+
+@app.delete("/api/wishlist/{product_id}", response_model=WishlistToggleResponse)
+def remove_from_wishlist(
+    product_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WishlistToggleResponse:
+    user_id = str(current_user.id)
+    (
+        db.query(WishlistItem)
+        .filter(WishlistItem.user_id == user_id, WishlistItem.product_id == product_id)
+        .delete()
+    )
+    db.commit()
+    return WishlistToggleResponse(success=True, product_id=product_id)
+
+
 @app.get("/api/debug/user-state/{user_id}")
 def get_user_debug_state(user_id: str, db: Session = Depends(get_db)) -> dict:
     """Debug endpoint to inspect ML model learning state."""
@@ -1588,9 +2044,7 @@ def get_user_debug_state(user_id: str, db: Session = Depends(get_db)) -> dict:
 
     real_interactions = len(real_feedback_rows)
     real_liked = sum(1 for row in real_feedback_rows if row.reaction == "like")
-    real_disliked = sum(
-        1 for row in real_feedback_rows if row.reaction == "dislike"
-    )
+    real_disliked = sum(1 for row in real_feedback_rows if row.reaction == "dislike")
     real_irritation = sum(
         1 for row in real_feedback_rows if row.reaction == "irritation"
     )

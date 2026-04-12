@@ -23,12 +23,20 @@ def _load_frontend_reason_tags() -> set[str]:
         flags=re.DOTALL,
     )
 
-    assert reaction_block_match is not None, "Could not find REACTION_TAGS in frontend types.ts"
-    assert irritation_match is not None, "Could not find IRRITATION_TAGS in frontend types.ts"
+    assert reaction_block_match is not None, (
+        "Could not find REACTION_TAGS in frontend types.ts"
+    )
+    assert irritation_match is not None, (
+        "Could not find IRRITATION_TAGS in frontend types.ts"
+    )
 
     quoted_strings_pattern = r'"([a-z0-9_]+)"'
-    reaction_tags = set(re.findall(quoted_strings_pattern, reaction_block_match.group("body")))
-    irritation_tags = set(re.findall(quoted_strings_pattern, irritation_match.group("body")))
+    reaction_tags = set(
+        re.findall(quoted_strings_pattern, reaction_block_match.group("body"))
+    )
+    irritation_tags = set(
+        re.findall(quoted_strings_pattern, irritation_match.group("body"))
+    )
 
     all_tags = reaction_tags | irritation_tags
     assert all_tags, "No reason tags parsed from frontend types.ts"

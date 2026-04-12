@@ -17,7 +17,7 @@ export async function register(email: string, password: string) {
   });
 }
 
-export async function getCurrentUser(): Promise<{ id: string; email: string }> {
+export async function getCurrentUser(): Promise<{ id: string; email: string; onboarding_completed: boolean }> {
   return fetchApi("/auth/me");
 }
 

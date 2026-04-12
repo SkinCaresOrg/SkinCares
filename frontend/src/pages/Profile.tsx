@@ -12,8 +12,8 @@ import {
   Loader2
 } from "lucide-react";
 import Navigation from "@/components/Navigation";
-import { getUserProfile, getWishlist } from "@/lib/wishlist";
-import { getProductDetail, submitOnboarding } from "@/lib/api";
+import { getUserProfile } from "@/lib/wishlist";
+import { getWishlistItems, submitOnboarding } from "@/lib/api";
 import { saveOnboardingForCurrentUser } from "@/lib/session";
 import { 
   OnboardingProfile, 
@@ -77,20 +77,11 @@ const Profile = () => {
   }, [activeTab]);
 
   const fetchWishlist = async () => {
-    const ids = getWishlist();
     setLoadingWishlist(true);
-    
-    if (ids.length === 0) {
-      setWishlistItems([]);
-      setLoadingWishlist(false);
-      return;
-    }
-    
+
     try {
-      const products = await Promise.all(
-        ids.map((id) => getProductDetail(id).catch(() => null))
-      );
-      setWishlistItems(products.filter((p): p is Product => p !== null));
+      const payload = await getWishlistItems();
+      setWishlistItems(payload.items);
     } catch (error) {
       console.error("Failed to fetch wishlist items", error);
     } finally {

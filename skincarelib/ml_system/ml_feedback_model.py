@@ -58,11 +58,17 @@ class UserState:
         self.irritation_count: int = 0
 
     def _ensure_reason_state(self) -> None:
-        if not hasattr(self, "reason_tag_preferences") or self.reason_tag_preferences is None:
+        if (
+            not hasattr(self, "reason_tag_preferences")
+            or self.reason_tag_preferences is None
+        ):
             self.reason_tag_preferences = {}
         if not hasattr(self, "avoid_ingredients") or self.avoid_ingredients is None:
             self.avoid_ingredients = {}
-        if not hasattr(self, "preferred_ingredients") or self.preferred_ingredients is None:
+        if (
+            not hasattr(self, "preferred_ingredients")
+            or self.preferred_ingredients is None
+        ):
             self.preferred_ingredients = {}
         if not hasattr(self, "price_sensitivity") or self.price_sensitivity is None:
             self.price_sensitivity = 0.0
@@ -81,7 +87,9 @@ class UserState:
             return None
         return normalized
 
-    def _update_reason_preferences(self, reasons: List[str] | None, delta: float) -> None:
+    def _update_reason_preferences(
+        self, reasons: List[str] | None, delta: float
+    ) -> None:
         self._ensure_reason_state()
         if not reasons:
             return

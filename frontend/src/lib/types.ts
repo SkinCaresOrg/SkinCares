@@ -18,6 +18,8 @@ export interface Product {
   short_description?: string;
   rating_count?: number;
   wishlist_supported?: boolean;
+  ingredient_highlights?: string[];
+  skin_types_supported?: SkinType[];
 }
 
 export interface ProductDetail extends Product {

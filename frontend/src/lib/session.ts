@@ -3,6 +3,7 @@ import { OnboardingProfile } from "./types";
 const TOKEN_KEY = "token";
 const AUTH_USER_ID_KEY = "skincares_auth_user_id";
 const ONBOARDING_BY_AUTH_USER_KEY = "skincares_onboarding_by_auth_user";
+const ONBOARDING_STATUS_BY_AUTH_USER_KEY = "skincares_onboarding_status_by_auth_user";
 
 type OnboardingCache = Record<
   string,
@@ -12,6 +13,8 @@ type OnboardingCache = Record<
     completedAt: string;
   }
 >;
+
+type OnboardingStatusCache = Record<string, boolean>;
 
 function decodeJwtSub(token: string): string | null {
   try {
@@ -105,6 +108,27 @@ function writeOnboardingCache(cache: OnboardingCache): void {
   localStorage.setItem(ONBOARDING_BY_AUTH_USER_KEY, JSON.stringify(cache));
 }
 
+function readOnboardingStatusCache(): OnboardingStatusCache {
+  try {
+    const raw = localStorage.getItem(ONBOARDING_STATUS_BY_AUTH_USER_KEY);
+    return raw ? (JSON.parse(raw) as OnboardingStatusCache) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeOnboardingStatusCache(cache: OnboardingStatusCache): void {
+  localStorage.setItem(ONBOARDING_STATUS_BY_AUTH_USER_KEY, JSON.stringify(cache));
+}
+
+export function setOnboardingCompletedForCurrentUser(completed: boolean): void {
+  const authUserId = getAuthUserId();
+  if (!authUserId) return;
+  const cache = readOnboardingStatusCache();
+  cache[authUserId] = completed;
+  writeOnboardingStatusCache(cache);
+}
+
 export function saveOnboardingForCurrentUser(data: {
   recommendationUserId: string;
   profile: OnboardingProfile;
@@ -119,6 +143,7 @@ export function saveOnboardingForCurrentUser(data: {
     completedAt: new Date().toISOString(),
   };
   writeOnboardingCache(cache);
+  setOnboardingCompletedForCurrentUser(true);
 
   localStorage.setItem("skincares_user_id", data.recommendationUserId);
   localStorage.setItem("skincares_user_profile", JSON.stringify(data.profile));
@@ -127,6 +152,10 @@ export function saveOnboardingForCurrentUser(data: {
 export function hasCompletedOnboardingForCurrentUser(): boolean {
   const authUserId = getAuthUserId();
   if (!authUserId) return false;
+  const statusCache = readOnboardingStatusCache();
+  if (typeof statusCache[authUserId] === "boolean") {
+    return statusCache[authUserId];
+  }
   const cache = readOnboardingCache();
   return !!cache[authUserId];
 }

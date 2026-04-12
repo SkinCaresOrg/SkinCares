@@ -446,6 +446,7 @@ def _generate_user_id() -> str:
 
 
 def _ensure_user_exists(db: Session, user_id: str) -> None:
+    _ensure_db_initialized()
     existing = db.query(User).filter(User.id == user_id).first()
     if existing is not None:
         return

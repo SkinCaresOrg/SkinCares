@@ -44,9 +44,9 @@ def load_artifacts():
 
     metadata = pd.read_csv(SIGNALS_PATH)
 
-    if "product_id" not in metadata.columns:
-        metadata.insert(0, "product_id", metadata.index.astype(str))
-    metadata["product_id"] = metadata["product_id"].astype(str)
+    # Always derive product_id from row index to stay consistent with vectorizer.py,
+    # which also overwrites product_id with the row index when building product_index.json.
+    metadata["product_id"] = metadata.index.astype(str)
 
     for col in ["brand", "category", "price"]:
         if col not in metadata.columns:
@@ -190,9 +190,8 @@ def recommend(liked_product_ids, explicit_prefs, constraints, top_n=10):
     # tokens_df is derived from the same signals CSV; prefer ingredient_tokens_clean,
     # fall back to ingredient_tokens so the banned-ingredient filter works unchanged.
     tokens_raw = pd.read_csv(SIGNALS_PATH)
-    if "product_id" not in tokens_raw.columns:
-        tokens_raw.insert(0, "product_id", tokens_raw.index.astype(str))
-    tokens_raw["product_id"] = tokens_raw["product_id"].astype(str)
+    # Derive product_id from row index — same strategy as load_artifacts() and vectorizer.py.
+    tokens_raw["product_id"] = tokens_raw.index.astype(str)
     token_col = (
         "ingredient_tokens_clean"
         if "ingredient_tokens_clean" in tokens_raw.columns

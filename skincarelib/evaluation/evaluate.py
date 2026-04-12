@@ -23,7 +23,9 @@ class EvaluationScenario:
     top_n: int = 10
 
 
-def ndcg_at_k(recs: pd.DataFrame, relevant_ids: List[str], k: int = 10) -> float:
+def ndcg_at_k(
+    recs: pd.DataFrame, relevant_ids: List[str], k: int = 10
+) -> Optional[float]:
     """
     Normalized Discounted Cumulative Gain at K.
 
@@ -60,6 +62,7 @@ def run_scenario(
     vectors: np.ndarray,
     product_index: Dict[str, int],
     metadata_df: pd.DataFrame,
+    tokens_df: Optional[pd.DataFrame] = None,
 ) -> Dict[str, object]:
     user_vector = build_user_vector(
         scenario.liked_product_ids,
@@ -74,7 +77,7 @@ def run_scenario(
         metadata_df=metadata_df,
         constraints=scenario.constraints,
         top_n=scenario.top_n,
-        tokens_df=None,
+        tokens_df=tokens_df,
         product_index=product_index,
     )
 
@@ -91,7 +94,12 @@ def run_scenario(
         product_index=product_index,
     )
 
-    ndcg = ndcg_at_k(recs, relevant_ids=scenario.liked_product_ids, k=scenario.top_n)
+    # Use liked_product_ids as holdout only when they aren't excluded from results.
+    # If constraints["liked_product_ids"] overlaps with liked_product_ids, those
+    # products are filtered out of recs and nDCG would always be 0 — not useful.
+    excluded = set(scenario.constraints.get("liked_product_ids") or [])
+    holdout = [pid for pid in scenario.liked_product_ids if pid not in excluded]
+    ndcg = ndcg_at_k(recs, relevant_ids=holdout, k=scenario.top_n)
 
     return {
         "scenario": scenario.name,
@@ -181,7 +189,24 @@ def run_all(scenarios: Optional[List[EvaluationScenario]] = None) -> Dict[str, o
     if scenarios is None:
         scenarios = default_scenarios(product_index, metadata_df)
 
-    results = [run_scenario(s, vectors, product_index, metadata_df) for s in scenarios]
+    # Build tokens_df once for banned-ingredient filtering across all scenarios.
+    token_col = (
+        "ingredient_tokens_clean"
+        if "ingredient_tokens_clean" in metadata_df.columns
+        else "ingredient_tokens"
+    )
+    tokens_df = (
+        metadata_df[["product_id", token_col]].rename(
+            columns={token_col: "ingredient_tokens"}
+        )
+        if token_col in metadata_df.columns
+        else None
+    )
+
+    results = [
+        run_scenario(s, vectors, product_index, metadata_df, tokens_df)
+        for s in scenarios
+    ]
 
     # Catalog coverage aggregated across all scenarios
     all_recommended = [pid for r in results for pid in r["recommended_ids"]]

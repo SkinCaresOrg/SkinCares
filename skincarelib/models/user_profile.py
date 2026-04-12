@@ -14,12 +14,15 @@ TFIDF_START = 0
 TFIDF_END = None  # set by _init_layout() from feature_schema.json
 GROUPS_START = None
 TOTAL_DIMS = None
+PRICE_DIM = (
+    None  # set by _init_layout() — always schema["price_index"], NOT TOTAL_DIMS - 1
+)
 
 _schema = None  # cached parsed schema
 
 
 def _init_layout():
-    global _schema, TFIDF_END, GROUPS_START, TOTAL_DIMS
+    global _schema, TFIDF_END, GROUPS_START, TOTAL_DIMS, PRICE_DIM
     if not SCHEMA_PATH.exists():
         raise FileNotFoundError(
             f"feature_schema.json not found at {SCHEMA_PATH}. "
@@ -30,6 +33,7 @@ def _init_layout():
     TFIDF_END = len(_schema["tfidf"])
     GROUPS_START = TFIDF_END
     TOTAL_DIMS = _schema["total_features"]
+    PRICE_DIM = _schema["price_index"]
 
 
 _init_layout()
@@ -216,7 +220,7 @@ def build_user_vector(
 
     # --- Step 5: budget -> price dim (cold start only) ---
     budget = explicit_prefs.get("budget")
-    price_dim = TOTAL_DIMS - 1
+    price_dim = PRICE_DIM
     if budget is not None and not valid_ids:
         budget = float(budget)
         if budget <= 20:

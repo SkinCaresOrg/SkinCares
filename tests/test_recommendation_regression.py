@@ -1,10 +1,29 @@
 from typing import Optional, List, Tuple
 from fastapi.testclient import TestClient
+import pytest
+import os
 
 from deployment.api import app
+from deployment.api.app import USER_STATES, USER_PROFILES
 
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def clear_caches_and_db():
+    """Clear USER_STATES, USER_PROFILES, and database before each test."""
+    USER_STATES.clear()
+    USER_PROFILES.clear()
+    
+    # Remove database file if it exists (for fresh start)
+    db_path = "deployment/api/db/local.db"
+    if os.path.exists(db_path):
+        os.remove(db_path)
+    
+    yield
+    # Cleanup after test if needed
+    pass
 
 
 def _onboard_user(payload: Optional[dict] = None) -> str:
@@ -127,8 +146,13 @@ def test_repeated_likes_boost_product_regression() -> None:
     target = before[9]
     target_id = target["product_id"]
     before_rank, before_score = _rank_and_score(before, target_id)
+    
+    print(f"\n[DEBUG] Target product ID: {target_id}, Before rank: {before_rank}, Before score: {before_score}")
+    print(f"[DEBUG] First 5 products before feedback:")
+    for i, p in enumerate(before[:5], 1):
+        print(f"  {i}. Product {p['product_id']:5d}: {p['recommendation_score']:.4f}")
 
-    for _ in range(10):
+    for i in range(10):
         response = client.post(
             "/api/feedback",
             json={
@@ -141,9 +165,18 @@ def test_repeated_likes_boost_product_regression() -> None:
             },
         )
         assert response.status_code == 200
+        print(f"[DEBUG] Like {i+1}/10 submitted")
 
     after = _get_recommendations(user_id)
     after_rank, after_score = _rank_and_score(after, target_id)
+    
+    print(f"[DEBUG] After rank: {after_rank}, After score: {after_score}")
+    print(f"[DEBUG] First 5 products after feedback:")
+    for i, p in enumerate(after[:5], 1):
+        print(f"  {i}. Product {p['product_id']:5d}: {p['recommendation_score']:.4f}")
+    
+    print(f"[DEBUG] Score change: {after_score - before_score:.4f} (needed: +0.06)")
+    print(f"[DEBUG] Rank change: {before_rank - after_rank} (needed: >=2)")
 
     improved_rank = (
         before_rank is not None

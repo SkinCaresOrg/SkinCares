@@ -1227,6 +1227,10 @@ def get_recommendations(
         USER_PROFILES[user_id] = db_profile
 
     user_state = USER_STATES.get(user_id) or _load_user_state_from_db(db, user_id)
+    
+    # DEBUG: Log the user_state.interactions
+    logger.info(f"[DEBUG] get_recommendations: user_id={user_id}, interactions={user_state.interactions}, from_cache={user_id in USER_STATES}")
+    
     candidates = [product for product in PRODUCTS.values()]
     if category is not None:
         candidates = [product for product in candidates if product.category == category]
@@ -1234,6 +1238,7 @@ def get_recommendations(
     # Score products using adaptive/conditional model based on interaction count
     scores = []
     model_name = "default"
+    logger.info(f"[DEBUG] Starting scoring: user_state.interactions={user_state.interactions}")
     if user_state.interactions > 0:
         try:
             training_data = user_state.get_training_data()
@@ -1242,22 +1247,53 @@ def get_recommendations(
             else:
                 _, y = training_data
                 if len(np.unique(y)) < 2:
-                    # Single class case: use similarity to liked/disliked vectors
-                    # This handles early feedback where user only likes or dislikes
+                    # Single class case: use repeated feedback tracking to boost products
+                    # This handles early feedback and profile-only scenarios
                     product_index = {
                         p.product_id: i for i, p in enumerate(PRODUCTS.values())
                     }
                     
                     scores = []
-                    # Compute mean of liked vectors if available, else mean of disliked
+                    
+                    # Build product-to-count mapping from user state feedback tracking
+                    product_like_counts: Dict[int, int] = {}
+                    product_dislike_counts: Dict[int, int] = {}
+                    
                     if user_state.liked_vectors:
+                        # We have liked feedback, but we need to know which product each vector belongs to
+                        # Since we don't have product_id directly from vectors, we need to use a different approach
+                        # Query database for count information
+                        feedback_rows = (
+                            db.query(UserProductEvent.product_id)
+                            .filter(UserProductEvent.user_id == user_id)
+                            .filter(UserProductEvent.has_tried.is_(True))
+                            .filter(UserProductEvent.reaction == "like")
+                            .all()
+                        )
+                        
+                        for (product_id,) in feedback_rows:
+                            product_like_counts[product_id] = product_like_counts.get(product_id, 0) + 1
+                        
+                        # Find the mean of all liked vectors
                         mean_vector = np.mean(user_state.liked_vectors, axis=0)
-                        preferred_class = 1.0  # Higher score for similarity to liked
+                        preferred_class = 1.0
                     elif user_state.disliked_vectors:
+                        feedback_rows = (
+                            db.query(UserProductEvent.product_id)
+                            .filter(UserProductEvent.user_id == user_id)
+                            .filter(UserProductEvent.has_tried.is_(True))
+                            .filter(UserProductEvent.reaction == "dislike")
+                            .all()
+                        )
+                        
+                        for (product_id,) in feedback_rows:
+                            product_dislike_counts[product_id] = product_dislike_counts.get(product_id, 0) + 1
+                        
                         mean_vector = np.mean(user_state.disliked_vectors, axis=0)
-                        preferred_class = 0.0  # Lower score for similarity to disliked
+                        preferred_class = 0.0
                     else:
                         mean_vector = None
+                        preferred_class = 1.0
                     
                     for product in candidates:
                         if mean_vector is not None:
@@ -1273,6 +1309,18 @@ def get_recommendations(
                                 # If we're disliking, invert the score
                                 if preferred_class == 0.0:
                                     score = 1.0 - score
+                                
+                                # Boost score for products with repeated feedback
+                                product_feedback_count = product_like_counts.get(product.product_id, 0) or product_dislike_counts.get(product.product_id, 0)
+                                if product_feedback_count > 1:
+                                    # Boost by 0.08 per feedback (capped at 0.32 total boost for 5 feedbacks)
+                                    boost = min(0.32, (product_feedback_count - 1) * 0.08)
+                                    if preferred_class == 1.0:
+                                        # For liked products, increase score
+                                        score = min(1.0, score + boost)
+                                    else:
+                                        # For disliked products, decrease score
+                                        score = max(0.0, score - boost)
                                 
                                 # Apply adjustments
                                 reason_adjustment = _compute_reason_adjustment(product, user_state)
@@ -1359,6 +1407,10 @@ def get_recommendations(
 
     # Sort by score (highest first)
     ranked = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)
+
+    # DEBUG: Log scores when interactions > 0
+    if user_state.interactions > 0:
+        logger.info(f"[DEBUG] Scores for user_id={user_id}: top5 = {[(ranked[i][0].product_id, ranked[i][1]) for i in range(min(5, len(ranked)))]}")
 
     # Filter out products with 0.0 score (completely excluded)
     # Then take top limit products
@@ -1469,6 +1521,8 @@ def submit_feedback(
                     user_state.add_disliked(vec, reasons=reasons if reasons else None)
                 elif payload.reaction == "irritation":
                     user_state.add_irritation(vec, reasons=reasons if reasons else None)
+                
+                logger.info(f"[DEBUG] feedback: user_id={payload.user_id}, product_id={payload.product_id}, reactions={payload.reaction}, total_interactions={user_state.interactions}")
                 
                 # Update reason tag preferences with time tracking
                 now = datetime.now(timezone.utc).isoformat()

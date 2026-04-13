@@ -226,7 +226,9 @@ def _compute_structured_adjustment(
                     except (ValueError, AttributeError):
                         decay_factor = 1.0
             
-            total_adjustment -= avoidance_strength * decay_factor
+            # Strong penalty for matched ingredients (scale: 5 dislikes = ~0.8 penalty before decay)
+            penalty = min(0.95, avoidance_strength / 10.0) * decay_factor
+            total_adjustment -= penalty
     
     return total_adjustment if active_avoids > 0 else 0.0
 
@@ -1229,9 +1231,19 @@ def get_recommendations(
                             else:
                                 structured_adjustment = 0.0
                             
-                            # Combine adjustments (structured is higher priority)
-                            combined_score = score + reason_adjustment + structured_adjustment
-                            scores.append(max(0.1, combined_score))
+                            # Combine adjustments: structured takes priority with multiplicative effect
+                            # If structured is strongly negative (profile exclusion), heavily penalize
+                            if structured_adjustment < -0.5:
+                                combined_score = 0.0  # Exclude completely
+                            elif structured_adjustment < 0:
+                                # Moderate penalty: apply as fraction multiplier
+                                combined_score = score * (1.0 + structured_adjustment)
+                            else:
+                                # Apply both additively for positive adjustments
+                                combined_score = score + reason_adjustment + structured_adjustment
+                            
+                            # Clamp to valid range
+                            scores.append(max(0.0, min(1.0, combined_score)))
                         else:
                             scores.append(0.5)
         except Exception as e:

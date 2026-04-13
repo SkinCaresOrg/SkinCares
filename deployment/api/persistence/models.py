@@ -18,6 +18,8 @@ from sqlalchemy.types import JSON, LargeBinary
 from deployment.api.db.base import Base
 
 AutoPKType = BigInteger().with_variant(Integer, "sqlite")
+TextArrayType = ARRAY(Text).with_variant(JSON, "sqlite")
+UUIDType = UUID(as_uuid=False).with_variant(String(36), "sqlite")
 
 
 class UserProfileState(Base):
@@ -44,7 +46,7 @@ class Product(Base):
     category = Column(Text, nullable=True)
     price = Column(Numeric(10, 2), nullable=True)
     image_url = Column(Text, nullable=True)
-    ingredients = Column(ARRAY(Text), nullable=True)
+    ingredients = Column(TextArrayType, nullable=True)
     short_description = Column(Text, nullable=True)
     created_at = Column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -87,7 +89,7 @@ class UserProductEvent(Base):
     __tablename__ = "user_product_events"
 
     id = Column(AutoPKType, primary_key=True, autoincrement=True, index=True)
-    user_id = Column(UUID(as_uuid=False), index=True, nullable=False)
+    user_id = Column(UUIDType, index=True, nullable=False)
     product_id = Column(Integer, nullable=False)
     event_type = Column(Text, nullable=False)
     reaction = Column(Text, nullable=True)
@@ -103,7 +105,7 @@ class UserProductEvent(Base):
 class UserModelState(Base):
     __tablename__ = "user_model_state"
 
-    user_id = Column(UUID(as_uuid=False), primary_key=True, index=True)
+    user_id = Column(UUIDType, primary_key=True, index=True)
     interactions = Column(Integer, nullable=False, default=0)
     liked_count = Column(Integer, nullable=False, default=0)
     disliked_count = Column(Integer, nullable=False, default=0)
@@ -120,9 +122,9 @@ class RecommendationLog(Base):
     __tablename__ = "recommendation_log"
 
     id = Column(AutoPKType, primary_key=True, autoincrement=True, index=True)
-    user_id = Column(UUID(as_uuid=False), index=True, nullable=False)
+    user_id = Column(UUIDType, index=True, nullable=False)
     product_id = Column(Integer, nullable=False)
-    session_id = Column(UUID(as_uuid=False), nullable=True)
+    session_id = Column(UUIDType, nullable=True)
     model_used = Column(Text, nullable=True)
     rank_position = Column(Integer, nullable=True)
     score = Column(Float, nullable=True)
@@ -135,7 +137,7 @@ class UserWishlist(Base):
     __tablename__ = "user_wishlists"
 
     id = Column(AutoPKType, primary_key=True, autoincrement=True, index=True)
-    user_id = Column(UUID(as_uuid=False), nullable=False, index=True)
+    user_id = Column(UUIDType, nullable=False, index=True)
     product_id = Column(Integer, nullable=False)
     created_at = Column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -151,7 +153,7 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
     id = Column(AutoPKType, primary_key=True, autoincrement=True, index=True)
-    user_id = Column(UUID(as_uuid=False), nullable=True, index=True)
+    user_id = Column(UUIDType, nullable=True, index=True)
     role = Column(Text, nullable=False)
     content = Column(Text, nullable=False)
     created_at = Column(
@@ -163,7 +165,7 @@ class ModelCheckpoint(Base):
     __tablename__ = "model_checkpoints"
 
     id = Column(AutoPKType, primary_key=True, autoincrement=True, index=True)
-    user_id = Column(UUID(as_uuid=False), nullable=False, index=True)
+    user_id = Column(UUIDType, nullable=False, index=True)
     model_type = Column(Text, nullable=False)
     model_blob = Column(LargeBinary, nullable=True)
     n_updates = Column(Integer, nullable=False, default=0)

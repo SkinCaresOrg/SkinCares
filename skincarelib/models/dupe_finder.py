@@ -22,6 +22,31 @@ FAISS_INDEX_PATH = ROOT / "artifacts" / "faiss.index"
 FAISS_RETRIEVAL_K = 2500  # ~5% of the catalogue
 
 
+def _build_faiss_index(vectors: np.ndarray):
+    normalized = vectors.copy().astype(np.float32)
+    faiss.normalize_L2(normalized)
+    index = faiss.IndexFlatIP(normalized.shape[1])
+    index.add(normalized)
+    return index
+
+
+def _load_or_rebuild_faiss_index(vectors: np.ndarray):
+    try:
+        return faiss.read_index(str(FAISS_INDEX_PATH))
+    except RuntimeError as error:
+        message = str(error).lower()
+        if "could not open" not in message and "no such file" not in message:
+            raise
+
+        index = _build_faiss_index(vectors)
+        try:
+            FAISS_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
+            faiss.write_index(index, str(FAISS_INDEX_PATH))
+        except Exception:
+            pass
+        return index
+
+
 # ---------------------------
 # Product subtype detection
 # ---------------------------
@@ -277,9 +302,7 @@ def load_artifacts():
     metadata = metadata[metadata["product_id"].isin(product_index)].copy()
     metadata = metadata.reset_index(drop=True)
 
-    # faiss.read_index raises RuntimeError if the file is missing,
-    # not FileNotFoundError, so we catch both at the call site
-    faiss_index = faiss.read_index(str(FAISS_INDEX_PATH))
+    faiss_index = _load_or_rebuild_faiss_index(vectors)
 
     return vectors, product_index, feature_schema, metadata, faiss_index
 

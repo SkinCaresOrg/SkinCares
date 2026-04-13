@@ -33,11 +33,11 @@ export DYLD_LIBRARY_PATH="/opt/homebrew/opt/libomp/lib:$DYLD_LIBRARY_PATH"
 ⚠️  XLearn FFM: Not installed (optional)
 
 [5/6] Checking Model Selection Strategy...
-✅    1 interactions → RandomForest (Mid Stage)
-✅   10 interactions → GradientBoosting (Experienced)
-✅   50 interactions → GradientBoosting (Experienced)
+✅    1 interactions → LogisticRegression (Early Stage)
+✅   10 interactions → RandomForest (Mid Stage)
+✅   50 interactions → GradientBoosting (Growth Stage)
 ✅  200 interactions → LightGBM (Power User)     ← NOW WORKING
-✅ 1000 interactions → LightGBM (Super User)     ← NOW WORKING
+✅ 1000 interactions → LightGBM (Power User)     ← NOW WORKING
 ```
 
 ### Direct LightGBM Test

@@ -726,15 +726,9 @@ def get_product_vector_safe(
         This handles any product ID gaps and future schema changes.
     """
     if product_id not in product_index:
-        # Debug: check if product exists in PRODUCTS
-        if product_id not in PRODUCTS:
-            print(f"[vector] Product {product_id} not in PRODUCTS (only {len(PRODUCTS)} products total)")
-        else:
-            print(f"[vector] Product {product_id} in PRODUCTS but NOT in product_index (index has {len(product_index)} entries)")
         return None
     idx = product_index[product_id]
     if idx < 0 or idx >= len(PRODUCT_VECTORS):
-        print(f"[vector] Index out of bounds: idx={idx}, PRODUCT_VECTORS.len={len(PRODUCT_VECTORS)}")
         return None
     return PRODUCT_VECTORS[idx]
 

@@ -81,11 +81,11 @@ python scripts/check_ml_integration.py
       ✅ ContextualBandit (VW): Trained & predicting (score=0.58)
 
 [5/6] Checking Model Selection Strategy...
-      ✅    1 interactions → RandomForest (Mid Stage)
-      ✅   10 interactions → GradientBoosting (Experienced)
-      ✅   50 interactions → GradientBoosting (Experienced)
-      ✅  200 interactions → GradientBoosting (Power User)
-      ✅ 1000 interactions → ContextualBandit (Super User)
+      ✅    1 interactions → LogisticRegression (Early Stage)
+      ✅   10 interactions → RandomForest (Mid Stage)
+      ✅   50 interactions → GradientBoosting (Growth Stage)
+      ✅  200 interactions → ContextualBandit (Online Learning)
+      ✅ 1000 interactions → ContextualBandit (Online Learning)
 
 [6/6] Checking Metrics Retrieval...
       ✅ Metrics retrieved successfully

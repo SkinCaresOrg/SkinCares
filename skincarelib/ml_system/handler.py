@@ -24,8 +24,7 @@ _client = None
 
 def _find_product_id(product_name: str):
     product_name = product_name.lower().strip()
-
-    metadata = _get_metadata()
+    metadata = _get_metadata().copy()
     name_col = "product_name" if "product_name" in metadata.columns else "name"
 
     STOPWORDS = {
@@ -62,9 +61,7 @@ def _find_product_id(product_name: str):
 
         return score
 
-    metadata = _get_metadata()
-
-    metadata["match_score"] = metadata.apply(score, axis=1)
+    metadata["match_score"] = metadata.apply(score, axis=1)  # ← ADD THIS BACK
     matches = metadata.sort_values("match_score", ascending=False)
 
     if matches.empty:
@@ -164,6 +161,28 @@ def handle_chat(
             "• 'Find a dupe for CeraVe cleanser'\n"
             "• 'What should I use for acne?'\n"
         ), last_intent
+    if any(
+        q in msg_lower
+        for q in [
+            "where can i find",
+            "how do i find",
+            "how can i find",
+            "how do i get",
+            "how can i get",
+            "where do i get",
+            "how to get",
+        ]
+    ):
+        if "recommend" in msg_lower or "routine" in msg_lower:
+            return (
+                "You can get personalized recommendations here:\n👉 /recommendations",
+                last_intent,
+            )
+        if "dupe" in msg_lower or "alternative" in msg_lower:
+            return (
+                "You can find product dupes here:\n👉 /catalog",
+                last_intent,
+            )
 
     intent = detect_intent(message)
 
@@ -183,6 +202,18 @@ def handle_chat(
         return handle_info(message, profile), last_intent
 
     elif intent == "recommend" or last_intent == "recommend":
+        SKIN_TYPES = ["oily", "dry", "sensitive", "combination", "normal"]
+        detected_skin = next((s for s in SKIN_TYPES if s in msg_lower), None)
+
+        # if user just answered skin type with no category, ask for category
+        if detected_skin and not any(
+            cat in msg_lower for cat in ["moisturizer", "cleanser", "serum"]
+        ):
+            skin_type = detected_skin
+            return (
+                "What category are you interested in? (moisturizer, cleanser, serum)",
+                last_intent,
+            )
         if any(cat in msg_lower for cat in ["moisturizer", "cleanser", "serum"]):
             category = next(
                 cat for cat in ["moisturizer", "cleanser", "serum"] if cat in msg_lower
@@ -308,11 +339,11 @@ def handle_dupe(message: str, profile=None) -> str:
 
         # 🔥 STEP 2: fallback → suggestions
         if not product_id:
-            metadata = _get_metadata()
+            metadata = (
+                _get_metadata().copy()
+            )  # copy to avoid mutating the shared singleton
             name_col = "product_name" if "product_name" in metadata.columns else "name"
-
             STOPWORDS = {"cream", "cleanser", "moisturizer", "serum", "lotion", "gel"}
-            metadata = _get_metadata()
 
             # 🔹 smarter scoring
             def loose_score(row):

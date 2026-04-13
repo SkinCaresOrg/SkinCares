@@ -110,6 +110,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.venv311
 
 # Spyder project settings
 .spyderproject
@@ -137,6 +138,8 @@ notebooks/data/
 dev.db 
 local.db
 
-.ruff_cache/data/processed/products_with_signals.csv
 data/processed/products_dataset_clean_tokens.csv
-data/processed/products_with_signals.csv
+
+# Large generated artifacts (do not commit)
+artifacts/faiss.index
+artifacts/product_vectors.npy

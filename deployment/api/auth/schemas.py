@@ -12,7 +12,6 @@ class UserCreate(BaseModel):
 class UserRead(BaseModel):
     id: UUID
     email: EmailStr
-    onboarding_completed: bool
 
 
 class UserLogin(BaseModel):

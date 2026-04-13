@@ -5,42 +5,82 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import joblib
-import faiss
 from scipy.sparse import csr_matrix, hstack
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 
+try:
+    import faiss  # type: ignore[import-not-found]
+except ImportError:
+    faiss = None
 
-ROOT = Path(__file__).resolve().parent.parent.parent
+from skincarelib.ml_system.artifacts import find_project_root
 
-DATA_PRODUCTS = ROOT / "data" / "processed" / "products_with_signals.csv"
+
+ROOT = find_project_root()
+
 GROUPS_PATH = ROOT / "features" / "ingredient_groups.json"
 ARTIFACT_DIR = ROOT / "artifacts"
 
+SIGNAL_KEYS = [
+    "hydration",
+    "barrier",
+    "acne_control",
+    "soothing",
+    "exfoliation",
+    "antioxidant",
+    "irritation_risk",
+]
+
+
+def _resolve_products_path() -> Path:
+    path = ROOT / "data" / "processed" / "products_with_signals.csv"
+    if path.exists():
+        return path
+    raise FileNotFoundError(f"Missing dataset required for artifact build: {path}")
+
 
 def load_data():
-    df = pd.read_csv(DATA_PRODUCTS)
+    data_products = _resolve_products_path()
+    df = pd.read_csv(data_products)
 
     # product_id is derived from row index so it stays consistent
     # with product_index.json and dupe_finder.py
-    df["product_id"] = df.index.astype(str)
+    if "product_id" not in df.columns:
+        df["product_id"] = df.index.astype(str)
 
-    required = ["product_id", "category", "price", "ingredient_tokens_clean"]
+    required = ["product_id", "category", "price"]
     for col in required:
         if col not in df.columns:
             raise ValueError(f"Missing column: {col}")
 
+    token_column = None
+    for candidate in ("ingredient_tokens_clean", "ingredient_tokens", "ingredients"):
+        if candidate in df.columns:
+            token_column = candidate
+            break
+    if token_column is None:
+        raise ValueError(
+            "Missing token text column. Expected one of: "
+            "ingredient_tokens_clean, ingredient_tokens, ingredients"
+        )
+
     # warn if tokens look unparsed (still a plain string rather than a list)
-    sample = df["ingredient_tokens_clean"].dropna().iloc[0]
-    if not sample.strip().startswith("["):
+    non_empty_tokens = df[token_column].dropna().astype(str).str.strip()
+    sample = non_empty_tokens.iloc[0] if not non_empty_tokens.empty else ""
+    if sample and not sample.startswith("["):
         import warnings
 
         warnings.warn(
-            "ingredient_tokens_clean may not be in list format — check tokenization output"
+            f"{token_column} may not be in list format — check tokenization output"
         )
 
-    # use the clean tokens column as the ingredient text
-    df["ingredient_tokens"] = df["ingredient_tokens_clean"]
+    df["ingredient_tokens"] = df[token_column]
+
+    # fill any missing signal columns with zero
+    for sig in SIGNAL_KEYS:
+        if sig not in df.columns:
+            df[sig] = 0.0
 
     return df.reset_index(drop=True)
 
@@ -128,8 +168,16 @@ def build_price_feature(series):
     return csr_matrix(scaled)
 
 
-def stack_all(X_tfidf, X_groups, X_cat, X_price):
-    return hstack([X_tfidf, X_groups, X_cat, X_price], format="csr")
+def build_signal_features(df):
+    """Stack the 7 CosIng-derived signal columns into a dense feature block.
+
+    Values are already normalised to [0, 1] by the skin-type mapping pipeline.
+    """
+    return csr_matrix(df[SIGNAL_KEYS].fillna(0.0).to_numpy(dtype=np.float32))
+
+
+def stack_all(X_tfidf, X_groups, X_cat, X_price, X_signals):
+    return hstack([X_tfidf, X_groups, X_cat, X_price, X_signals], format="csr")
 
 
 def build_schema(tfidf_vec, group_names, cat_names):
@@ -137,19 +185,27 @@ def build_schema(tfidf_vec, group_names, cat_names):
 
     Groups are stored as {name: {start, end}} rather than a flat list so
     that DupeScorer can slice out each group's dimensions by name.
+    Signals are stored the same way for use by user_profile.py.
     """
     tfidf_names = tfidf_vec.get_feature_names_out().tolist()
     n_tfidf = len(tfidf_names)
     n_groups = len(group_names)
     n_cats = len(cat_names)
+    n_signals = len(SIGNAL_KEYS)
 
     group_start = n_tfidf
     cat_start = group_start + n_groups
     price_idx = cat_start + n_cats
+    signal_start = price_idx + 1
 
     groups_schema = {
         name: {"start": group_start + i, "end": group_start + i + 1}
         for i, name in enumerate(group_names)
+    }
+
+    signals_schema = {
+        name: {"start": signal_start + i, "end": signal_start + i + 1}
+        for i, name in enumerate(SIGNAL_KEYS)
     }
 
     return {
@@ -157,17 +213,21 @@ def build_schema(tfidf_vec, group_names, cat_names):
         "groups": groups_schema,
         "categories": cat_names,
         "price_index": price_idx,
-        "total_features": price_idx + 1,
+        "signals": signals_schema,
+        "total_features": signal_start + n_signals,
     }
 
 
-def build_faiss_index(vectors: np.ndarray) -> faiss.Index:
+def build_faiss_index(vectors: np.ndarray):
     """Build a FAISS flat inner-product index over L2-normalised vectors.
 
     Normalising first means inner product == cosine similarity, so the index
     returns the same neighbours as a cosine search but scales to much larger
     catalogues without slowing down.
     """
+    if faiss is None:
+        raise RuntimeError("faiss is not installed")
+
     vectors = vectors.copy().astype(np.float32)
     faiss.normalize_L2(vectors)
     dim = vectors.shape[1]
@@ -193,8 +253,11 @@ def save_outputs(X, df, schema, tfidf_vec):
     joblib.dump(tfidf_vec, ARTIFACT_DIR / "tfidf.joblib")
 
     # FAISS index — used in dupe_finder for fast ANN candidate retrieval
-    faiss_index = build_faiss_index(dense)
-    faiss.write_index(faiss_index, str(ARTIFACT_DIR / "faiss.index"))
+    if faiss is not None:
+        faiss_index = build_faiss_index(dense)
+        faiss.write_index(faiss_index, str(ARTIFACT_DIR / "faiss.index"))
+    else:
+        print("FAISS not installed; skipping artifacts/faiss.index generation")
 
     print(f"Artifacts saved to {ARTIFACT_DIR}")
 
@@ -207,8 +270,9 @@ def run():
     X_groups, group_names = build_group_features(df["ingredient_tokens"], groups)
     X_cat, cat_names = build_category_features(df["category"])
     X_price = build_price_feature(df["price"])
+    X_signals = build_signal_features(df)
 
-    X = stack_all(X_tfidf, X_groups, X_cat, X_price)
+    X = stack_all(X_tfidf, X_groups, X_cat, X_price, X_signals)
     schema = build_schema(tfidf_vec, group_names, cat_names)
 
     save_outputs(X, df, schema, tfidf_vec)

@@ -34,7 +34,7 @@ Comprehensive guide covering:
 
 ```
 /docs/
-├── ML_SYSTEM_ARCHITECTURE.mdS    #start here - comprehensive ML guide
+├── ML_SYSTEM_ARCHITECTURE.md    # Start here - comprehensive ML guide
 ├── INTEGRATION_GUIDE.md          # Flask/FastAPI backend integration
 ├── API_QUICK_REFERENCE.md        # REST API reference
 ├── api_contract.md               # API schemas and contracts

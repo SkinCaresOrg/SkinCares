@@ -262,50 +262,6 @@ Response:
 }
 ```
 
-### `GET /api/debug/questionnaire-outcome-metrics`
-
-Debug-only endpoint for cohort quality proxy metrics.
-
-Access behavior:
-- Returns `404` when debug endpoints are disabled.
-- Enabled in local/dev/test or when `ENABLE_DEBUG_ENDPOINTS=true`.
-
-Response shape:
-
-```json
-{
-  "overall": {
-    "total_swipes": 120,
-    "completed_questionnaires": 70,
-    "skipped_questionnaires": 50,
-    "likes": 38,
-    "dislikes": 25,
-    "irritations": 7,
-    "like_rate_on_completed": 0.5429
-  },
-  "cohorts": {
-    "after_completed": {
-      "samples": 30,
-      "likes": 18,
-      "like_rate": 0.6
-    },
-    "after_skipped": {
-      "samples": 24,
-      "likes": 10,
-      "like_rate": 0.4167
-    }
-  },
-  "uplift": {
-    "absolute_like_rate_uplift": 0.1833,
-    "relative_like_rate_uplift": 0.44
-  }
-}
-```
-
-Notes:
-- `cohorts.after_completed` and `cohorts.after_skipped` are computed from each user's event sequence by looking at the next completed outcome.
-- `relative_like_rate_uplift` is `null` when skipper like rate is `0` or unavailable.
-
 ## Frontend assumptions
 
 - Catalog page: all products + filters/search/sort

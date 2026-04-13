@@ -1,5 +1,4 @@
 from typing import Optional
-from uuid import UUID
 
 from sqlalchemy.orm import Session
 from .models import User
@@ -42,14 +41,3 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
 def get_user_by_id(db: Session, user_id: str) -> Optional[User]:
     """querie db with user id and returns the user object if found, otherwise returns None"""
     return db.query(User).filter(User.id == user_id).first()
-
-
-def mark_onboarding_completed(db: Session, user_id: UUID) -> Optional[User]:
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        return None
-    user.onboarding_completed = True
-    db.add(user)
-    db.flush()
-    db.refresh(user)
-    return user

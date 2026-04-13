@@ -8,7 +8,8 @@ import pytest
 import pandas as pd
 import numpy as np
 import importlib
-import faiss
+
+faiss = pytest.importorskip("faiss", reason="faiss not installed")
 
 
 @pytest.fixture

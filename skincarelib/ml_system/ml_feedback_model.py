@@ -26,20 +26,6 @@ try:
 except ImportError:
     VW_AVAILABLE = False
 
-try:
-    import lightgbm as lgb
-
-    LIGHTGBM_AVAILABLE = True
-except ImportError:
-    LIGHTGBM_AVAILABLE = False
-
-try:
-    import xlearn
-
-    XLEARN_AVAILABLE = True
-except ImportError:
-    XLEARN_AVAILABLE = False
-
 
 class UserState:
     """Enhanced UserState tracking for ML models."""
@@ -56,14 +42,6 @@ class UserState:
         self.liked_reasons: List[str] = []
         self.disliked_reasons: List[str] = []
         self.irritation_reasons: List[str] = []
-        self.reason_tag_preferences: Dict[str, float] = {}
-
-        # Structured preference signals derived from questionnaire reasons
-        self.avoid_ingredients: Dict[str, float] = {}
-        self.preferred_ingredients: Dict[str, float] = {}
-        self.price_sensitivity: float = 0.0
-        self.price_preference_center: Optional[float] = None
-        self.skin_type_affinity: float = 0.0
 
         # Interaction counts
         self.interactions: int = 0
@@ -71,55 +49,10 @@ class UserState:
         self.disliked_count: int = 0
         self.irritation_count: int = 0
 
-    def _ensure_reason_state(self) -> None:
-        if (
-            not hasattr(self, "reason_tag_preferences")
-            or self.reason_tag_preferences is None
-        ):
-            self.reason_tag_preferences = {}
-        if not hasattr(self, "avoid_ingredients") or self.avoid_ingredients is None:
-            self.avoid_ingredients = {}
-        if (
-            not hasattr(self, "preferred_ingredients")
-            or self.preferred_ingredients is None
-        ):
-            self.preferred_ingredients = {}
-        if not hasattr(self, "price_sensitivity") or self.price_sensitivity is None:
-            self.price_sensitivity = 0.0
-        if not hasattr(self, "price_preference_center"):
-            self.price_preference_center = None
-        if not hasattr(self, "skin_type_affinity") or self.skin_type_affinity is None:
-            self.skin_type_affinity = 0.0
-
-    def _normalize_reason_tag(self, reason: str) -> Optional[str]:
-        normalized = reason.strip().lower()
-        if not normalized:
-            return None
-        if any(ch.isspace() for ch in normalized):
-            return None
-        if not all(ch.isalnum() or ch == "_" for ch in normalized):
-            return None
-        return normalized
-
-    def _update_reason_preferences(
-        self, reasons: List[str] | None, delta: float
-    ) -> None:
-        self._ensure_reason_state()
-        if not reasons:
-            return
-        for reason in reasons:
-            normalized = self._normalize_reason_tag(reason)
-            if not normalized:
-                continue
-            self.reason_tag_preferences[normalized] = (
-                self.reason_tag_preferences.get(normalized, 0.0) + delta
-            )
-
     def add_liked(self, vec: np.ndarray, reasons: List[str] | None = None):
         self.liked_vectors.append(vec.astype(np.float32))
         if reasons:
             self.liked_reasons.extend(reasons)
-        self._update_reason_preferences(reasons, delta=1.0)
         self.interactions += 1
         self.liked_count += 1
 
@@ -127,7 +60,6 @@ class UserState:
         self.disliked_vectors.append(vec.astype(np.float32))
         if reasons:
             self.disliked_reasons.extend(reasons)
-        self._update_reason_preferences(reasons, delta=-1.0)
         self.interactions += 1
         self.disliked_count += 1
 
@@ -135,7 +67,6 @@ class UserState:
         self.irritation_vectors.append(vec.astype(np.float32))
         if reasons:
             self.irritation_reasons.extend(reasons)
-        self._update_reason_preferences(reasons, delta=-1.0)
         self.interactions += 1
         self.irritation_count += 1
 
@@ -495,223 +426,6 @@ class ContextualBanditFeedback:
             # Fallback for older VW Python APIs that may not support Workspace
             # or 'initial_regressor' kwarg; use argument string instead.
             self.vw = vw.vw(f"-i {str(path)} --quiet")
-
-
-class LightGBMFeedback:
-    """
-    LightGBM model for user preference prediction.
-
-    Optimized for large datasets (2000+ samples).
-    Fast training, handles categorical features, high accuracy.
-    """
-
-    def __init__(self, n_estimators: int = 100, learning_rate: float = 0.1):
-        if not LIGHTGBM_AVAILABLE:
-            raise ImportError(
-                "lightgbm is required for LightGBMFeedback. Install with: pip install lightgbm"
-            )
-
-        self.n_estimators = n_estimators
-        self.learning_rate = learning_rate
-        self.model = None
-        self.scaler = StandardScaler()
-        self.is_trained = False
-
-    def fit(self, user_state: UserState):
-        """Train LightGBM on user interactions."""
-        data = user_state.get_training_data()
-        if data is None:
-            return False
-
-        X, y = data
-        if len(np.unique(y)) < 2:
-            return False
-
-        X_scaled = self.scaler.fit_transform(X)
-
-        try:
-            self.model = lgb.LGBMClassifier(
-                n_estimators=self.n_estimators,
-                learning_rate=self.learning_rate,
-                num_leaves=31,
-                max_depth=-1,
-                random_state=42,
-                verbose=-1,
-            )
-            self.model.fit(X_scaled, y, log_eval_period=0)
-            self.is_trained = True
-            return True
-        except Exception:
-            return False
-
-    def predict_preference(self, product_vector: np.ndarray) -> float:
-        """Predict preference for a product (0.0 to 1.0)."""
-        if not self.is_trained or self.model is None:
-            return 0.5
-
-        X = product_vector.reshape(1, -1).astype(np.float32)
-        X_scaled = self.scaler.transform(X)
-        return float(self.model.predict_proba(X_scaled)[0, 1])
-
-    def score_products(self, product_vectors: np.ndarray) -> np.ndarray:
-        """Score multiple products."""
-        if not self.is_trained or self.model is None:
-            return np.ones(len(product_vectors)) * 0.5
-
-        X_scaled = self.scaler.transform(product_vectors.astype(np.float32))
-        return self.model.predict_proba(X_scaled)[:, 1].astype(np.float32)
-
-    def get_feature_importance(self) -> np.ndarray:
-        """Get feature importance scores."""
-        if not self.is_trained or self.model is None:
-            return np.array([])
-        return self.model.feature_importances_.astype(np.float32)
-
-    def save(self, path: Path):
-        """Save model to disk."""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "wb") as f:
-            pickle.dump({"model": self.model, "scaler": self.scaler}, f)
-
-    def load(self, path: Path):
-        """Load model from disk."""
-        with open(path, "rb") as f:
-            data = pickle.load(f)
-            self.model = data["model"]
-            self.scaler = data["scaler"]
-            self.is_trained = True
-
-
-class XLearnFeedback:
-    """
-    XLearn FFM (Field-aware Factorization Machines) model for preference prediction.
-
-    Excellent for high-dimensional sparse data and feature interactions.
-    Fast training, memory efficient, good for production at scale (10000+ samples).
-    """
-
-    def __init__(self, task: str = "binary", epoch: int = 10, learning_rate: float = 0.1):
-        if not XLEARN_AVAILABLE:
-            raise ImportError(
-                "xlearn is required for XLearnFeedback. Install with: pip install xlearn"
-            )
-
-        self.task = task
-        self.epoch = epoch
-        self.learning_rate = learning_rate
-        self.model = None
-        self.scaler = StandardScaler()
-        self.is_trained = False
-        self.model_path = "/tmp/xlearn_model.bin"
-
-    def fit(self, user_state: UserState):
-        """Train XLearn FFM on user interactions."""
-        data = user_state.get_training_data()
-        if data is None:
-            return False
-
-        X, y = data
-        if len(np.unique(y)) < 2:
-            return False
-
-        X_scaled = self.scaler.fit_transform(X)
-
-        try:
-            import tempfile
-            import os
-
-            # Convert to LIBFFM format (field:feature:value)
-            with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
-                train_file = f.name
-                for i, (sample, label) in enumerate(zip(X_scaled, y)):
-                    fields = " ".join(
-                        f"{j}:{j}:{sample[j]:.6f}"
-                        for j in range(len(sample))
-                        if sample[j] != 0
-                    )
-                    f.write(f"{label} {fields}\n")
-
-            self.model = xlearn.FFMModel(
-                task=self.task,
-                lr=self.learning_rate,
-                epoch=self.epoch,
-                k=4,  # Latent dimension
-            )
-            self.model.fit(train_file, self.model_path)
-            self.is_trained = True
-
-            # Cleanup
-            try:
-                os.unlink(train_file)
-            except Exception:
-                pass
-
-            return True
-        except Exception:
-            return False
-
-    def predict_preference(self, product_vector: np.ndarray) -> float:
-        """Predict preference for a product (0.0 to 1.0)."""
-        if not self.is_trained or self.model is None:
-            return 0.5
-
-        try:
-            X = product_vector.reshape(1, -1).astype(np.float32)
-            X_scaled = self.scaler.transform(X)
-
-            # Create temp file for prediction
-            import tempfile
-
-            with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
-                test_file = f.name
-                fields = " ".join(
-                    f"{j}:{j}:{X_scaled[0][j]:.6f}"
-                    for j in range(len(X_scaled[0]))
-                    if X_scaled[0][j] != 0
-                )
-                f.write(f"0 {fields}\n")
-
-            # Predict
-            output_file = test_file.replace(".txt", "_pred.txt")
-            self.model.predict(test_file, output_file)
-
-            # Read prediction
-            with open(output_file, "r") as f:
-                pred = float(f.read().strip())
-                # XLearn outputs raw scores; convert to probability
-                score = 1.0 / (1.0 + np.exp(-pred))
-
-            return float(score)
-        except Exception:
-            return 0.5
-
-    def score_products(self, product_vectors: np.ndarray) -> np.ndarray:
-        """Score multiple products."""
-        if not self.is_trained or self.model is None:
-            return np.ones(len(product_vectors)) * 0.5
-
-        scores = []
-        for vec in product_vectors:
-            scores.append(self.predict_preference(vec))
-        return np.array(scores, dtype=np.float32)
-
-    def get_feature_importance(self) -> np.ndarray:
-        """Feature importance not directly available in XLearn FFM."""
-        return np.array([])
-
-    def save(self, path: Path):
-        """Save model to disk."""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        import shutil
-
-        shutil.copy(self.model_path, str(path))
-
-    def load(self, path: Path):
-        """Load model from disk."""
-        import shutil
-
-        shutil.copy(str(path), self.model_path)
-        self.is_trained = True
 
 
 def update_user_state(

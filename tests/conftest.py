@@ -15,25 +15,33 @@ def _create_test_data():
     csv_path = Path(__file__).parent.parent / "data" / "processed" / "products_with_signals.csv"
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # Generate 50 test products (tests use IDs up to ~24)
+    # Generate 300+ test products to ensure enough diversity and coverage
     products_data = []
-    for i in range(1, 51):
+    for i in range(1, 301):
+        # Distribute across 7 categories evenly: each gets ~28 products
         product_type = ["cleanser", "moisturizer", "treatment", "sunscreen", "serum", "mask", "repair"][i % 7]
         
-        # Add fragrance to even-numbered products
-        has_fragrance = "fragrance" if i % 2 == 0 else ""
-        
+        # Base ingredients - use benign ingredients for most products
         ingredients = ["water", "glycerin", "hyaluronic acid"]
-        if has_fragrance:
+        
+        # Add fragrance only to even-numbered products (for fragrance exclusion testing)
+        if i % 2 == 0:
             ingredients.append("fragrance")
-        ingredients.extend(["niacinamide", "cetyl alcohol"][:3])
+        
+        # Add other ingredients varied by product
+        if i % 3 == 0:
+            ingredients.append("niacinamide")
+        if i % 5 == 0:
+            ingredients.append("squalane")
+        if i % 7 == 0:
+            ingredients.append("peptides")
         
         products_data.append({
             "product_name": f"Test {product_type.title()} {i}",
-            "brand": f"TestBrand{i % 5 + 1}",
+            "brand": f"TestBrand{i % 10 + 1}",
             "usage_type": "skincare",
             "category": product_type,
-            "price": 15 + (i % 50),
+            "price": 15 + (i % 80),
             "image_url": f"https://example.com/product{i}.jpg",
             "ingredients": ",".join(ingredients),
         })
@@ -50,9 +58,9 @@ def _create_test_data():
     vectors_path = Path(__file__).parent.parent / "artifacts" / "product_vectors.npy"
     vectors_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # Generate 50 test vectors (128 dimensions, to match PRODUCTS)
+    # Generate 300 test vectors (128 dimensions, to match PRODUCTS)
     np.random.seed(42)
-    test_vectors = np.random.randn(50, 128).astype(np.float32)
+    test_vectors = np.random.randn(300, 128).astype(np.float32)
     np.save(vectors_path, test_vectors)
 
 

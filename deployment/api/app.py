@@ -1299,9 +1299,12 @@ def get_recommendations(
                                 # Map similarity to [0, 1]
                                 score = (similarity + 1.0) / 2.0
                                 
-                                # If we're disliking, invert the score
+                                # Handle dislike case: penalize similar products, neutral for others
                                 if preferred_class == 0.0:
-                                    score = 1.0 - score
+                                    # Penalize products similar to dislikes: scale down similarity scores
+                                    # Products with high similarity to dislike mean get low scores
+                                    # This ensures disliked types are deprioritized rather than excluded completely
+                                    score = 0.3 * score  # Scale similarity down by 70%
                                 
                                 # Boost score for products with repeated feedback
                                 product_feedback_count = product_like_counts.get(product.product_id, 0) or product_dislike_counts.get(product.product_id, 0)
@@ -1435,7 +1438,11 @@ def get_recommendations(
 
     # DEBUG: Log scores when interactions > 0
     if user_state.interactions > 0:
-        logger.info(f"[DEBUG] Scores for user_id={user_id}: top5 = {[(ranked[i][0].product_id, ranked[i][1]) for i in range(min(5, len(ranked)))]}")
+        top5 = [(ranked[i][0].product_id, ranked[i][1], ranked[i][0].category) for i in range(min(5, len(ranked)))]
+        logger.info(f"[DEBUG] Scores for user_id={user_id}: top5 = {top5}")
+        if category:
+            cat_ranked = [(r[0].product_id, r[1]) for r in ranked if r[0].category == category]
+            logger.info(f"[DEBUG] Category {category}: {len(cat_ranked)} products, top = {cat_ranked[:5]}")
 
     # Filter out products with 0.0 score (completely excluded)
     # Then take top limit products
@@ -1568,33 +1575,30 @@ def submit_feedback(
                     user_state.irritation_product_ids.append(payload.product_id)
                     user_state.interactions += 1
                     user_state.irritation_count += 1
-            else:
-                
-                logger.info(f"[DEBUG] feedback: user_id={payload.user_id}, product_id={payload.product_id}, reactions={payload.reaction}, total_interactions={user_state.interactions}")
-                
-                # Update reason tag preferences with time tracking
-                now = datetime.now(timezone.utc).isoformat()
-                if payload.reason_tags:
-                    for reason_tag in payload.reason_tags:
-                        if payload.reaction == "like":
-                            user_state.reason_tag_preferences[reason_tag] = (
-                                user_state.reason_tag_preferences.get(reason_tag, 0.0) + 1.0
+            
+            # Update reason tag preferences with time tracking (moved outside if/elif/else)
+            now = datetime.now(timezone.utc).isoformat()
+            if payload.reason_tags:
+                for reason_tag in payload.reason_tags:
+                    if payload.reaction == "like":
+                        user_state.reason_tag_preferences[reason_tag] = (
+                            user_state.reason_tag_preferences.get(reason_tag, 0.0) + 1.0
+                        )
+                    elif payload.reaction == "dislike" or payload.reaction == "irritation":
+                        user_state.reason_tag_preferences[reason_tag] = (
+                            user_state.reason_tag_preferences.get(reason_tag, 0.0) - 1.0
+                        )
+                    user_state.reason_tag_last_seen_at[reason_tag] = now
+                    user_state.reason_signal_count += 1
+                    
+                    # Also track avoided ingredients for structured signals
+                    if reason_tag in _AVOID_INGREDIENT_TRIGGERS:
+                        ingredient_key = _AVOID_INGREDIENT_TRIGGERS[reason_tag].lower()
+                        if payload.reaction == "dislike" or payload.reaction == "irritation":
+                            user_state.avoid_ingredients[ingredient_key] = (
+                                user_state.avoid_ingredients.get(ingredient_key, 0.0) + 1.0
                             )
-                        elif payload.reaction == "dislike" or payload.reaction == "irritation":
-                            user_state.reason_tag_preferences[reason_tag] = (
-                                user_state.reason_tag_preferences.get(reason_tag, 0.0) - 1.0
-                            )
-                        user_state.reason_tag_last_seen_at[reason_tag] = now
-                        user_state.reason_signal_count += 1
-                        
-                        # Also track avoided ingredients for structured signals
-                        if reason_tag in _AVOID_INGREDIENT_TRIGGERS:
-                            ingredient_key = _AVOID_INGREDIENT_TRIGGERS[reason_tag].lower()
-                            if payload.reaction == "dislike" or payload.reaction == "irritation":
-                                user_state.avoid_ingredients[ingredient_key] = (
-                                    user_state.avoid_ingredients.get(ingredient_key, 0.0) + 1.0
-                                )
-                                user_state.avoid_ingredient_last_seen_at[ingredient_key] = now
+                            user_state.avoid_ingredient_last_seen_at[ingredient_key] = now
 
             _persist_user_model_state(db, payload.user_id, user_state)
             _persist_model_checkpoint(db, payload.user_id, user_state)
@@ -1785,8 +1789,13 @@ def get_product_score(
     if product_vector is None:
         raise HTTPException(status_code=400, detail="Product vector not found")
 
+    # Check if product was explicitly disliked
+    if product_id in user_state.disliked_product_ids:
+        # Explicitly disliked product scores near-zero
+        score = 0.0001
+        model_used = "explicit-dislike"
     # Score using adaptive model based on interaction count
-    if user_state.liked_count > 0 and user_state.disliked_count > 0:
+    elif user_state.liked_count > 0 and user_state.disliked_count > 0:
         try:
             # Select best model based on learning stage
             model, model_used = get_best_model(user_state)
@@ -1796,6 +1805,24 @@ def get_product_score(
             print(f"Error scoring product: {e}")
             score = 0.5
             model_used = "error"
+    elif user_state.disliked_count > 0:
+        # Single-class dislike-only case: penalize products similar to dislikes
+        mean_vector = np.mean(user_state.disliked_vectors, axis=0)
+        similarity = np.dot(product_vector, mean_vector) / (
+            np.linalg.norm(product_vector) * np.linalg.norm(mean_vector) + 1e-7
+        )
+        score = (similarity + 1.0) / 2.0
+        # Penalize by scaling down - makes similar products score low
+        score = 0.3 * score
+        model_used = "single-class-dislike"
+    elif user_state.liked_count > 0:
+        # Single-class like-only case: boost products similar to likes
+        mean_vector = np.mean(user_state.liked_vectors, axis=0)
+        similarity = np.dot(product_vector, mean_vector) / (
+            np.linalg.norm(product_vector) * np.linalg.norm(mean_vector) + 1e-7
+        )
+        score = (similarity + 1.0) / 2.0
+        model_used = "single-class-like"
     else:
         score = 0.5  # Neutral score if not enough training data
         model_used = "default"

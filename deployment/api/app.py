@@ -344,10 +344,10 @@ app.add_middleware(
 # Model selection thresholds (based on data availability patterns)
 # These were validated on test users but not A/B tested yet.
 # TODO: Fine-tune these based on production metrics.
-EARLY_STAGE_THRESHOLD = 5  # Minimum interactions to start using complex models
-MID_STAGE_THRESHOLD = 20  # Minimum interactions to use online learning
-LARGE_SCALE_THRESHOLD = 100  # Minimum interactions to use LightGBM
-ULTRA_LARGE_THRESHOLD = 500  # Minimum interactions to use XLearn FFM
+EARLY_STAGE_THRESHOLD = 5  # Minimum interactions to start considering more complex models
+MID_STAGE_THRESHOLD = 20  # Mid-stage interaction threshold used by model selection heuristics
+LARGE_SCALE_THRESHOLD = 100  # Minimum interactions where large-scale/online-learning models may be selected
+ULTRA_LARGE_THRESHOLD = 500  # Minimum interactions where ultra-large-scale advanced models (for example XLearn FFM) may be selected
 MAX_ONBOARDING_SEED_LIKES = 40
 MAX_ONBOARDING_SEED_DISLIKES = 40
 

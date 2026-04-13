@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -6,6 +7,7 @@ from deployment.api.db.session import get_db
 from .dependencies import get_current_user
 
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
@@ -28,9 +30,10 @@ def login_user(payload: schemas.UserLogin, db: Session = Depends(get_db)):
     try:
         user = service.authenticate_user(db, payload.email, payload.password)
     except ValueError as e:
+        logger.warning(f"Login failed for {payload.email}: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e),
+            detail="Invalid credentials",
         )
 
     token = security.create_access_token({"sub": str(user.id)})

@@ -1537,6 +1537,11 @@ def submit_feedback(
             print(f"[FEEDBACK RECEIVED] user_id={payload.user_id}, product_id={payload.product_id}, reaction={payload.reaction}")
             # Build product_index for this user session
             product_index = _build_product_index()
+            # Include reason_tags for richer learning signal
+            reasons = payload.reason_tags or []
+            if payload.free_text:
+                reasons = reasons + [payload.free_text]
+            
             vec = get_product_vector_safe(payload.product_id, product_index)
             print(f"[FEEDBACK] vec is {'None' if vec is None else 'available'} for product {payload.product_id}")
             # Track feedback for repeated feedback boost logic, even if vector is missing

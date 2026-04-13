@@ -10,11 +10,8 @@ This test:
 """
 
 import json
-import sys
+from pathlib import Path
 from uuid import uuid4
-
-# For testing in development, import directly
-sys.path.insert(0, '/Users/geethika/projects/SkinCares/SkinCares')
 
 from deployment.api.db.session import SessionLocal, engine
 from deployment.api.auth.models import User as DBUser
@@ -48,7 +45,8 @@ def find_fragrance_products(db: Session, limit: int = 10) -> list:
     This queries the PRODUCTS constant loaded in the API.
     """
     # Load the products from artifacts
-    artifact_path = "/Users/geethika/projects/SkinCares/SkinCares/artifacts/product_index.json"
+    project_root = Path(__file__).parent.parent
+    artifact_path = project_root / "artifacts" / "product_index.json"
     with open(artifact_path) as f:
         product_index = json.load(f)
     

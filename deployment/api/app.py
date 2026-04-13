@@ -1238,15 +1238,18 @@ def get_recommendations(
     # Score products using adaptive/conditional model based on interaction count
     scores = []
     model_name = "default"
+    print(f"[DEBUG] Starting scoring: user_state.interactions={user_state.interactions}, liked_count={user_state.liked_count}, disliked_count={user_state.disliked_count}")
     logger.info(f"[DEBUG] Starting scoring: user_state.interactions={user_state.interactions}")
     if user_state.interactions > 0:
         try:
             training_data = user_state.get_training_data()
+            print(f"[DEBUG] training_data={training_data is not None}")
             if training_data is None:
                 scores = [0.5] * len(candidates)
             else:
                 _, y = training_data
                 if len(np.unique(y)) < 2:
+                    print(f"[SINGLE-CLASS] user {user_id}: y={y}, unique={np.unique(y)}, interactions={user_state.interactions}")
                     # Single class case: use repeated feedback tracking to boost products
                     # This handles early feedback and profile-only scenarios
                     product_index = {
@@ -1265,6 +1268,8 @@ def get_recommendations(
                         # Directly count from user_state's tracked product IDs (includes onboarding seeds + real feedback)
                         for product_id in user_state.liked_product_ids:
                             product_like_counts[product_id] = product_like_counts.get(product_id, 0) + 1
+                        
+                        logger.info(f"[DEBUG recommend] user {user_id}: liked_product_ids={user_state.liked_product_ids}, counts={product_like_counts}")
                         
                         # Find the mean of all liked vectors
                         mean_vector = np.mean(user_state.liked_vectors, axis=0)
@@ -1297,6 +1302,8 @@ def get_recommendations(
                                 
                                 # Boost score for products with repeated feedback
                                 product_feedback_count = product_like_counts.get(product.product_id, 0) or product_dislike_counts.get(product.product_id, 0)
+                                if product.product_id in product_like_counts or product.product_id in product_dislike_counts:
+                                    logger.info(f"[DEBUG score] product {product.product_id}: feedback_count={product_feedback_count}")
                                 if product_feedback_count >= 5:
                                     # Strong boost for products with 5+ feedbacks (user shown clear preference)
                                     # For boost: 5 -> +0.3, 6 -> +0.35, 7 -> +0.4, 8+ -> +0.4
@@ -1308,8 +1315,7 @@ def get_recommendations(
                                             score = min(1.0, score * (1.0 + boost))
                                         else:
                                             score = min(1.0, score + boost)
-                                        if product_feedback_count >= 8:
-                                            logger.info(f"[DEBUG] Boosting product {product.product_id}: count={product_feedback_count}, original={original_score:.4f}, boosted={score:.4f}")
+                                        logger.info(f"[DEBUG BOOST] product {product.product_id}: count={product_feedback_count}, original={original_score:.4f}, boosted={score:.4f}")
                                     else:
                                         # For disliked products, penalize significantly
                                         score = max(0.0, score - boost)
@@ -1345,12 +1351,36 @@ def get_recommendations(
                     product_index = {
                         p.product_id: i for i, p in enumerate(PRODUCTS.values())
                     }
+                    
+                    # Build product feedback counts for boost logic
+                    product_like_counts: Dict[int, int] = {}
+                    product_dislike_counts: Dict[int, int] = {}
+                    for product_id in user_state.liked_product_ids:
+                        product_like_counts[product_id] = product_like_counts.get(product_id, 0) + 1
+                    for product_id in user_state.disliked_product_ids:
+                        product_dislike_counts[product_id] = product_dislike_counts.get(product_id, 0) + 1
+                    print(f"[DEBUG multi-class] user {user_id}: liked_counts={product_like_counts}, disliked_counts={product_dislike_counts}")
 
                     for product in candidates:
                         # Get vector for this product using safe mapping
                         vec = get_product_vector_safe(product.product_id, product_index)
                         if vec is not None:
                             score = float(model.predict_preference(vec))
+                            
+                            # Apply boost for repeated feedback before other adjustments
+                            product_feedback_count = product_like_counts.get(product.product_id, 0) or product_dislike_counts.get(product.product_id, 0)
+                            if product_feedback_count >= 5:
+                                boost = min(0.4, 0.2 + (product_feedback_count - 5) * 0.05)
+                                if product_like_counts.get(product.product_id, 0):
+                                    # Product with many likes - boost positively
+                                    if score < 0.7:
+                                        score = min(1.0, score * (1.0 + boost))
+                                    else:
+                                        score = min(1.0, score + boost)
+                                    print(f"[DEBUG BOOST multi] product {product.product_id}: count={product_feedback_count}, boosted_score={score:.4f}")
+                                else:
+                                    # Product with many dislikes - penalize
+                                    score = max(0.0, score - boost)
                             
                             # Apply reason-based and structured adjustments
                             reason_adjustment = _compute_reason_adjustment(product, user_state)
@@ -1494,13 +1524,18 @@ def submit_feedback(
 
     # Update ML model state with new feedback
     try:
-        user_state = USER_STATES.get(payload.user_id) or _load_user_state_from_db(
-            db, payload.user_id
-        )
+        user_state = USER_STATES.get(payload.user_id)
+        if user_state is None:
+            print(f"[FEEDBACK] Loading user_state from DB for {payload.user_id}")
+            user_state = _load_user_state_from_db(db, payload.user_id)
+        else:
+            print(f"[FEEDBACK] Using cached user_state for {payload.user_id}, has {len(user_state.liked_product_ids)} liked_product_ids")
         if payload.has_tried:
+            print(f"[FEEDBACK RECEIVED] user_id={payload.user_id}, product_id={payload.product_id}, reaction={payload.reaction}")
             # Build product_index for this user session
             product_index = _build_product_index()
             vec = get_product_vector_safe(payload.product_id, product_index)
+            print(f"[FEEDBACK] vec is {'None' if vec is None else 'available'} for product {payload.product_id}")
             if vec is not None:
                 # Include reason_tags for richer learning signal
                 reasons = payload.reason_tags or []
@@ -1509,6 +1544,7 @@ def submit_feedback(
 
                 if payload.reaction == "like":
                     user_state.add_liked(vec, product_id=payload.product_id, reasons=reasons if reasons else None)
+                    logger.info(f"[DEBUG add_liked] product_id={payload.product_id}, total_product_ids={len(user_state.liked_product_ids)}, list={user_state.liked_product_ids[-5:]}")
                 elif payload.reaction == "dislike":
                     user_state.add_disliked(vec, product_id=payload.product_id, reasons=reasons if reasons else None)
                 elif payload.reaction == "irritation":

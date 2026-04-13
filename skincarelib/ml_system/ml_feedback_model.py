@@ -89,6 +89,9 @@ class UserState:
         self.liked_vectors.append(vec.astype(np.float32))
         if product_id is not None:
             self.liked_product_ids.append(product_id)
+            print(f"[add_liked] Added product_id={product_id}, now has {len(self.liked_product_ids)} likes")
+        else:
+            print(f"[add_liked] WARNING: product_id is None!")
         if reasons:
             self.liked_reasons.extend(reasons)
         self.interactions += 1

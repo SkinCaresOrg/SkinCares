@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from typing import Optional
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -31,20 +32,29 @@ def _build_faiss_index(vectors: np.ndarray):
 
 
 def _load_or_rebuild_faiss_index(vectors: np.ndarray):
-    try:
-        return faiss.read_index(str(FAISS_INDEX_PATH))
-    except RuntimeError as error:
-        message = str(error).lower()
-        if "could not open" not in message and "no such file" not in message:
-            raise
-
-        index = _build_faiss_index(vectors)
+    if FAISS_INDEX_PATH.exists():
         try:
-            FAISS_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
-            faiss.write_index(index, str(FAISS_INDEX_PATH))
-        except Exception:
-            pass
-        return index
+            return faiss.read_index(str(FAISS_INDEX_PATH))
+        except RuntimeError as error:
+            warnings.warn(
+                f"Could not read existing FAISS index at {FAISS_INDEX_PATH}: {error}. "
+                "Rebuilding from vectors."
+            )
+    else:
+        warnings.warn(
+            f"Missing FAISS index at {FAISS_INDEX_PATH}. Rebuilding from vectors."
+        )
+
+    index = _build_faiss_index(vectors)
+    try:
+        FAISS_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
+        faiss.write_index(index, str(FAISS_INDEX_PATH))
+    except Exception as write_error:
+        warnings.warn(
+            f"Rebuilt FAISS index in memory but could not persist to "
+            f"{FAISS_INDEX_PATH}: {write_error}"
+        )
+    return index
 
 
 # ---------------------------
@@ -312,8 +322,6 @@ _LOAD_ERROR: Optional[Exception] = None
 try:
     VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA, FAISS_INDEX = load_artifacts()
 except (FileNotFoundError, RuntimeError) as e:
-    import warnings
-
     _LOAD_ERROR = e
     warnings.warn(f"Could not load artifacts: {e}. Running in degraded mode.")
 

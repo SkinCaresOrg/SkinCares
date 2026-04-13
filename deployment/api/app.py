@@ -632,6 +632,8 @@ def load_products_from_csv() -> Dict[int, ProductDetail]:
 
 
 PRODUCTS = load_products_from_csv()
+print(f"[INIT] Loaded {len(PRODUCTS)} products, max_id={max(PRODUCTS.keys()) if PRODUCTS else 0}")
+print(f"[INIT] Product IDs range: {sorted(PRODUCTS.keys())[:10]}...{sorted(PRODUCTS.keys())[-10:] if len(PRODUCTS) > 10 else sorted(PRODUCTS.keys())}")
 
 # Load ML assets
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -723,9 +725,15 @@ def get_product_vector_safe(
         This handles any product ID gaps and future schema changes.
     """
     if product_id not in product_index:
+        # Debug: check if product exists in PRODUCTS
+        if product_id not in PRODUCTS:
+            print(f"[vector] Product {product_id} not in PRODUCTS (only {len(PRODUCTS)} products total)")
+        else:
+            print(f"[vector] Product {product_id} in PRODUCTS but NOT in product_index (index has {len(product_index)} entries)")
         return None
     idx = product_index[product_id]
     if idx < 0 or idx >= len(PRODUCT_VECTORS):
+        print(f"[vector] Index out of bounds: idx={idx}, PRODUCT_VECTORS.len={len(PRODUCT_VECTORS)}")
         return None
     return PRODUCT_VECTORS[idx]
 
@@ -1536,19 +1544,31 @@ def submit_feedback(
             product_index = _build_product_index()
             vec = get_product_vector_safe(payload.product_id, product_index)
             print(f"[FEEDBACK] vec is {'None' if vec is None else 'available'} for product {payload.product_id}")
-            if vec is not None:
-                # Include reason_tags for richer learning signal
-                reasons = payload.reason_tags or []
-                if payload.free_text:
-                    reasons = reasons + [payload.free_text]
-
-                if payload.reaction == "like":
+            # Track feedback for repeated feedback boost logic, even if vector is missing
+            if payload.reaction == "like":
+                if vec is not None:
                     user_state.add_liked(vec, product_id=payload.product_id, reasons=reasons if reasons else None)
-                    logger.info(f"[DEBUG add_liked] product_id={payload.product_id}, total_product_ids={len(user_state.liked_product_ids)}, list={user_state.liked_product_ids[-5:]}")
-                elif payload.reaction == "dislike":
+                else:
+                    # Still track the product_id for boost logic, even without vector
+                    user_state.liked_product_ids.append(payload.product_id)
+                    user_state.interactions += 1
+                    user_state.liked_count += 1
+                    print(f"[add_liked no-vec] Added product_id={payload.product_id} without vector, now has {len(user_state.liked_product_ids)} likes")
+            elif payload.reaction == "dislike":
+                if vec is not None:
                     user_state.add_disliked(vec, product_id=payload.product_id, reasons=reasons if reasons else None)
-                elif payload.reaction == "irritation":
+                else:
+                    user_state.disliked_product_ids.append(payload.product_id)
+                    user_state.interactions += 1
+                    user_state.disliked_count += 1
+            elif payload.reaction == "irritation":
+                if vec is not None:
                     user_state.add_irritation(vec, product_id=payload.product_id, reasons=reasons if reasons else None)
+                else:
+                    user_state.irritation_product_ids.append(payload.product_id)
+                    user_state.interactions += 1
+                    user_state.irritation_count += 1
+            else:
                 
                 logger.info(f"[DEBUG] feedback: user_id={payload.user_id}, product_id={payload.product_id}, reactions={payload.reaction}, total_interactions={user_state.interactions}")
                 

@@ -42,6 +42,7 @@ from skincarelib.ml_system.swipe_session import SwipeSession
 from skincarelib.ml_system.handler import handle_chat
 
 logger = logging.getLogger(__name__)
+REMOTE_ASSET_MODE = bool(os.getenv("SUPABASE_URL", "").strip())
 
 Category = Literal[
     "cleanser",
@@ -317,7 +318,11 @@ def load_products_from_csv() -> Dict[int, ProductDetail]:
         )
 
     if not csv_path.exists():
-        print(f"Warning: CSV file not found at {csv_path}")
+        message = f"CSV file not found at {csv_path}"
+        if REMOTE_ASSET_MODE:
+            logger.info(message)
+        else:
+            logger.warning(message)
         return products
 
     try:
@@ -385,7 +390,11 @@ PRODUCT_VECTORS_PATH = PROJECT_ROOT / "artifacts" / "product_vectors.npy"
 try:
     PRODUCT_VECTORS = np.load(PRODUCT_VECTORS_PATH, mmap_mode="r")
 except FileNotFoundError:
-    print(f"⚠️  Warning: Product vectors not found at {PRODUCT_VECTORS_PATH}")
+    message = f"Product vectors not found at {PRODUCT_VECTORS_PATH}"
+    if REMOTE_ASSET_MODE:
+        logger.info(message)
+    else:
+        logger.warning(message)
     PRODUCT_VECTORS = np.random.randn(len(PRODUCTS), 128).astype(np.float32)
 
 # User sessions for online learning

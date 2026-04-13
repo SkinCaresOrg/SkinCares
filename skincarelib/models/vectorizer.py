@@ -10,10 +10,11 @@ from scipy.sparse import csr_matrix, hstack
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 
+from skincarelib.ml_system.artifacts import find_project_root
 
-ROOT = Path(__file__).resolve().parent.parent.parent
 
-DATA_PRODUCTS = ROOT / "data" / "processed" / "products_with_signals.csv"
+ROOT = find_project_root()
+
 GROUPS_PATH = ROOT / "features" / "ingredient_groups.json"
 ARTIFACT_DIR = ROOT / "artifacts"
 
@@ -28,29 +29,49 @@ SIGNAL_KEYS = [
 ]
 
 
+def _resolve_products_path() -> Path:
+    path = ROOT / "data" / "processed" / "products_with_signals.csv"
+    if path.exists():
+        return path
+    raise FileNotFoundError(f"Missing dataset required for artifact build: {path}")
+
+
 def load_data():
-    df = pd.read_csv(DATA_PRODUCTS)
+    data_products = _resolve_products_path()
+    df = pd.read_csv(data_products)
 
     # product_id is derived from row index so it stays consistent
     # with product_index.json and dupe_finder.py
-    df["product_id"] = df.index.astype(str)
+    if "product_id" not in df.columns:
+        df["product_id"] = df.index.astype(str)
 
-    required = ["product_id", "category", "price", "ingredient_tokens_clean"]
+    required = ["product_id", "category", "price"]
     for col in required:
         if col not in df.columns:
             raise ValueError(f"Missing column: {col}")
 
+    token_column = None
+    for candidate in ("ingredient_tokens_clean", "ingredient_tokens", "ingredients"):
+        if candidate in df.columns:
+            token_column = candidate
+            break
+    if token_column is None:
+        raise ValueError(
+            "Missing token text column. Expected one of: "
+            "ingredient_tokens_clean, ingredient_tokens, ingredients"
+        )
+
     # warn if tokens look unparsed (still a plain string rather than a list)
-    sample = df["ingredient_tokens_clean"].dropna().iloc[0]
-    if not sample.strip().startswith("["):
+    non_empty_tokens = df[token_column].dropna().astype(str).str.strip()
+    sample = non_empty_tokens.iloc[0] if not non_empty_tokens.empty else ""
+    if sample and not sample.startswith("["):
         import warnings
 
         warnings.warn(
-            "ingredient_tokens_clean may not be in list format — check tokenization output"
+            f"{token_column} may not be in list format — check tokenization output"
         )
 
-    # use the clean tokens column as the ingredient text
-    df["ingredient_tokens"] = df["ingredient_tokens_clean"]
+    df["ingredient_tokens"] = df[token_column]
 
     # fill any missing signal columns with zero
     for sig in SIGNAL_KEYS:

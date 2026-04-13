@@ -20,8 +20,8 @@ class DataValidationError(ValueError):
         self.issues = issues_list
 
 
-REQUIRED_PRODUCTS_COLUMNS = {"product_id", "category", "price"}
-REQUIRED_TOKENS_COLUMNS = {"product_id", "ingredient_tokens"}
+REQUIRED_PRODUCTS_COLUMNS = {"category", "price"}
+TOKEN_COLUMN_OPTIONS = {"ingredient_tokens_clean", "ingredient_tokens", "ingredients"}
 
 
 def _assert_columns(
@@ -58,18 +58,13 @@ def _assert_prices(series: pd.Series, issues: List[ValidationIssue]) -> None:
 
 
 def validate_artifact_inputs(root: Path) -> None:
-    data_products = (
-        root / "skincarelib" / "datasets" / "datasets" / "products_clean.csv"
-    )
-    data_tokens = root / "skincarelib" / "datasets" / "datasets" / "products_tokens.csv"
+    data_products = root / "data" / "processed" / "products_dataset_processed.csv"
     groups_path = root / "features" / "ingredient_groups.json"
 
     issues: List[ValidationIssue] = []
 
     if not data_products.exists():
         issues.append(ValidationIssue(f"Missing file: {data_products}"))
-    if not data_tokens.exists():
-        issues.append(ValidationIssue(f"Missing file: {data_tokens}"))
     if not groups_path.exists():
         issues.append(ValidationIssue(f"Missing file: {groups_path}"))
 
@@ -77,20 +72,45 @@ def validate_artifact_inputs(root: Path) -> None:
         raise DataValidationError(issues)
 
     products = pd.read_csv(data_products, dtype={"product_id": str})
-    tokens = pd.read_csv(data_tokens, dtype={"product_id": str})
 
-    _assert_columns(products, REQUIRED_PRODUCTS_COLUMNS, "products_clean.csv", issues)
-    _assert_columns(tokens, REQUIRED_TOKENS_COLUMNS, "products_tokens.csv", issues)
-    _assert_non_empty(products, "products_clean.csv", issues)
-    _assert_non_empty(tokens, "products_tokens.csv", issues)
+    _assert_columns(
+        products,
+        REQUIRED_PRODUCTS_COLUMNS,
+        "products_dataset_processed.csv",
+        issues,
+    )
+    _assert_non_empty(products, "products_dataset_processed.csv", issues)
+
+    token_columns_present = TOKEN_COLUMN_OPTIONS.intersection(set(products.columns))
+    if not token_columns_present:
+        issues.append(
+            ValidationIssue(
+                "products_dataset_processed.csv missing token text column; expected one of "
+                f"{sorted(TOKEN_COLUMN_OPTIONS)}"
+            )
+        )
 
     if "price" in products.columns:
         _assert_prices(products["price"], issues)
     if "category" in products.columns:
         _assert_non_empty_strings(products["category"], "category", issues)
-    if "ingredient_tokens" in tokens.columns:
+    if "ingredient_tokens_clean" in products.columns:
         _assert_non_empty_strings(
-            tokens["ingredient_tokens"], "tokens.ingredient_tokens", issues
+            products["ingredient_tokens_clean"],
+            "products_dataset_processed.ingredient_tokens_clean",
+            issues,
+        )
+    elif "ingredient_tokens" in products.columns:
+        _assert_non_empty_strings(
+            products["ingredient_tokens"],
+            "products_dataset_processed.ingredient_tokens",
+            issues,
+        )
+    elif "ingredients" in products.columns:
+        _assert_non_empty_strings(
+            products["ingredients"],
+            "products_dataset_processed.ingredients",
+            issues,
         )
 
     if issues:

@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+
+from skincarelib.ml_system.artifacts import find_project_root
 from skincarelib.ml_system.manifest import build_manifest
 
 
@@ -28,3 +31,22 @@ def test_build_manifest_hashes(tmp_path: Path):
     assert manifest.data_hashes["data.csv"]
     assert manifest.code_hashes["model.py"]
     assert manifest.artifact_hashes["artifact.bin"]
+
+
+def test_find_project_root_from_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    root = tmp_path / "repo"
+    (root / "artifacts").mkdir(parents=True)
+    monkeypatch.delenv("SKINCARES_PROJECT_ROOT", raising=False)
+    monkeypatch.delenv("GITHUB_WORKSPACE", raising=False)
+    monkeypatch.chdir(root)
+
+    assert find_project_root() == root
+
+
+def test_find_project_root_from_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    root = tmp_path / "repo"
+    (root / "artifacts").mkdir(parents=True)
+    monkeypatch.setenv("SKINCARES_PROJECT_ROOT", str(root))
+    monkeypatch.chdir(tmp_path)
+
+    assert find_project_root() == root

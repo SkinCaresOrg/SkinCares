@@ -12,10 +12,10 @@ from .dupe_explainer import explain_dupe
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
-VECTORS_PATH     = ROOT / "artifacts" / "product_vectors.npy"
-INDEX_PATH       = ROOT / "artifacts" / "product_index.json"
-SCHEMA_PATH      = ROOT / "artifacts" / "feature_schema.json"
-METADATA_PATH    = ROOT / "data" / "processed" / "products_with_signals.csv"
+VECTORS_PATH = ROOT / "artifacts" / "product_vectors.npy"
+INDEX_PATH = ROOT / "artifacts" / "product_index.json"
+SCHEMA_PATH = ROOT / "artifacts" / "feature_schema.json"
+METADATA_PATH = ROOT / "data" / "processed" / "products_with_signals.csv"
 FAISS_INDEX_PATH = ROOT / "artifacts" / "faiss.index"
 
 # How many ANN neighbours to fetch from FAISS before price/subtype filtering.
@@ -32,144 +32,201 @@ FAISS_RETRIEVAL_K = 2500  # ~5% of the catalogue
 CATEGORY_TO_SUBTYPE = {
     # Eye
     "Eye Cream, Gel, Oils, & Serum": "eye_treatment",
-    "Eye Masks & Pads":              "eye_treatment",
-    "Eyes":                          "eye_treatment",
-    "Dark Circle Treatments":        "eye_treatment",
-    "Puffiness Treatments":          "eye_treatment",
-    "Eyelid + Lash":                 "eye_treatment",
+    "Eye Masks & Pads": "eye_treatment",
+    "Eyes": "eye_treatment",
+    "Dark Circle Treatments": "eye_treatment",
+    "Puffiness Treatments": "eye_treatment",
+    "Eyelid + Lash": "eye_treatment",
     # Lip
     "Lip Balms, Gels, Moisturizers & Oils": "lip_treatment",
-    "Lip Care":                      "lip_treatment",
-    "Lip Exfoliators + Scrubs":      "lip_treatment",
-    "Lip Mask":                      "lip_treatment",
-    "Lips":                          "lip_treatment",
+    "Lip Care": "lip_treatment",
+    "Lip Exfoliators + Scrubs": "lip_treatment",
+    "Lip Mask": "lip_treatment",
+    "Lips": "lip_treatment",
     # Hand & foot
-    "Hand":                          "hand_care",
-    "Hand Masks":                    "hand_care",
-    "Moisturizing Gloves":           "hand_care",
-    "Liquid or Cream Hand Soaps":    "hand_soap",
-    "Feet":                          "foot_care",
-    "Foot Mask":                     "foot_care",
+    "Hand": "hand_care",
+    "Hand Masks": "hand_care",
+    "Moisturizing Gloves": "hand_care",
+    "Liquid or Cream Hand Soaps": "hand_soap",
+    "Feet": "foot_care",
+    "Foot Mask": "foot_care",
     # Neck
-    "Neck & Décolleté":              "neck_care",
+    "Neck & Décolleté": "neck_care",
     # Masks
-    "Facial Masks":                  "mask",
-    "Face":                          "mask",
+    "Facial Masks": "mask",
+    "Face": "mask",
     # Exfoliators
-    "Facial Scrubs":                 "exfoliator",
-    "Exfoliators":                   "exfoliator",
-    "Exfoliators & Scrubs":          "exfoliator",
+    "Facial Scrubs": "exfoliator",
+    "Exfoliators": "exfoliator",
+    "Exfoliators & Scrubs": "exfoliator",
     "Exfoliators, Polishes, & Scrubs": "exfoliator",
-    "Microdermabrasion":             "exfoliator",
-    "Polishes":                      "exfoliator",
-    "Scrubs":                        "exfoliator",
+    "Microdermabrasion": "exfoliator",
+    "Polishes": "exfoliator",
+    "Scrubs": "exfoliator",
     # Peels
-    "Acids & Peels":                 "peel",
-    "Peels":                         "peel",
-    "Glycolic Acid":                 "peel",
-    "Salicylic Acid":                "peel",
-    "Alpha Beta":                    "peel",
+    "Acids & Peels": "peel",
+    "Peels": "peel",
+    "Glycolic Acid": "peel",
+    "Salicylic Acid": "peel",
+    "Alpha Beta": "peel",
     # Cleansers
-    "Facial Cleansers":              "cleanser",
-    "Facial Cleansing Milks":        "cleanser",
-    "Facial Foaming Cleansers":      "cleanser",
-    "Facial Washes":                 "cleanser",
-    "Foaming Cleansers":             "cleanser",
-    "Cleansers":                     "cleanser",
-    "Pore Cleansing":                "cleanser",
-    "Facial Cleansing Oil":          "cleansing_oil",
-    "Micellar Water":                "micellar",
-    "Facial Wipes":                  "wipes",
-    "Cloths, Towelettes, & Wipes":   "wipes",
-    "Facial Bar Soap":               "soap",
-    "Bar Soaps":                     "soap",
-    "Liquid Cleansers & Soaps":      "soap",
+    "Facial Cleansers": "cleanser",
+    "Facial Cleansing Milks": "cleanser",
+    "Facial Foaming Cleansers": "cleanser",
+    "Facial Washes": "cleanser",
+    "Foaming Cleansers": "cleanser",
+    "Cleansers": "cleanser",
+    "Pore Cleansing": "cleanser",
+    "Facial Cleansing Oil": "cleansing_oil",
+    "Micellar Water": "micellar",
+    "Facial Wipes": "wipes",
+    "Cloths, Towelettes, & Wipes": "wipes",
+    "Facial Bar Soap": "soap",
+    "Bar Soaps": "soap",
+    "Liquid Cleansers & Soaps": "soap",
     # Serums
-    "Serums":                        "serum",
-    "Serum":                         "serum",
-    "Moisturizing Serums":           "serum",
-    "Complexes":                     "serum",
-    "Drops":                         "serum",
-    "Ampoules":                      "serum",
+    "Serums": "serum",
+    "Serum": "serum",
+    "Moisturizing Serums": "serum",
+    "Complexes": "serum",
+    "Drops": "serum",
+    "Ampoules": "serum",
     # Retinol
-    "Retinol":                       "retinol",
+    "Retinol": "retinol",
     # Toners
-    "Toners":                        "toner",
-    "Toners & Astringents":          "toner",
-    "Astringents":                   "toner",
-    "Essence":                       "toner",
+    "Toners": "toner",
+    "Toners & Astringents": "toner",
+    "Astringents": "toner",
+    "Essence": "toner",
     # Mists
-    "Mists":                         "mist",
-    "Spray Moisturizer":             "mist",
-    "Spray Moisturizers":            "mist",
+    "Mists": "mist",
+    "Spray Moisturizer": "mist",
+    "Spray Moisturizers": "mist",
     # Oils
-    "Oils":                          "face_oil",
+    "Oils": "face_oil",
     # Gels
-    "Facial Gels":                   "gel",
+    "Facial Gels": "gel",
     # Moisturizers
-    "Emulsions":                     "moisturizer",
-    "Daytime Moisturizers":          "moisturizer",
-    "Nighttime Moisturizers":        "moisturizer",
-    "Moisturizers":                  "moisturizer",
-    "Tinted Moisturizers":           "tinted_moisturizer",
-    "Moisturizers with SPF":         "sunscreen",
+    "Emulsions": "moisturizer",
+    "Daytime Moisturizers": "moisturizer",
+    "Nighttime Moisturizers": "moisturizer",
+    "Moisturizers": "moisturizer",
+    "Tinted Moisturizers": "tinted_moisturizer",
+    "Moisturizers with SPF": "sunscreen",
     # Anti-aging
-    "Anti-Aging":                    "anti_aging",
-    "Anti-Aging/Anti-Wrinkle":       "anti_aging",
-    "Anti-Aging/Anti-Wrinkle (RX)":  "anti_aging",
-    "Anti-Wrinkle":                  "anti_aging",
-    "Anti-Wrinkle Treatments":       "anti_aging",
-    "Firming Treatments":            "anti_aging",
+    "Anti-Aging": "anti_aging",
+    "Anti-Aging/Anti-Wrinkle": "anti_aging",
+    "Anti-Aging/Anti-Wrinkle (RX)": "anti_aging",
+    "Anti-Wrinkle": "anti_aging",
+    "Anti-Wrinkle Treatments": "anti_aging",
+    "Firming Treatments": "anti_aging",
     # Treatments
     "Dark Spot Corrector & Pigment Corrector": "spot_treatment",
-    "Spot Treatments":               "spot_treatment",
-    "Skin Lightening":               "spot_treatment",
-    "Acne Care (OTC)":               "acne_treatment",
-    "Pore Treatments":               "pore_treatment",
-    "Pore Refining":                 "pore_treatment",
-    "Pore Strips":                   "pore_treatment",
-    "Lash & Brow Growth":            "lash_brow",
+    "Spot Treatments": "spot_treatment",
+    "Skin Lightening": "spot_treatment",
+    "Acne Care (OTC)": "acne_treatment",
+    "Pore Treatments": "pore_treatment",
+    "Pore Refining": "pore_treatment",
+    "Pore Strips": "pore_treatment",
+    "Lash & Brow Growth": "lash_brow",
     # Body
-    "Body":                          "body_care",
-    "Lotions":                       "body_care",
-    "Butters":                       "body_care",
-    "Body Wipes":                    "body_care",
-    "Stretch Marks":                 "body_care",
+    "Body": "body_care",
+    "Lotions": "body_care",
+    "Butters": "body_care",
+    "Body Wipes": "body_care",
+    "Stretch Marks": "body_care",
     "Ethnic Creams, Lotions & Oils": "body_care",
-    "Balms":                         "balm",
-    "Balms, Ointments & Salves":     "balm",
-    "OIntments":                     "balm",
+    "Balms": "balm",
+    "Balms, Ointments & Salves": "balm",
+    "OIntments": "balm",
 }
 
 # Keyword fallback — used when category is missing or not in the mapping.
 PRODUCT_TYPE_PATTERNS = {
-    "eye_treatment":  ["eye cream", "eye gel", "eye serum", "eye oil",
-                       "eye lift", "eye mask", "eye treatment", "eye complex",
-                       "eye repair", "dark circle", "depuff", "de-puff",
-                       "under eye", "undereye"],
-    "lip_treatment":  ["lip balm", "lip mask", "lip oil", "lip gloss",
-                       "lip care", "lip serum", "lip butter", "lip treatment"],
-    "hand_care":      ["hand cream", "hand butter", "hand lotion",
-                       "hand mask", "hand treatment"],
-    "foot_care":      ["foot cream", "foot mask", "foot balm", "heel cream"],
-    "neck_care":      ["neck cream", "neck serum", "décolleté", "decolletage"],
-    "body_care":      ["body cream", "body lotion", "body butter",
-                       "body oil", "body wash", "body treatment"],
-    "cleanser":       ["cleanser", "face wash", "cleansing milk",
-                       "micellar", "cleansing water", "cleansing foam"],
-    "serum":          ["serum", "ampoule", "booster", "concentrate"],
-    "sunscreen":      ["spf", "sunscreen", "sun screen", "sun protection"],
-    "mask":           ["sheet mask", "face mask", "facial mask",
-                       "sleeping mask", "overnight mask", "mud mask",
-                       "clay mask", "peel off mask", "masque", "treatment mask"],
-    "toner":          ["toner", "essence", "lotion toner"],
-    "peel":           ["peel", "exfoliant", "aha", "bha", "lactic acid",
-                       "glycolic acid", "salicylic acid"],
-    "retinol":        ["retinol", "retinoid", "retin-a", "tretinoin"],
-    "face_oil":       ["face oil", "facial oil", "dry oil"],
-    "spot_treatment": ["spot treatment", "blemish treatment",
-                       "acne treatment", "dark spot"],
-    "mist":           ["face mist", "facial mist", "setting spray", "toning mist"],
+    "eye_treatment": [
+        "eye cream",
+        "eye gel",
+        "eye serum",
+        "eye oil",
+        "eye lift",
+        "eye mask",
+        "eye treatment",
+        "eye complex",
+        "eye repair",
+        "dark circle",
+        "depuff",
+        "de-puff",
+        "under eye",
+        "undereye",
+    ],
+    "lip_treatment": [
+        "lip balm",
+        "lip mask",
+        "lip oil",
+        "lip gloss",
+        "lip care",
+        "lip serum",
+        "lip butter",
+        "lip treatment",
+    ],
+    "hand_care": [
+        "hand cream",
+        "hand butter",
+        "hand lotion",
+        "hand mask",
+        "hand treatment",
+    ],
+    "foot_care": ["foot cream", "foot mask", "foot balm", "heel cream"],
+    "neck_care": ["neck cream", "neck serum", "décolleté", "decolletage"],
+    "body_care": [
+        "body cream",
+        "body lotion",
+        "body butter",
+        "body oil",
+        "body wash",
+        "body treatment",
+    ],
+    "cleanser": [
+        "cleanser",
+        "face wash",
+        "cleansing milk",
+        "micellar",
+        "cleansing water",
+        "cleansing foam",
+    ],
+    "serum": ["serum", "ampoule", "booster", "concentrate"],
+    "sunscreen": ["spf", "sunscreen", "sun screen", "sun protection"],
+    "mask": [
+        "sheet mask",
+        "face mask",
+        "facial mask",
+        "sleeping mask",
+        "overnight mask",
+        "mud mask",
+        "clay mask",
+        "peel off mask",
+        "masque",
+        "treatment mask",
+    ],
+    "toner": ["toner", "essence", "lotion toner"],
+    "peel": [
+        "peel",
+        "exfoliant",
+        "aha",
+        "bha",
+        "lactic acid",
+        "glycolic acid",
+        "salicylic acid",
+    ],
+    "retinol": ["retinol", "retinoid", "retin-a", "tretinoin"],
+    "face_oil": ["face oil", "facial oil", "dry oil"],
+    "spot_treatment": [
+        "spot treatment",
+        "blemish treatment",
+        "acne treatment",
+        "dark spot",
+    ],
+    "mist": ["face mist", "facial mist", "setting spray", "toning mist"],
 }
 
 
@@ -237,15 +294,15 @@ except (FileNotFoundError, RuntimeError) as e:
     _LOAD_ERROR = e
     warnings.warn(f"Could not load artifacts: {e}. Running in degraded mode.")
 
-    VECTORS        = None
-    PRODUCT_INDEX  = {}
+    VECTORS = None
+    PRODUCT_INDEX = {}
     FEATURE_SCHEMA = None
-    FAISS_INDEX    = None
+    FAISS_INDEX = None
     METADATA = pd.DataFrame(
         columns=["product_id", "product_name", "brand", "category", "price"]
     )
 
-INDEX_TO_ID   = {v: k for k, v in PRODUCT_INDEX.items()}
+INDEX_TO_ID = {v: k for k, v in PRODUCT_INDEX.items()}
 _PRICE_LOOKUP = METADATA.set_index("product_id")["price"].to_dict()
 
 if FEATURE_SCHEMA is not None and PRODUCT_INDEX:
@@ -298,10 +355,10 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
     if product_id not in PRODUCT_INDEX:
         raise ValueError(f"Unknown product_id: {product_id!r}")
 
-    source_row      = METADATA[METADATA["product_id"] == product_id].iloc[0]
+    source_row = METADATA[METADATA["product_id"] == product_id].iloc[0]
     source_category = source_row["category"]
-    source_price    = source_row["price"]
-    source_subtype  = infer_product_subtype(source_row["product_name"], source_category)
+    source_price = source_row["price"]
+    source_subtype = infer_product_subtype(source_row["product_name"], source_category)
 
     # --- Retrieval: FAISS ANN instead of full dataframe scan ---
     candidate_ids = _faiss_candidates(product_id, k=FAISS_RETRIEVAL_K)
@@ -319,9 +376,10 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
     if source_subtype is not None:
         filtered = candidates[
             candidates.apply(
-                lambda row: infer_product_subtype(
-                    row["product_name"], row["category"]
-                ) == source_subtype,
+                lambda row: (
+                    infer_product_subtype(row["product_name"], row["category"])
+                    == source_subtype
+                ),
                 axis=1,
             )
         ].copy()
@@ -335,8 +393,15 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
     if candidates.empty:
         return pd.DataFrame(
             columns=[
-                "product_id", "product_name", "brand", "category", "price",
-                "dupe_score", "cosine_sim", "price_score", "ingredient_group_score",
+                "product_id",
+                "product_name",
+                "brand",
+                "category",
+                "price",
+                "dupe_score",
+                "cosine_sim",
+                "price_score",
+                "ingredient_group_score",
             ]
         )
 
@@ -353,10 +418,19 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
         .head(top_n)
         .reset_index(drop=True)
     )
-    results = results[[
-        "product_id", "product_name", "brand", "category", "price",
-        "dupe_score", "cosine_sim", "price_score", "ingredient_group_score",
-    ]]
+    results = results[
+        [
+            "product_id",
+            "product_name",
+            "brand",
+            "category",
+            "price",
+            "dupe_score",
+            "cosine_sim",
+            "price_score",
+            "ingredient_group_score",
+        ]
+    ]
 
     if explain:
         results["explanation"] = results.apply(
@@ -374,7 +448,7 @@ def get_artifacts():
 # Demo run
 # ---------------------------
 if __name__ == "__main__":
-    demo_id  = next(iter(PRODUCT_INDEX))
+    demo_id = next(iter(PRODUCT_INDEX))
     demo_row = METADATA[METADATA["product_id"] == demo_id].iloc[0]
 
     print("Finding dupes for:")

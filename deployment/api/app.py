@@ -616,11 +616,7 @@ def _seed_user_model_from_onboarding(
     # Add top-matched products as pseudo-likes
     if suited_products:
         suited_products.sort(key=lambda x: x[1], reverse=True)
-<<<<<<< chatbot-improvements
-        top_count = max(1, len(suited_products) // 3)
-=======
         top_count = min(MAX_ONBOARDING_SEED_LIKES, max(1, len(suited_products) // 10))
->>>>>>> main
 
         for product_id, _ in suited_products[:top_count]:
             vec = get_product_vector_safe(product_id, product_index)
@@ -653,8 +649,6 @@ def submit_onboarding(
     user_id = _generate_user_id()
     USER_PROFILES[user_id] = payload
 
-<<<<<<< chatbot-improvements
-=======
     try:
         _save_profile_to_db(db, user_id, payload)
         db.commit()
@@ -666,7 +660,6 @@ def submit_onboarding(
             detail="Could not persist onboarding profile",
         ) from exc
 
->>>>>>> main
     # Seed the model with onboarding data
     _seed_user_model_from_onboarding(
         user_id=user_id,

@@ -15,9 +15,6 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 VECTORS_PATH = ROOT / "artifacts" / "product_vectors.npy"
 INDEX_PATH = ROOT / "artifacts" / "product_index.json"
 SCHEMA_PATH = ROOT / "artifacts" / "feature_schema.json"
-<<<<<<< chatbot-improvements
-METADATA_PATH = ROOT / "data" / "processed" / "products_dataset_clean_tokens.csv"
-=======
 METADATA_PATH = ROOT / "data" / "processed" / "products_with_signals.csv"
 FAISS_INDEX_PATH = ROOT / "artifacts" / "faiss.index"
 
@@ -251,7 +248,6 @@ def infer_product_subtype(product_name: str, category: str = None):
     for subtype, keywords in PRODUCT_TYPE_PATTERNS.items():
         if any(kw in name for kw in keywords):
             return subtype
->>>>>>> main
 
     return None
 
@@ -287,21 +283,6 @@ def load_artifacts():
 
     return vectors, product_index, feature_schema, metadata, faiss_index
 
-<<<<<<< chatbot-improvements
-try:
-    VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA = load_artifacts()
-except FileNotFoundError:
-    import pandas as pd
-
-    VECTORS = None
-    PRODUCT_INDEX = {}  # ✅ THIS IS THE FIX
-    FEATURE_SCHEMA = None
-
-    METADATA = pd.DataFrame(
-        columns=["product_id", "product_name", "name", "brand", "price"]
-    )
-=======
->>>>>>> main
 
 _LOAD_ERROR: Optional[Exception] = None
 
@@ -481,7 +462,3 @@ if __name__ == "__main__":
     else:
         pd.set_option("display.max_colwidth", 80)
         print(results.to_string(index=False, float_format="%.4f"))
-
-
-def get_artifacts():
-    return VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA

@@ -11,10 +11,8 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 VECTORS_PATH = ROOT / "artifacts" / "product_vectors.npy"
 INDEX_PATH = ROOT / "artifacts" / "product_index.json"
-<<<<<<< chatbot-improvements
 METADATA_PATH = ROOT / "data" / "processed" / "products_dataset_clean_tokens.csv"
 TOKENS_PATH = ROOT / "data" / "processed" / "products_dataset_clean_tokens.csv"
-=======
 SIGNALS_PATH = ROOT / "data" / "processed" / "products_with_signals.csv"
 
 _SIGNAL_COLS = [
@@ -33,7 +31,6 @@ _SCORE_COLS = [
     "score_combination",
     "score_normal",
 ]
->>>>>>> main
 
 _EMPTY_RECS = pd.DataFrame(
     columns=["product_id", "brand", "category", "price", "similarity"]
@@ -47,13 +44,10 @@ def load_artifacts():
     with open(INDEX_PATH) as f:
         product_index = json.load(f)
 
-<<<<<<< chatbot-improvements
     metadata = pd.read_csv(METADATA_PATH, dtype={"product_id": str})
     metadata.columns = metadata.columns.str.lower()
     metadata["product_id"] = metadata.index.astype(str)
-=======
     metadata = pd.read_csv(SIGNALS_PATH)
->>>>>>> main
 
     # Always derive product_id from row index to stay consistent with vectorizer.py,
     # which also overwrites product_id with the row index when building product_index.json.

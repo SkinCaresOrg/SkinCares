@@ -9,7 +9,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 from urllib.parse import quote_plus
 
 import pandas as pd
@@ -407,7 +407,7 @@ def _save_checkpoint(
 
 
 # ----------------------------------------------
-def load_dataset(path: str | Path) -> pd.DataFrame:
+def load_dataset(path: Union[str, Path]) -> pd.DataFrame:
     df = pd.read_csv(path)
     missing = {"brand", "product_name"} - set(df.columns)
     if missing:

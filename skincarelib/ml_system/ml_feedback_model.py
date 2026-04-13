@@ -70,14 +70,14 @@ class UserState:
         # Track avoided ingredients based on feedback reasons
         self.avoided_ingredients: set = set()
 
-    def add_liked(self, vec: np.ndarray, reasons: List[str] | None = None):
+    def add_liked(self, vec: np.ndarray, reasons: Optional[List[str]] = None):
         self.liked_vectors.append(vec.astype(np.float32))
         if reasons:
             self.liked_reasons.extend(reasons)
         self.interactions += 1
         self.liked_count += 1
 
-    def add_disliked(self, vec: np.ndarray, reasons: List[str] | None = None):
+    def add_disliked(self, vec: np.ndarray, reasons: Optional[List[str]] = None):
         self.disliked_vectors.append(vec.astype(np.float32))
         if reasons:
             self.disliked_reasons.extend(reasons)
@@ -89,7 +89,7 @@ class UserState:
         self.interactions += 1
         self.disliked_count += 1
 
-    def add_irritation(self, vec: np.ndarray, reasons: List[str] | None = None):
+    def add_irritation(self, vec: np.ndarray, reasons: Optional[List[str]] = None):
         self.irritation_vectors.append(vec.astype(np.float32))
         if reasons:
             self.irritation_reasons.extend(reasons)
@@ -101,7 +101,7 @@ class UserState:
         self.interactions += 1
         self.irritation_count += 1
 
-    def get_training_data(self) -> Tuple[np.ndarray, np.ndarray] | None:
+    def get_training_data(self) -> Optional[Tuple[np.ndarray, np.ndarray]]:
         """
         Prepare training data for ML models.
 

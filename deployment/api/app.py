@@ -102,7 +102,7 @@ def _normalize_ingredient_name(ingredient: str) -> str:
     return ingredient.lower().strip().replace("_", " ")
 
 
-def _compute_reason_adjustment(reason_tags: List[str] | None, reaction: str) -> float:
+def _compute_reason_adjustment(reason_tags: Optional[List[str]], reaction: str) -> float:
     """Compute adjustment factor based on reason tags and reaction type."""
     if not reason_tags:
         return 0.0
@@ -110,7 +110,7 @@ def _compute_reason_adjustment(reason_tags: List[str] | None, reaction: str) -> 
     return 0.1 if reaction == "like" else -0.1
 
 
-def _compute_structured_adjustment(reason_tags: List[str] | None, reaction: str) -> float:
+def _compute_structured_adjustment(reason_tags: Optional[List[str]], reaction: str) -> float:
     """Compute adjustment factor for structured signals (ingredient avoidance)."""
     if not reason_tags:
         return 0.0

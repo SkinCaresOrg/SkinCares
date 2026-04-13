@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 import pandas as pd
 import numpy as np
@@ -67,8 +67,8 @@ def pretty_list(product_ids: List[str], meta_indexed: pd.DataFrame, n: int = 10)
 def run_simulation(
     top_n: int = 10,
     candidate_k: int = 200,
-    budget: float | None = 100.0,
-    categories: List[str] | None = None,
+    budget: Optional[float] = 100.0,
+    categories: Optional[List[str]] = None,
     model_type: str = "weighted_avg",
 ):
     # ---- Load artifacts ----
@@ -238,8 +238,8 @@ def run_simulation(
 def run_model_comparison(
     top_n: int = 10,
     candidate_k: int = 200,
-    budget: float | None = 100.0,
-    categories: List[str] | None = None,
+    budget: Optional[float] = 100.0,
+    categories: Optional[List[str]] = None,
 ):
     """Compare different feedback models on the same interaction sequence."""
 

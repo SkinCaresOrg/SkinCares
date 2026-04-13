@@ -39,11 +39,12 @@ def _ensure_core_artifacts() -> None:
         return
 
     if not _auto_build_enabled():
-        raise FileNotFoundError(
+        warnings.warn(
             "Missing core artifacts: "
             + ", ".join(str(path) for path in missing)
-            + ". Set DUPES_AUTO_BUILD_ARTIFACTS=1 to rebuild automatically."
+            + ". Auto-build disabled; continuing without rebuild."
         )
+        return
 
     warnings.warn(
         "Missing core artifacts: "

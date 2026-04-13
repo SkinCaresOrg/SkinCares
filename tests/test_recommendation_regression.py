@@ -148,7 +148,7 @@ def test_repeated_likes_boost_product_regression() -> None:
     before_rank, before_score = _rank_and_score(before, target_id)
     
     print(f"\n[DEBUG] Target product ID: {target_id}, Before rank: {before_rank}, Before score: {before_score}")
-    print(f"[DEBUG] First 5 products before feedback:")
+    print("[DEBUG] First 5 products before feedback:")
     for i, p in enumerate(before[:5], 1):
         print(f"  {i}. Product {p['product_id']:5d}: {p['recommendation_score']:.4f}")
 
@@ -171,7 +171,7 @@ def test_repeated_likes_boost_product_regression() -> None:
     after_rank, after_score = _rank_and_score(after, target_id)
     
     print(f"[DEBUG] After rank: {after_rank}, After score: {after_score}")
-    print(f"[DEBUG] First 5 products after feedback:")
+    print("[DEBUG] First 5 products after feedback:")
     for i, p in enumerate(after[:5], 1):
         print(f"  {i}. Product {p['product_id']:5d}: {p['recommendation_score']:.4f}")
     

@@ -13,7 +13,7 @@ user_id = _onboard_user()
 
 before = _get_recommendations(user_id)
 print(f'Total recommendations: {len(before)}')
-print(f'Top 15 products and scores:')
+print('Top 15 products and scores:')
 for i, p in enumerate(before[:15], 1):
     print(f'  {i:2d}. Product {p["product_id"]:5d}: {p["recommendation_score"]:.4f}')
 
@@ -38,7 +38,7 @@ for i in range(10):
     print(f'  Like {i+1}: status={response.status_code}')
 
 after = _get_recommendations(user_id)
-print(f'\nAfter 10 likes - Top 15 products and scores:')
+print('\nAfter 10 likes - Top 15 products and scores:')
 for i, p in enumerate(after[:15], 1):
     print(f'  {i:2d}. Product {p["product_id"]:5d}: {p["recommendation_score"]:.4f}')
 

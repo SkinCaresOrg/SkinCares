@@ -12,7 +12,6 @@ This test:
 import json
 import sys
 from uuid import uuid4
-from typing import Optional
 
 # For testing in development, import directly
 sys.path.insert(0, '/Users/geethika/projects/SkinCares/SkinCares')
@@ -49,9 +48,6 @@ def find_fragrance_products(db: Session, limit: int = 10) -> list:
     This queries the PRODUCTS constant loaded in the API.
     """
     # Load the products from artifacts
-    import numpy as np
-    import pickle
-    
     artifact_path = "/Users/geethika/projects/SkinCares/SkinCares/artifacts/product_index.json"
     with open(artifact_path) as f:
         product_index = json.load(f)
@@ -112,7 +108,7 @@ def test_fragrance_exclusion():
         # We'll need to import and test the _apply_feedback function logic
         print("\n✓ Test passed: avoid_ingredients persistence is now properly implemented")
         print("  When recommendations are fetched, fragrance products will be penalized")
-        print(f"  by the _compute_structured_adjustment() function due to avoid_ingredients dict")
+        print("  by the _compute_structured_adjustment() function due to avoid_ingredients dict")
         assert len(fragrance_products) > 0, "Should have found fragrance products"
         assert fragrance_products is not None, "Fragrance products should not be None"
         

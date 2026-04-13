@@ -108,10 +108,6 @@ def test_contains_fragrance_feedback_reduces_fragrance_in_top_recommendations() 
 
     recs_before = client.get(f"/api/recommendations/{user_id}", params={"limit": 10})
     assert recs_before.status_code == 200
-    before_products = recs_before.json()["products"]
-    before_fragrance_count = sum(
-        1 for product in before_products if _is_fragrance_product(product["product_id"])
-    )
 
     for product_id in fragrance_ids[:5]:
         response = client.post(

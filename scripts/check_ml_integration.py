@@ -10,12 +10,8 @@ This script verifies:
 5. Frontend/Backend API contract
 """
 
-import os
 import sys
-import json
 from pathlib import Path
-from datetime import datetime, timezone
-from typing import Dict, List, Tuple
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -24,7 +20,6 @@ from deployment.api.app import (
     supabase_client,
     get_model_metrics_from_supabase,
     log_prediction_to_supabase,
-    PRODUCTS,
 )
 from skincarelib.ml_system.ml_feedback_model import (
     LogisticRegressionFeedback,
@@ -174,7 +169,7 @@ if VW_AVAILABLE:
             score = model.predict_preference(test_vec)
             print(f"✅ ContextualBandit (VW): Trained & predicting (score={score:.2f})")
         else:
-            print(f"⚠️  ContextualBandit (VW): Training returned False")
+            print("⚠️  ContextualBandit (VW): Training returned False")
     except Exception as e:
         print(f"❌ ContextualBandit (VW): {str(e)[:60]}")
 
@@ -225,7 +220,7 @@ else:
         elif "message" in metrics:
             print(f"ℹ️  {metrics['message']}")
         else:
-            print(f"✅ Metrics retrieved successfully")
+            print("✅ Metrics retrieved successfully")
             print(f"   Models in database: {list(metrics.keys())}")
             for model_name, data in metrics.items():
                 if isinstance(data, dict) and "accuracy" in data:

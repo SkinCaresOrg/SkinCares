@@ -7,7 +7,6 @@ import json
 import tempfile
 from csv import DictWriter
 from pathlib import Path
-from typing import Dict
 
 import pytest
 
@@ -74,20 +73,16 @@ def test_signal_loading():
     """Test that signals are loaded correctly from CSV."""
     # Simulate the signal loading function
     csv_path = create_test_signals_csv()
-    signals_dict = {}
     
     try:
-        with open(csv_path, "r", encoding="utf-8") as f:
-            reader = json.load  # This would be DictReader in the actual function
-            # Simplified test - just verify the CSV was created
-            assert csv_path.exists()
-            
-            # Read and verify content
-            with open(csv_path) as cf:
-                content = cf.read()
-                assert "hydration" in content
-                assert "0.7" in content
-                assert "0.9" in content
+        assert csv_path.exists()
+        
+        # Read and verify content
+        with open(csv_path) as cf:
+            content = cf.read()
+            assert "hydration" in content
+            assert "0.7" in content
+            assert "0.9" in content
     finally:
         csv_path.unlink()
 

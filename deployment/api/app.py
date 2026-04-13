@@ -22,7 +22,6 @@ from deployment.api.auth.routes import router as auth_router
 from deployment.api.db.init_db import init_db
 from deployment.api.db.session import SessionLocal, get_db
 from deployment.api.persistence.models import (
-    ChatMessage,
     ModelCheckpoint,
     Product,
     ProductDupe,
@@ -1198,30 +1197,11 @@ def get_product_score(
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-def chat(request: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
-    """Chat endpoint that handles ingredient questions, dupe finding, and recommendations"""
+def chat(request: ChatRequest) -> ChatResponse:
     try:
-        normalized_user_id = _normalize_optional_user_id(request.user_id)
-        response_text = handle_chat(request.message, profile=request.profile)
-        try:
-            db.add(
-                ChatMessage(
-                    user_id=normalized_user_id,
-                    role="user",
-                    content=request.message,
-                )
-            )
-            db.add(
-                ChatMessage(
-                    user_id=normalized_user_id,
-                    role="assistant",
-                    content=response_text,
-                )
-            )
-            db.commit()
-        except SQLAlchemyError as exc:
-            db.rollback()
-            logger.warning("Could not persist chat_messages row(s): %s", exc)
+        response_text, _ = handle_chat(
+            request.message, profile=request.profile
+        )  # ← unpack tuple
         return ChatResponse(response=response_text)
     except Exception as e:
         print(f"Chat error: {e}")

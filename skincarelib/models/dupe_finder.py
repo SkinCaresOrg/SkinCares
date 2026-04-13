@@ -6,7 +6,6 @@ import warnings
 import numpy as np
 import pandas as pd
 import faiss
-
 from .dupe_scorer import DupeScorer
 from .dupe_explainer import explain_dupe
 

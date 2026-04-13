@@ -3,6 +3,7 @@ import requests
 from typing import Optional, Dict, Any
 
 from skincarelib.ml_system.intent import detect_intent
+<<<<<<< chatbot-improvements
 from skincarelib.models.dupe_finder import find_dupes, get_artifacts
 from skincarelib.models.recommender_ranker import recommend
 
@@ -17,6 +18,13 @@ def _get_metadata():
             METADATA["product_name"] = METADATA["name"]
     return METADATA
 
+=======
+
+try:
+    from skincarelib.models.dupe_finder import find_dupes
+except ImportError:
+    find_dupes = None
+>>>>>>> main
 
 # Initialize OpenAI client lazily (only when needed)
 _client = None
@@ -260,6 +268,7 @@ def handle_chat(
             if results is None or results.empty:
                 return f"I couldn't find {category} recommendations 😕", last_intent
 
+<<<<<<< chatbot-improvements
             metadata = _get_metadata()
 
             skin_text = f"{skin_type} " if skin_type else ""
@@ -329,6 +338,15 @@ def handle_dupe(message: str, profile=None) -> str:
         .replace("alternative", "")
         .strip()
     )
+=======
+def handle_dupe(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
+    """Handle product dupe finding requests."""
+    if find_dupes is None:
+        return "Dupe search is temporarily unavailable in this environment. Please try recommendations instead."
+
+    # Extract product name from message
+    product_name = message.replace("dupe", "").replace("find", "").strip().lower()
+>>>>>>> main
 
     if not product_name:
         return "Tell me which product you want a dupe for 🙂"

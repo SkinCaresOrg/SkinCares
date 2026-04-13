@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Sparkles } from "lucide-react";
 import { useState, useEffect } from "react";
+import { isAuthenticated } from "@/lib/session";
+import { logout } from "@/lib/auth";
 
 const Navigation = () => {
   const location = useLocation();
@@ -9,12 +10,12 @@ const Navigation = () => {
   const isActive = (path: string) => location.pathname === path;
 
   const [isLoggedIn, setIsLoggedIn] = useState(
-    !!localStorage.getItem("token")
+    isAuthenticated()
   );
 
   useEffect(() => {
     const checkAuth = () => {
-      setIsLoggedIn(!!localStorage.getItem("token"));
+      setIsLoggedIn(isAuthenticated());
     };
 
     window.addEventListener("storage", checkAuth);
@@ -23,12 +24,12 @@ const Navigation = () => {
   }, []);
 
   return (
-    <nav className="sticky top-0 z-50 border-b border-border bg-card/80 backdrop-blur-lg">
+    <nav className="sticky top-0 z-50 border-b border-border/50 bg-card/70 backdrop-blur-xl shadow-sm">
       <div className="container flex h-16 items-center justify-between">
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2">
-          <Sparkles className="h-5 w-5 text-primary" />
-          <span className="font-display text-xl font-bold text-foreground">
+          <img src="/logo.png" alt="SkinCares" className="h-7 w-auto" />
+          <span className="logo-font text-xl text-foreground">
             SkinCares
           </span>
         </Link>
@@ -36,23 +37,25 @@ const Navigation = () => {
         {/* Right side */}
         <div className="flex items-center gap-4">
           {/* Navigation links */}
-          {[
-            { path: "/catalog", label: "Catalog" },
-            { path: "/recommendations", label: "For You" },
-            { path: "/swiping", label: "Swiping" },
-          ].map(({ path, label }) => (
-            <Link
-              key={path}
-              to={path}
-              className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
-                isActive(path)
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              {label}
-            </Link>
-          ))}
+          {isLoggedIn &&
+            [
+              { path: "/catalog", label: "Catalog" },
+              { path: "/profile", label: "Profile" },
+              { path: "/recommendations", label: "For You" },
+              { path: "/swiping", label: "Swiping" },
+            ].map(({ path, label }) => (
+              <Link
+                key={path}
+                to={path}
+                className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
+                  isActive(path)
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                {label}
+              </Link>
+            ))}
 
           {/* Auth buttons */}
           {!isLoggedIn ? (
@@ -74,15 +77,8 @@ const Navigation = () => {
           ) : (
             <>
               <button
-                onClick={() => navigate("/profile")}
-                className="text-foreground hover:text-primary"
-              >
-                👤
-              </button>
-
-              <button
                 onClick={() => {
-                  localStorage.removeItem("token");
+                  logout();
                   setIsLoggedIn(false);
                   navigate("/");
                 }}

@@ -131,9 +131,11 @@ dmypy.json
 .DS_Store
 
 # Processed data files
-data/processed/*.csv
 notebooks/data/
 
 # local database files
 dev.db 
 local.db
+
+.ruff_cache/data/processed/products_with_signals.csv
+data/processed/products_dataset_clean_tokens.csv

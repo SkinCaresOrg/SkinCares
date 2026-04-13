@@ -4,7 +4,6 @@ import Navigation from "@/components/Navigation";
 import { Product, Category, Reaction, REACTION_TAGS, IRRITATION_TAGS, CATEGORY_LABELS, formatTagLabel, formatPrice } from "@/lib/types";
 import { getProducts, submitFeedback } from "@/lib/api";
 import { getUserId } from "@/lib/wishlist";
-import { ModelMonitor } from "@/components/ModelMonitor";
 import { motion, useMotionValue, useTransform, AnimatePresence } from "framer-motion";
 import { ThumbsUp, ThumbsDown, AlertTriangle, SkipForward, Undo2, Check } from "lucide-react";
 
@@ -32,7 +31,17 @@ const Swiping = () => {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [freeText, setFreeText] = useState("");
   const [loading, setLoading] = useState(true);
-  const [direction, setDirection] = useState<"left" | "right" | "up" | null>(null);
+  const [direction, setDirection] = useState<"left" | "right" | "up" | "skip" | null>(null);
+  const [offset, setOffset] = useState(0); // tracks how many products we've fetched so far
+  const [hasMore, setHasMore] = useState(true); // false when backend says no more products
+
+// Load seen product IDs from localStorage so we don't show them again after refresh
+  const [seenIds] = useState<Set<number>>(() => {
+  const stored = localStorage.getItem("skincares_seen_products");
+  return stored ? new Set(JSON.parse(stored)) : new Set();
+});
+
+
 
   const x = useMotionValue(0);
   const y = useMotionValue(0);
@@ -40,17 +49,50 @@ const Swiping = () => {
   const likeOpacity = useTransform(x, [0, SWIPE_THRESHOLD], [0, 1]);
   const dislikeOpacity = useTransform(x, [-SWIPE_THRESHOLD, 0], [1, 0]);
   const irritationOpacity = useTransform(y, [SWIPE_Y_THRESHOLD, 0], [1, 0]);
+  const skipOpacity = useTransform(
+    [x, y] as any,
+    ([latestX, latestY]: number[]) => {
+      // only show SKIP if dragging mostly downward, not sideways
+      if (Math.abs(latestX) > 30) return 0;
+      return Math.min(1, Math.max(0, latestY / 80));
+    }
+  );
 
-  useEffect(() => {
+useEffect(() => {
     if (!userId) {
       navigate("/onboarding");
       return;
     }
-    getProducts({}).then((res) => {
-      setProducts(res.products);
+    // Initial load — fetch first 24 products
+    getProducts({ offset: 0 }).then((res) => {
+      setProducts(res.products.filter(p => !seenIds.has(p.product_id)));
+      setOffset(res.products.length);
+      // if backend returned fewer than 24, there are no more pages
+      setHasMore(res.products.length === 24);
       setLoading(false);
     });
-  }, [userId, navigate]);
+}, [userId, navigate]);
+
+// Load more products when we are 5 cards from the end
+// This prevents showing "All done" too early and keeps the queue full
+useEffect(() => {
+    if (!hasMore || loading) return;
+    if (currentIndex >= products.length - 5) {
+      setLoading(true);
+      getProducts({offset}).then((res) => {
+        if (res.products.length === 0) {
+          // No more products available from the backend
+          setHasMore(false);
+        } else {
+          // Append new products to the existing list, never resetting to page 1
+          setProducts((prev) => [...prev, ...res.products.filter(p => !seenIds.has(p.product_id))]);
+          setOffset((prev) => prev + res.products.length);
+          setHasMore(res.products.length === 24);
+        }
+        setLoading(false);
+      });
+    }
+}, [currentIndex, products.length, offset, hasMore, loading]);
 
   // Reset motion values when moving to next product
   useEffect(() => {
@@ -73,8 +115,17 @@ const Swiping = () => {
     if (!currentProduct || !userId) return;
 
     if (r === "skip") {
-      setDirection("left");
-      await submitFeedback({ user_id: userId, product_id: currentProduct.product_id, has_tried: false });
+      setDirection("skip");
+      setStep("submitting"); 
+
+      // Persist seen product
+      const updated = Array.from(seenIds).concat(currentProduct.product_id);
+      localStorage.setItem("skincares_seen_products", JSON.stringify(updated));
+      seenIds.add(currentProduct.product_id);
+
+      // Fire in background — no await so animation isn't blocked
+      submitFeedback({ user_id: userId, product_id: currentProduct.product_id, has_tried: false });
+
       setTimeout(() => {
         setCurrentIndex((i) => i + 1);
         resetCardState();
@@ -88,14 +139,16 @@ const Swiping = () => {
   }, [currentProduct, userId, resetCardState]);
 
   const handleDragEnd = useCallback((_: any, info: { offset: { x: number; y: number } }) => {
-    if (info.offset.y < SWIPE_Y_THRESHOLD) {
-      handleReaction("irritation");
-    } else if (info.offset.x > SWIPE_THRESHOLD) {
-      handleReaction("like");
-    } else if (info.offset.x < -SWIPE_THRESHOLD) {
-      handleReaction("dislike");
-    }
-  }, [handleReaction]);
+  if (info.offset.y < SWIPE_Y_THRESHOLD) {
+    handleReaction("irritation");
+  } else if (info.offset.y > 80) {  // ← ADD THIS
+    handleReaction("skip");
+  } else if (info.offset.x > SWIPE_THRESHOLD) {
+    handleReaction("like");
+  } else if (info.offset.x < -SWIPE_THRESHOLD) {
+    handleReaction("dislike");
+  }
+}, [handleReaction]);
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) => prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]);
@@ -113,11 +166,16 @@ const Swiping = () => {
       free_text: freeText,
     });
     setStep("done");
-    setTimeout(() => {
-      setCurrentIndex((i) => i + 1);
-      resetCardState();
-    }, 800);
-  };
+    if (currentProduct) {
+    const updated = Array.from(seenIds).concat(currentProduct.product_id);
+    localStorage.setItem("skincares_seen_products", JSON.stringify(updated));
+    seenIds.add(currentProduct.product_id);
+  }
+      setTimeout(() => {
+        setCurrentIndex((i) => i + 1);
+        resetCardState();
+      }, 800);
+    };
 
   const getTags = (): string[] => {
     if (!reaction || !currentProduct) return [];
@@ -168,17 +226,11 @@ const Swiping = () => {
       <Navigation />
       <div className="container max-w-md py-6">
         {/* Progress */}
-        <div className="mb-4 flex items-center justify-between">
-          <p className="text-xs font-medium text-muted-foreground">
-            {currentIndex + 1} / {products.length}
-          </p>
-          <div className="h-1.5 flex-1 mx-4 rounded-full bg-muted overflow-hidden">
-            <div
-              className="h-full rounded-full bg-primary transition-all duration-500"
-              style={{ width: `${((currentIndex + 1) / products.length) * 100}%` }}
-            />
-          </div>
-        </div>
+        <div className="mb-4 flex items-center justify-center">
+        <p className="text-xs font-medium text-muted-foreground">
+          {currentIndex + 1} reviewed
+        </p>
+      </div>
 
         {/* Card area */}
         <div className="relative flex items-center justify-center" style={{ minHeight: 420 }}>
@@ -195,8 +247,8 @@ const Swiping = () => {
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{
-                  x: direction === "right" ? 300 : direction === "left" ? -300 : 0,
-                  y: direction === "up" ? -300 : 0,
+                    x: direction === "right" ? 300 : direction === "left" ? -300 : 0,
+                    y: direction === "up" ? -300 : direction === "skip" ? 300 : 0,
                   opacity: 0,
                   transition: { duration: 0.3 },
                 }}
@@ -219,6 +271,13 @@ const Swiping = () => {
                   style={{ opacity: irritationOpacity }}
                 >
                   <span className="rounded-xl bg-destructive px-4 py-2 text-lg font-bold text-white">IRRITATION</span>
+                </motion.div>
+                {/* Skip indicator overlay */}
+              <motion.div
+                  className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-3xl border-4 border-gray-400 bg-gray-400/5"
+                  style={{ opacity: skipOpacity }}
+                >
+                  <span className="rounded-xl bg-gray-400 px-4 py-2 text-lg font-bold text-white">SKIP</span>
                 </motion.div>
 
                 {/* Product card */}
@@ -361,12 +420,12 @@ const Swiping = () => {
         {/* Hint */}
         {step === "swipe" && (
           <p className="mt-4 text-center text-xs text-muted-foreground">
-            Drag right to like · left to dislike · up for irritation · or use the buttons
+            Drag right to like · left to dislike · up for irritation · down to skip 
+             or use the buttons
           </p>
         )}
 
-        {/* Real-time model monitoring */}
-        {userId && <ModelMonitor userId={userId} refreshInterval={2000} />}
+    
       </div>
     </div>
   );

@@ -145,3 +145,6 @@ artifacts/faiss.index
 # Large generated artifacts (do not commit)
 artifacts/faiss.index
 artifacts/product_vectors.npy
+
+# Local staging for external object storage uploads (do not commit)
+supabase_upload/

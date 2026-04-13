@@ -220,9 +220,24 @@ def compute_user_vector_with_decay(
         total = w.sum()
         return w / total if total > 1e-9 else w
 
-    # Fall back if no timestamps stored
+    # Fall back if no timestamps stored at all
     if not any(
         [user.liked_timestamps, user.disliked_timestamps, user.irritation_timestamps]
+    ):
+        return compute_user_vector(user, schema)
+
+    # Guard: if any populated bucket has a length mismatch between vectors and
+    # timestamps (e.g. older serialized state, partial backfill), fall back to
+    # avoid silent incorrect weighting or a crash in np.average.
+    def _aligned(vecs, timestamps):
+        return len(vecs) == len(timestamps)
+
+    if not all(
+        [
+            _aligned(user.liked_vectors, user.liked_timestamps),
+            _aligned(user.disliked_vectors, user.disliked_timestamps),
+            _aligned(user.irritation_vectors, user.irritation_timestamps),
+        ]
     ):
         return compute_user_vector(user, schema)
 

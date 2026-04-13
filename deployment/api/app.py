@@ -5,7 +5,7 @@ import logging
 import os
 from pathlib import Path
 import re
-from typing import Any, Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 from uuid import UUID as UUIDValue, uuid4
 
 import numpy as np

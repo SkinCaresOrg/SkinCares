@@ -1,11 +1,12 @@
 import csv
 from contextlib import asynccontextmanager
+import json
 import logging
 import os
 from pathlib import Path
 import re
 from typing import Dict, List, Literal, Optional
-from uuid import uuid4
+from uuid import UUID as UUIDValue, uuid4
 
 import numpy as np
 import pandas as pd
@@ -15,10 +16,22 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from deployment.api.auth.models import User
+from deployment.api.auth.security import hash_password
 from deployment.api.auth.routes import router as auth_router
 from deployment.api.db.init_db import init_db
-from deployment.api.db.session import get_db
-from deployment.api.persistence.models import UserFeedbackEvent, UserProfileState
+from deployment.api.db.session import SessionLocal, get_db
+from deployment.api.persistence.models import (
+    ChatMessage,
+    ModelCheckpoint,
+    Product,
+    ProductDupe,
+    RecommendationLog,
+    UserModelState,
+    UserProductEvent,
+    UserProfileState,
+    UserWishlist,
+)
 
 from skincarelib.ml_system.ml_feedback_model import (
     LogisticRegressionFeedback,
@@ -176,6 +189,7 @@ class FeedbackResponse(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    user_id: Optional[str] = None
     message: str
     profile: Optional[OnboardingRequest] = None
 
@@ -184,9 +198,24 @@ class ChatResponse(BaseModel):
     response: str
 
 
+class WishlistRequest(BaseModel):
+    user_id: str
+    product_id: int
+
+
+class WishlistResponse(BaseModel):
+    products: List[ProductCard]
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    try:
+        with SessionLocal() as db:
+            _sync_products_table_from_csv(db)
+            db.commit()
+    except SQLAlchemyError as exc:
+        logger.warning("Could not sync products table from CSV: %s", exc)
     yield
 
 
@@ -285,7 +314,7 @@ def load_products_from_csv() -> Dict[int, ProductDetail]:
             Path(__file__).parent.parent.parent
             / "data"
             / "processed"
-            / "products_dataset_processed.csv"
+            / "products_with_signals.csv"
         )
 
     if not csv_path.exists():
@@ -440,7 +469,129 @@ def _ensure_db_initialized() -> None:
 
 
 def _generate_user_id() -> str:
-    return f"user_{uuid4().hex[:12]}"
+    return str(uuid4())
+
+
+def _ensure_user_exists(db: Session, user_id: str) -> None:
+    _ensure_db_initialized()
+    existing = db.query(User).filter(User.id == user_id).first()
+    if existing is not None:
+        return
+
+    db.add(
+        User(
+            id=user_id,
+            email=f"onboarding+{user_id}@local.test",
+            hashed_password=hash_password(uuid4().hex),
+        )
+    )
+
+
+def _normalize_optional_user_id(user_id: Optional[str]) -> Optional[str]:
+    if not user_id:
+        return None
+    try:
+        return str(UUIDValue(user_id))
+    except (TypeError, ValueError):
+        return None
+
+
+def _sync_products_table_from_csv(db: Session) -> None:
+    _ensure_db_initialized()
+    for product in PRODUCTS.values():
+        db.merge(
+            Product(
+                product_id=product.product_id,
+                product_name=product.product_name,
+                brand=product.brand,
+                category=product.category,
+                price=product.price,
+                image_url=product.image_url,
+                ingredients=product.ingredients,
+                short_description=product.short_description,
+            )
+        )
+
+
+def _persist_user_model_state(db: Session, user_id: str, user_state: UserState) -> None:
+    _ensure_db_initialized()
+    row = db.query(UserModelState).filter(UserModelState.user_id == user_id).first()
+    liked_reasons = list(getattr(user_state, "liked_reasons", []) or [])
+    disliked_reasons = list(getattr(user_state, "disliked_reasons", []) or [])
+    irritation_reasons = list(getattr(user_state, "irritation_reasons", []) or [])
+
+    if row is None:
+        row = UserModelState(user_id=user_id)
+        db.add(row)
+
+    row.interactions = int(user_state.interactions)
+    row.liked_count = int(user_state.liked_count)
+    row.disliked_count = int(user_state.disliked_count)
+    row.irritation_count = int(user_state.irritation_count)
+    row.liked_reasons = liked_reasons
+    row.disliked_reasons = disliked_reasons
+    row.irritation_reasons = irritation_reasons
+
+
+def _persist_model_checkpoint(db: Session, user_id: str, user_state: UserState) -> None:
+    _ensure_db_initialized()
+    snapshot = {
+        "interactions": int(user_state.interactions),
+        "liked_count": int(user_state.liked_count),
+        "disliked_count": int(user_state.disliked_count),
+        "irritation_count": int(user_state.irritation_count),
+    }
+    db.add(
+        ModelCheckpoint(
+            user_id=user_id,
+            model_type="user_state_snapshot",
+            model_blob=json.dumps(snapshot).encode("utf-8"),
+            n_updates=int(user_state.interactions),
+        )
+    )
+
+
+def _log_recommendation_rows(
+    db: Session,
+    user_id: str,
+    recommendations: List[tuple[ProductDetail, float]],
+    model_name: str,
+) -> None:
+    _ensure_db_initialized()
+    for position, (product, score) in enumerate(recommendations, start=1):
+        db.add(
+            RecommendationLog(
+                user_id=user_id,
+                product_id=product.product_id,
+                model_used=model_name,
+                rank_position=position,
+                score=float(score),
+            )
+        )
+
+
+def _load_dupes_from_db(db: Session, source_product_id: int) -> List[DupeProduct]:
+    _ensure_db_initialized()
+    rows = (
+        db.query(ProductDupe)
+        .filter(ProductDupe.source_product_id == source_product_id)
+        .order_by(ProductDupe.dupe_score.desc())
+        .limit(24)
+        .all()
+    )
+    dupes: List[DupeProduct] = []
+    for row in rows:
+        product = PRODUCTS.get(row.dupe_product_id)
+        if product is None:
+            continue
+        dupes.append(
+            DupeProduct(
+                **_product_to_card(product).model_dump(),
+                dupe_score=float(row.dupe_score),
+                explanation=row.explanation or "",
+            )
+        )
+    return dupes
 
 
 def _load_profile_from_db(db: Session, user_id: str) -> Optional[OnboardingRequest]:
@@ -459,7 +610,6 @@ def _save_profile_to_db(db: Session, user_id: str, payload: OnboardingRequest) -
         db.query(UserProfileState).filter(UserProfileState.user_id == user_id).first()
     )
     profile_data = payload.model_dump()
-
     if profile_row is None:
         profile_row = UserProfileState(user_id=user_id, profile=profile_data)
         db.add(profile_row)
@@ -469,14 +619,28 @@ def _save_profile_to_db(db: Session, user_id: str, payload: OnboardingRequest) -
 
 def _save_feedback_to_db(db: Session, payload: FeedbackRequest) -> None:
     _ensure_db_initialized()
+
+    if payload.has_tried and payload.reaction == "like":
+        event_type = "tried_like"
+    elif payload.has_tried and payload.reaction == "dislike":
+        event_type = "tried_dislike"
+    elif payload.has_tried and payload.reaction == "irritation":
+        event_type = "tried_irritation"
+    elif payload.has_tried:
+        event_type = "tried"
+    else:
+        event_type = "not_tried"
+
     db.add(
-        UserFeedbackEvent(
+        UserProductEvent(
             user_id=payload.user_id,
             product_id=payload.product_id,
+            event_type=event_type,
             has_tried=payload.has_tried,
             reaction=payload.reaction,
             reason_tags=payload.reason_tags,
-            free_text=payload.free_text or "",
+            free_text=payload.free_text,
+            skipped_questionnaire=not payload.has_tried,
         )
     )
 
@@ -487,10 +651,10 @@ def _load_user_state_from_db(db: Session, user_id: str) -> UserState:
     product_index = _build_product_index()
 
     feedback_rows = (
-        db.query(UserFeedbackEvent)
-        .filter(UserFeedbackEvent.user_id == user_id)
-        .filter(UserFeedbackEvent.has_tried.is_(True))
-        .order_by(UserFeedbackEvent.id.asc())
+        db.query(UserProductEvent)
+        .filter(UserProductEvent.user_id == user_id)
+        .filter(UserProductEvent.has_tried.is_(True))
+        .order_by(UserProductEvent.id.asc())
         .all()
     )
 
@@ -650,6 +814,7 @@ def submit_onboarding(
     USER_PROFILES[user_id] = payload
 
     try:
+        _ensure_user_exists(db, user_id)
         _save_profile_to_db(db, user_id, payload)
         db.commit()
     except SQLAlchemyError as exc:
@@ -666,6 +831,18 @@ def submit_onboarding(
         skin_type=payload.skin_type,
         skin_concerns=payload.concerns,
     )
+
+    try:
+        user_state = USER_STATES.get(user_id)
+        if user_state is not None:
+            _persist_user_model_state(db, user_id, user_state)
+            _persist_model_checkpoint(db, user_id, user_state)
+            db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.warning(
+            "Could not persist initial model state for user_id=%s: %s", user_id, exc
+        )
 
     return OnboardingResponse(user_id=user_id, profile=payload)
 
@@ -789,14 +966,29 @@ def get_recommendations(
         for product, score in ranked[:limit]
     ]
 
+    try:
+        _log_recommendation_rows(db, user_id, ranked[:limit], model_name)
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.warning(
+            "Could not persist recommendation_log rows for user_id=%s: %s",
+            user_id,
+            exc,
+        )
+
     return RecommendationsResponse(products=result)
 
 
 @app.get("/api/dupes/{product_id}", response_model=DupesResponse)
-def get_dupes(product_id: int) -> DupesResponse:
+def get_dupes(product_id: int, db: Session = Depends(get_db)) -> DupesResponse:
     source = PRODUCTS.get(product_id)
     if source is None:
         raise HTTPException(status_code=404, detail="Product not found")
+
+    db_dupes = _load_dupes_from_db(db, product_id)
+    if db_dupes:
+        return DupesResponse(source_product_id=product_id, dupes=db_dupes)
 
     alternatives = [
         product
@@ -868,6 +1060,10 @@ def submit_feedback(
                     user_state.add_disliked(vec, reasons=reasons if reasons else None)
                 elif payload.reaction == "irritation":
                     user_state.add_irritation(vec, reasons=reasons if reasons else None)
+
+            _persist_user_model_state(db, payload.user_id, user_state)
+            _persist_model_checkpoint(db, payload.user_id, user_state)
+            db.commit()
     except Exception as e:
         logger.warning(
             "Could not update ML model state for user_id=%s product_id=%s: %s",
@@ -877,6 +1073,55 @@ def submit_feedback(
         )
 
     return FeedbackResponse(success=True, message="Feedback recorded & model updated")
+
+
+@app.get("/api/wishlist/{user_id}", response_model=WishlistResponse)
+def get_wishlist(user_id: str, db: Session = Depends(get_db)) -> WishlistResponse:
+    rows = db.query(UserWishlist).filter(UserWishlist.user_id == user_id).all()
+    products = []
+    for row in rows:
+        product = PRODUCTS.get(row.product_id)
+        if product is None:
+            continue
+        products.append(_product_to_card(product))
+    return WishlistResponse(products=products)
+
+
+@app.post("/api/wishlist", response_model=FeedbackResponse)
+def add_to_wishlist(
+    payload: WishlistRequest, db: Session = Depends(get_db)
+) -> FeedbackResponse:
+    if payload.product_id not in PRODUCTS:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    existing = (
+        db.query(UserWishlist)
+        .filter(UserWishlist.user_id == payload.user_id)
+        .filter(UserWishlist.product_id == payload.product_id)
+        .first()
+    )
+    if existing is None:
+        db.add(UserWishlist(user_id=payload.user_id, product_id=payload.product_id))
+        db.commit()
+    return FeedbackResponse(success=True, message="Wishlist updated")
+
+
+@app.delete("/api/wishlist/{user_id}/{product_id}", response_model=FeedbackResponse)
+def remove_from_wishlist(
+    user_id: str,
+    product_id: int,
+    db: Session = Depends(get_db),
+) -> FeedbackResponse:
+    row = (
+        db.query(UserWishlist)
+        .filter(UserWishlist.user_id == user_id)
+        .filter(UserWishlist.product_id == product_id)
+        .first()
+    )
+    if row is not None:
+        db.delete(row)
+        db.commit()
+    return FeedbackResponse(success=True, message="Wishlist updated")
 
 
 @app.get("/api/debug/user-state/{user_id}")
@@ -953,10 +1198,30 @@ def get_product_score(
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-def chat(request: ChatRequest) -> ChatResponse:
+def chat(request: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
     """Chat endpoint that handles ingredient questions, dupe finding, and recommendations"""
     try:
+        normalized_user_id = _normalize_optional_user_id(request.user_id)
         response_text = handle_chat(request.message, profile=request.profile)
+        try:
+            db.add(
+                ChatMessage(
+                    user_id=normalized_user_id,
+                    role="user",
+                    content=request.message,
+                )
+            )
+            db.add(
+                ChatMessage(
+                    user_id=normalized_user_id,
+                    role="assistant",
+                    content=response_text,
+                )
+            )
+            db.commit()
+        except SQLAlchemyError as exc:
+            db.rollback()
+            logger.warning("Could not persist chat_messages row(s): %s", exc)
         return ChatResponse(response=response_text)
     except Exception as e:
         print(f"Chat error: {e}")

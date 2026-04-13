@@ -5,10 +5,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import joblib
-import faiss
 from scipy.sparse import csr_matrix, hstack
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
+
+try:
+    import faiss  # type: ignore[import-not-found]
+except ImportError:
+    faiss = None
 
 from skincarelib.ml_system.artifacts import find_project_root
 
@@ -214,13 +218,16 @@ def build_schema(tfidf_vec, group_names, cat_names):
     }
 
 
-def build_faiss_index(vectors: np.ndarray) -> faiss.Index:
+def build_faiss_index(vectors: np.ndarray):
     """Build a FAISS flat inner-product index over L2-normalised vectors.
 
     Normalising first means inner product == cosine similarity, so the index
     returns the same neighbours as a cosine search but scales to much larger
     catalogues without slowing down.
     """
+    if faiss is None:
+        raise RuntimeError("faiss is not installed")
+
     vectors = vectors.copy().astype(np.float32)
     faiss.normalize_L2(vectors)
     dim = vectors.shape[1]
@@ -246,8 +253,11 @@ def save_outputs(X, df, schema, tfidf_vec):
     joblib.dump(tfidf_vec, ARTIFACT_DIR / "tfidf.joblib")
 
     # FAISS index — used in dupe_finder for fast ANN candidate retrieval
-    faiss_index = build_faiss_index(dense)
-    faiss.write_index(faiss_index, str(ARTIFACT_DIR / "faiss.index"))
+    if faiss is not None:
+        faiss_index = build_faiss_index(dense)
+        faiss.write_index(faiss_index, str(ARTIFACT_DIR / "faiss.index"))
+    else:
+        print("FAISS not installed; skipping artifacts/faiss.index generation")
 
     print(f"Artifacts saved to {ARTIFACT_DIR}")
 

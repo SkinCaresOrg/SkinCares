@@ -11,7 +11,14 @@ import {
 import { getUserProfile } from "./wishlist";
 import { getAuthToken } from "./session";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+const PROD_API_FALLBACK_URL = "https://api.skinscares.es/api";
+
+const normalizeBaseUrl = (value: string) => value.replace(/\/+$/, "");
+
+const resolvedBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+const BASE_URL = normalizeBaseUrl(
+  resolvedBaseUrl || (import.meta.env.PROD ? PROD_API_FALLBACK_URL : "/api")
+);
 
 const RETRYABLE_STATUS = new Set([502, 503, 504]);
 

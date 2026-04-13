@@ -1,7 +1,9 @@
 import json
+import os
 from pathlib import Path
 from typing import Optional
 import warnings
+import logging
 
 import numpy as np
 import pandas as pd
@@ -9,6 +11,7 @@ import faiss
 from .dupe_scorer import DupeScorer
 from .dupe_explainer import explain_dupe
 
+logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -22,6 +25,30 @@ FAISS_INDEX_PATH = ROOT / "artifacts" / "faiss.index"
 FAISS_RETRIEVAL_K = 1000  # ~2% of the catalogue
 
 
+def _is_truthy(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+REMOTE_ASSET_MODE = bool(os.getenv("SUPABASE_URL", "").strip())
+SUPPRESS_MISSING_ASSET_WARNINGS = (
+    _is_truthy(os.getenv("SKINCARES_SUPPRESS_MISSING_ASSET_WARNINGS", ""))
+    or REMOTE_ASSET_MODE
+)
+AUTO_REBUILD_ARTIFACTS = _is_truthy(
+    os.getenv(
+        "SKINCARES_AUTO_REBUILD_ARTIFACTS",
+        "false" if REMOTE_ASSET_MODE else "true",
+    )
+)
+
+
+def _notify(message: str) -> None:
+    if SUPPRESS_MISSING_ASSET_WARNINGS:
+        logger.info(message)
+    else:
+        warnings.warn(message)
+
+
 def _core_artifact_paths() -> tuple[Path, Path, Path]:
     return VECTORS_PATH, INDEX_PATH, SCHEMA_PATH
 
@@ -31,11 +58,13 @@ def _ensure_core_artifacts() -> None:
     if not missing:
         return
 
-    warnings.warn(
-        "Missing core artifacts: "
-        + ", ".join(str(path) for path in missing)
-        + ". Attempting to rebuild from source data."
+    missing_message = "Missing core artifacts: " + ", ".join(
+        str(path) for path in missing
     )
+    if not AUTO_REBUILD_ARTIFACTS:
+        raise FileNotFoundError(missing_message)
+
+    _notify(missing_message + ". Attempting to rebuild from source data.")
 
     from . import vectorizer
 
@@ -47,6 +76,7 @@ def _ensure_core_artifacts() -> None:
             "Auto-rebuild did not produce required artifacts: "
             + ", ".join(str(path) for path in still_missing)
         )
+
 
 def _build_faiss_index(vectors: np.ndarray):
     normalized = vectors.copy().astype(np.float32)
@@ -66,21 +96,19 @@ def _load_or_rebuild_faiss_index(vectors: np.ndarray):
         try:
             return faiss.read_index(str(FAISS_INDEX_PATH))
         except RuntimeError as error:
-            warnings.warn(
+            _notify(
                 f"Could not read existing FAISS index at {FAISS_INDEX_PATH}: {error}. "
                 "Rebuilding from vectors."
             )
     else:
-        warnings.warn(
-            f"Missing FAISS index at {FAISS_INDEX_PATH}. Rebuilding from vectors."
-        )
+        _notify(f"Missing FAISS index at {FAISS_INDEX_PATH}. Rebuilding from vectors.")
 
     index = _build_faiss_index(vectors)
     try:
         FAISS_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
         faiss.write_index(index, str(FAISS_INDEX_PATH))
     except Exception as write_error:
-        warnings.warn(
+        _notify(
             f"Rebuilt FAISS index in memory but could not persist to "
             f"{FAISS_INDEX_PATH}: {write_error}"
         )
@@ -355,7 +383,7 @@ try:
     VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA, FAISS_INDEX = load_artifacts()
 except (FileNotFoundError, RuntimeError) as e:
     _LOAD_ERROR = e
-    warnings.warn(f"Could not load artifacts: {e}. Running in degraded mode.")
+    _notify(f"Could not load artifacts: {e}. Running in degraded mode.")
 
     VECTORS = None
     PRODUCT_INDEX = {}

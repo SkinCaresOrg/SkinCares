@@ -209,7 +209,20 @@ class WishlistResponse(BaseModel):
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    init_db()
+    strict_db_init = os.getenv("DB_INIT_STRICT", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+    try:
+        init_db()
+    except Exception as exc:
+        logger.warning("Database initialization failed during startup: %s", exc)
+        if strict_db_init:
+            raise
+
     try:
         with SessionLocal() as db:
             _sync_products_table_from_csv(db)

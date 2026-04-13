@@ -6,6 +6,15 @@ from deployment.api import app
 client = TestClient(app)
 
 
+def _pick_existing_product_id() -> int:
+    response = client.get("/api/products", params={"limit": 100})
+    assert response.status_code == 200
+    payload = response.json()
+    products = payload.get("products", [])
+    assert products, "Expected at least one product from /api/products"
+    return int(products[0]["product_id"])
+
+
 def test_api_contract_endpoints_smoke() -> None:
     onboarding_payload = {
         "skin_type": "oily",
@@ -38,7 +47,9 @@ def test_api_contract_endpoints_smoke() -> None:
     assert "products" in product_list
     assert "total" in product_list
 
-    response = client.get("/api/products/101")
+    selected_product_id = _pick_existing_product_id()
+
+    response = client.get(f"/api/products/{selected_product_id}")
     assert response.status_code == 200
     detail = response.json()
     for field in [
@@ -60,7 +71,7 @@ def test_api_contract_endpoints_smoke() -> None:
     recommendations = response.json()
     assert "products" in recommendations
 
-    response = client.get("/api/dupes/220")
+    response = client.get(f"/api/dupes/{selected_product_id}")
     assert response.status_code == 200
     dupes = response.json()
     assert "source_product_id" in dupes
@@ -68,7 +79,11 @@ def test_api_contract_endpoints_smoke() -> None:
 
     response = client.post(
         "/api/feedback",
-        json={"user_id": user_id, "product_id": 220, "has_tried": False},
+        json={
+            "user_id": user_id,
+            "product_id": selected_product_id,
+            "has_tried": False,
+        },
     )
     assert response.status_code == 200
     feedback_not_tried = response.json()
@@ -78,7 +93,7 @@ def test_api_contract_endpoints_smoke() -> None:
         "/api/feedback",
         json={
             "user_id": user_id,
-            "product_id": 220,
+            "product_id": selected_product_id,
             "has_tried": True,
             "reaction": "dislike",
             "reason_tags": ["felt_greasy", "broke_me_out"],
@@ -100,12 +115,13 @@ def test_feedback_requires_reaction_when_has_tried_true() -> None:
     }
     onboarding = client.post("/api/onboarding", json=onboarding_payload)
     user_id = onboarding.json()["user_id"]
+    selected_product_id = _pick_existing_product_id()
 
     invalid_feedback = client.post(
         "/api/feedback",
         json={
             "user_id": user_id,
-            "product_id": 220,
+            "product_id": selected_product_id,
             "has_tried": True,
         },
     )

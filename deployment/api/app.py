@@ -40,6 +40,7 @@ from skincarelib.ml_system.ml_feedback_model import (
 )
 from skincarelib.ml_system.swipe_session import SwipeSession
 from skincarelib.ml_system.handler import handle_chat
+from skincarelib.models.dupe_finder import find_dupes as find_ml_dupes
 
 logger = logging.getLogger(__name__)
 
@@ -989,19 +990,46 @@ def get_dupes(product_id: int, db: Session = Depends(get_db)) -> DupesResponse:
     if db_dupes:
         return DupesResponse(source_product_id=product_id, dupes=db_dupes)
 
+    # 🔥 Use ML dupe finder if no DB results
+    try:
+        # 🚨 Convert frontend product_id (1-indexed) to ML product_id (0-indexed)
+        ml_product_id = product_id - 1
+        ml_results = find_ml_dupes(ml_product_id, top_n=3)
+        if not ml_results.empty:
+            dupes = [
+                DupeProduct(
+                    **_product_to_card(PRODUCTS[int(row["product_id"]) + 1]).model_dump(),
+                    dupe_score=float(row["dupe_score"]),
+                    explanation=row.get("explanation", "Cheaper alternative with similar ingredients"),
+                )
+                for _, row in ml_results.iterrows()
+                if int(row["product_id"]) + 1 in PRODUCTS
+            ]
+            return DupesResponse(source_product_id=product_id, dupes=dupes)
+    except Exception as e:
+        print(f"ML dupe finder error for product {product_id} (ML ID {product_id - 1}): {e}")
+        # Fall back to basic filtering
+        pass
+
+    # 🔹 Basic fallback: same category, but filter for cheaper and sort by price
     alternatives = [
         product
         for product in PRODUCTS.values()
-        if product.product_id != product_id and product.category == source.category
+        if product.product_id != product_id 
+        and product.category == source.category
+        and product.price < source.price  # 🔥 MUST be cheaper
     ]
+    
+    # Sort by price ascending (cheapest first)
+    alternatives.sort(key=lambda p: p.price)
 
     dupes = [
         DupeProduct(
             **_product_to_card(product).model_dump(),
-            dupe_score=max(0.1, 0.92 - (index * 0.07)),
-            explanation="Similar texture and use case at a comparable/lower price",
+            dupe_score=max(0.5, 0.95 - (index * 0.08)),
+            explanation=f"Cheaper alternative at ${product.price}",
         )
-        for index, product in enumerate(alternatives)
+        for index, product in enumerate(alternatives[:3])
     ]
 
     return DupesResponse(source_product_id=product_id, dupes=dupes)

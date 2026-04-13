@@ -25,12 +25,12 @@ def register_user(payload: schemas.UserCreate, db: Session = Depends(get_db)):
 @router.post("/login", response_model=schemas.Token)
 def login_user(payload: schemas.UserLogin, db: Session = Depends(get_db)):
     """endpoint to authenticate a user and return an access token"""
-    user = service.authenticate_user(db, payload.email, payload.password)
-
-    if not user:
+    try:
+        user = service.authenticate_user(db, payload.email, payload.password)
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
+            detail=str(e),
         )
 
     token = security.create_access_token({"sub": str(user.id)})

@@ -73,7 +73,11 @@ export async function fetchApi<T>(url: string, options?: RequestInit): Promise<T
     let detail = "Request failed";
     try {
       const payload = await res.json();
-      detail = payload?.detail || detail;
+      if (Array.isArray(payload?.detail)) {
+        detail = payload.detail.map((d: any) => d.msg || JSON.stringify(d)).join(", ");
+      } else {
+        detail = payload?.detail || detail;
+      }
     } catch {
       detail = res.statusText || detail;
     }

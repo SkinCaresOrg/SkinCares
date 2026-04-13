@@ -632,8 +632,6 @@ def load_products_from_csv() -> Dict[int, ProductDetail]:
 
 
 PRODUCTS = load_products_from_csv()
-print(f"[INIT] Loaded {len(PRODUCTS)} products, max_id={max(PRODUCTS.keys()) if PRODUCTS else 0}")
-print(f"[INIT] Product IDs range: {sorted(PRODUCTS.keys())[:10]}...{sorted(PRODUCTS.keys())[-10:] if len(PRODUCTS) > 10 else sorted(PRODUCTS.keys())}")
 
 # Load ML assets
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -641,6 +639,9 @@ PRODUCT_VECTORS_PATH = PROJECT_ROOT / "artifacts" / "product_vectors.npy"
 
 try:
     PRODUCT_VECTORS = np.load(PRODUCT_VECTORS_PATH, mmap_mode="r")
+    # Filter PRODUCTS to only include products with available vectors
+    MAX_PRODUCT_ID_WITH_VECTOR = len(PRODUCT_VECTORS)
+    PRODUCTS = {pid: p for pid, p in PRODUCTS.items() if pid <= MAX_PRODUCT_ID_WITH_VECTOR}
 except FileNotFoundError:
     print(f"⚠️  Warning: Product vectors not found at {PRODUCT_VECTORS_PATH}")
     PRODUCT_VECTORS = np.random.randn(len(PRODUCTS), 128).astype(np.float32)

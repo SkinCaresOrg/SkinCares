@@ -30,14 +30,14 @@ def user_with_interactions(sample_vectors):
     user = UserState(dim=50)
 
     # Add liked products
-    user.add_liked(sample_vectors[0], ["good_ingredients"])
-    user.add_liked(sample_vectors[1], ["hydrating"])
+    user.add_liked(sample_vectors[0], reasons=["good_ingredients"])
+    user.add_liked(sample_vectors[1], reasons=["hydrating"])
 
     # Add disliked
-    user.add_disliked(sample_vectors[5], ["greasy"])
+    user.add_disliked(sample_vectors[5], reasons=["greasy"])
 
     # Add irritation
-    user.add_irritation(sample_vectors[8], ["caused_rash"])
+    user.add_irritation(sample_vectors[8], reasons=["caused_rash"])
 
     return user
 
@@ -53,7 +53,7 @@ class TestUserState:
 
     def test_add_liked(self, sample_vectors):
         user = UserState(dim=50)
-        user.add_liked(sample_vectors[0], ["tag1", "tag2"])
+        user.add_liked(sample_vectors[0], reasons=["tag1", "tag2"])
 
         assert user.liked_count == 1
         assert user.interactions == 1

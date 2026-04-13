@@ -219,21 +219,20 @@ def build_schema(tfidf_vec, group_names, cat_names):
 
 
 def build_faiss_index(vectors: np.ndarray):
-    """Build a FAISS flat inner-product index over L2-normalised vectors.
-
-    Normalising first means inner product == cosine similarity, so the index
-    returns the same neighbours as a cosine search but scales to much larger
-    catalogues without slowing down.
-    """
+    """Build a FAISS HNSW ANN index over L2-normalised vectors."""
     if faiss is None:
         raise RuntimeError("faiss is not installed")
 
     vectors = vectors.copy().astype(np.float32)
     faiss.normalize_L2(vectors)
     dim = vectors.shape[1]
-    index = faiss.IndexFlatIP(dim)
+    index = faiss.IndexHNSWFlat(dim, 48, faiss.METRIC_INNER_PRODUCT)
+    index.hnsw.efConstruction = 300
+    index.hnsw.efSearch = 256
+
+
     index.add(vectors)
-    print(f"FAISS index built: {index.ntotal} vectors, dim={dim}")
+    print(f"FAISS HNSW index built: {index.ntotal} vectors, dim={dim}")
     return index
 
 
@@ -252,7 +251,8 @@ def save_outputs(X, df, schema, tfidf_vec):
 
     joblib.dump(tfidf_vec, ARTIFACT_DIR / "tfidf.joblib")
 
-    # FAISS index — used in dupe_finder for fast ANN candidate retrieval
+
+    # FAISS HNSW ANN index — used in dupe_finder for approximate candidate retrieval
     if faiss is not None:
         faiss_index = build_faiss_index(dense)
         faiss.write_index(faiss_index, str(ARTIFACT_DIR / "faiss.index"))

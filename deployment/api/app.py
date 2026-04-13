@@ -252,6 +252,18 @@ def _replay_questionnaire_feedback_from_db() -> dict:
                 # Try to update user state based on event
                 if hasattr(event, 'user_id') and hasattr(event, 'reaction'):
                     user_state = get_user_state(event.user_id)
+                    
+                    # Update interaction counts based on reaction
+                    if event.reaction == "like":
+                        user_state.liked_count += 1
+                        user_state.interactions += 1
+                    elif event.reaction == "dislike":
+                        user_state.disliked_count += 1
+                        user_state.interactions += 1
+                    elif event.reaction == "irritation":
+                        user_state.irritation_count += 1
+                        user_state.interactions += 1
+                    
                     if hasattr(event, 'reason_tags') and event.reason_tags:
                         # Track reason tags with timestamp
                         now = datetime.now(timezone.utc).isoformat()
@@ -262,6 +274,15 @@ def _replay_questionnaire_feedback_from_db() -> dict:
                                 user_state.reason_tag_preferences[reason_tag] = user_state.reason_tag_preferences.get(reason_tag, 0.0) - 1.0
                             user_state.reason_tag_last_seen_at[reason_tag] = now
                             user_state.reason_signal_count += 1
+                            
+                            # Also track avoided ingredients for structured signals
+                            if reason_tag in _AVOID_INGREDIENT_TRIGGERS:
+                                ingredient_key = _AVOID_INGREDIENT_TRIGGERS[reason_tag].lower()
+                                if event.reaction == "dislike" or event.reaction == "irritation":
+                                    user_state.avoid_ingredients[ingredient_key] = (
+                                        user_state.avoid_ingredients.get(ingredient_key, 0.0) + 1.0
+                                    )
+                                    user_state.avoid_ingredient_last_seen_at[ingredient_key] = now
         
         QUESTIONNAIRE_PIPELINE_STATUS["startup_replay_processed"] += len(new_event_ids)
         QUESTIONNAIRE_PIPELINE_STATUS["last_run_processed_ids"] = new_event_ids
@@ -628,6 +649,7 @@ USER_SESSIONS: Dict[str, SwipeSession] = {}
 USER_STATES: Dict[str, UserState] = {}
 USER_PROFILES: Dict[str, OnboardingRequest] = {}
 USER_FEEDBACK: List[FeedbackRequest] = []
+USER_LAST_ACTION: Dict[str, Optional[dict]] = {}  # Track last action per user for cohort analysis
 DB_INITIALIZED = False
 
 # Questionnaire pipeline tracking
@@ -1220,7 +1242,60 @@ def get_recommendations(
             else:
                 _, y = training_data
                 if len(np.unique(y)) < 2:
-                    scores = [0.5] * len(candidates)
+                    # Single class case: use similarity to liked/disliked vectors
+                    # This handles early feedback where user only likes or dislikes
+                    product_index = {
+                        p.product_id: i for i, p in enumerate(PRODUCTS.values())
+                    }
+                    
+                    scores = []
+                    # Compute mean of liked vectors if available, else mean of disliked
+                    if user_state.liked_vectors:
+                        mean_vector = np.mean(user_state.liked_vectors, axis=0)
+                        preferred_class = 1.0  # Higher score for similarity to liked
+                    elif user_state.disliked_vectors:
+                        mean_vector = np.mean(user_state.disliked_vectors, axis=0)
+                        preferred_class = 0.0  # Lower score for similarity to disliked
+                    else:
+                        mean_vector = None
+                    
+                    for product in candidates:
+                        if mean_vector is not None:
+                            vec = get_product_vector_safe(product.product_id, product_index)
+                            if vec is not None:
+                                # Compute cosine similarity
+                                similarity = np.dot(vec, mean_vector) / (
+                                    np.linalg.norm(vec) * np.linalg.norm(mean_vector) + 1e-7
+                                )
+                                # Map similarity to [0, 1]
+                                score = (similarity + 1.0) / 2.0
+                                
+                                # If we're disliking, invert the score
+                                if preferred_class == 0.0:
+                                    score = 1.0 - score
+                                
+                                # Apply adjustments
+                                reason_adjustment = _compute_reason_adjustment(product, user_state)
+                                user_profile = USER_PROFILES.get(user_id)
+                                if user_profile:
+                                    structured_adjustment = _compute_structured_adjustment(
+                                        product, user_state, user_profile
+                                    )
+                                else:
+                                    structured_adjustment = 0.0
+                                
+                                if structured_adjustment < -0.5:
+                                    combined_score = 0.0
+                                elif structured_adjustment < 0:
+                                    combined_score = score * (1.0 + structured_adjustment)
+                                else:
+                                    combined_score = score + reason_adjustment + structured_adjustment
+                                
+                                scores.append(max(0.0, min(1.0, combined_score)))
+                            else:
+                                scores.append(0.5)
+                        else:
+                            scores.append(0.5)
                 else:
                     # Select best model based on learning stage
                     model, model_name = get_best_model(user_state)
@@ -1269,11 +1344,26 @@ def get_recommendations(
             )
             scores = [0.5] * len(candidates)
     else:
-        scores = [0.5] * len(candidates)
+        # New user with no interactions - still apply profile exclusions
+        user_profile = USER_PROFILES.get(user_id)
+        scores = []
+        for product in candidates:
+            base_score = 0.5
+            if user_profile:
+                structured_adjustment = _compute_structured_adjustment(
+                    product, user_state, user_profile
+                )
+                if structured_adjustment < -0.5:
+                    base_score = 0.0  # Exclude completely based on profile
+            scores.append(base_score)
 
     # Sort by score (highest first)
     ranked = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)
 
+    # Filter out products with 0.0 score (completely excluded)
+    # Then take top limit products
+    non_excluded = [(product, score) for product, score in ranked if score > 0.0]
+    
     result = [
         RecommendationsProduct(
             **_product_to_card(product).model_dump(),
@@ -1282,11 +1372,11 @@ def get_recommendations(
             if score != 0.5
             else "Matches profile preferences",
         )
-        for product, score in ranked[:limit]
+        for product, score in non_excluded[:limit]
     ]
 
     try:
-        _log_recommendation_rows(db, user_id, ranked[:limit], model_name)
+        _log_recommendation_rows(db, user_id, non_excluded[:limit], model_name)
         db.commit()
     except SQLAlchemyError as exc:
         db.rollback()
@@ -1418,6 +1508,73 @@ def submit_feedback(
             payload.product_id,
             e,
         )
+
+    # Update questionnaire completion metrics
+    QUESTIONNAIRE_COMPLETION_METRICS["total_swipes"] += 1
+    if payload.has_tried and payload.reaction:
+        QUESTIONNAIRE_COMPLETION_METRICS["completed_questionnaires"] += 1
+    if not payload.has_tried:
+        QUESTIONNAIRE_COMPLETION_METRICS["skipped_questionnaires"] += 1
+
+    # Update questionnaire outcome cohort metrics
+    # Track the cohort this action belongs to based on the previous action
+    last_action = USER_LAST_ACTION.get(payload.user_id)
+    
+    # If this is a second action (after a previous action), track the outcome
+    if last_action is not None:
+        if last_action.get("has_tried") is False:
+            # This action is after a skip, so it's in the "after_skipped" cohort
+            QUESTIONNAIRE_OUTCOME_METRICS["cohorts"]["after_skipped"]["samples"] += 1
+            if payload.reaction == "like":
+                QUESTIONNAIRE_OUTCOME_METRICS["cohorts"]["after_skipped"]["like_count"] += 1
+            elif payload.reaction == "dislike":
+                QUESTIONNAIRE_OUTCOME_METRICS["cohorts"]["after_skipped"]["dislike_count"] += 1
+        elif last_action.get("has_tried") is True and last_action.get("reaction"):
+            # This action is after a completed questionnaire, so it's in the "after_completed" cohort
+            QUESTIONNAIRE_OUTCOME_METRICS["cohorts"]["after_completed"]["samples"] += 1
+            if payload.reaction == "like":
+                QUESTIONNAIRE_OUTCOME_METRICS["cohorts"]["after_completed"]["like_count"] += 1
+            elif payload.reaction == "dislike":
+                QUESTIONNAIRE_OUTCOME_METRICS["cohorts"]["after_completed"]["dislike_count"] += 1
+    
+    # Update overall metrics from completion metrics
+    QUESTIONNAIRE_OUTCOME_METRICS["overall"] = {
+        "total_swipes": QUESTIONNAIRE_COMPLETION_METRICS["total_swipes"],
+        "completed_questionnaires": QUESTIONNAIRE_COMPLETION_METRICS["completed_questionnaires"],
+        "skipped_questionnaires": QUESTIONNAIRE_COMPLETION_METRICS["skipped_questionnaires"],
+    }
+    
+    # Calculate uplift metrics
+    after_skipped = QUESTIONNAIRE_OUTCOME_METRICS["cohorts"]["after_skipped"]
+    after_completed = QUESTIONNAIRE_OUTCOME_METRICS["cohorts"]["after_completed"]
+    
+    # Calculate like rates for each cohort
+    skip_like_rate = (
+        after_skipped["like_count"] / after_skipped["samples"]
+        if after_skipped["samples"] > 0 else 0.0
+    )
+    completed_like_rate = (
+        after_completed["like_count"] / after_completed["samples"]
+        if after_completed["samples"] > 0 else 0.0
+    )
+    
+    # Calculate uplift
+    absolute_uplift = completed_like_rate - skip_like_rate
+    relative_uplift = (
+        (absolute_uplift / skip_like_rate) if skip_like_rate > 0 else 0.0
+    )
+    
+    QUESTIONNAIRE_OUTCOME_METRICS["uplift"] = {
+        "absolute_like_rate_uplift": absolute_uplift,
+        "relative_like_rate_uplift": relative_uplift,
+    }
+    
+    # Store this action as the last action for this user
+    USER_LAST_ACTION[payload.user_id] = {
+        "has_tried": payload.has_tried,
+        "reaction": payload.reaction,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
     return FeedbackResponse(success=True, message="Feedback recorded & model updated")
 

@@ -23,6 +23,33 @@ FAISS_INDEX_PATH = ROOT / "artifacts" / "faiss.index"
 FAISS_RETRIEVAL_K = 2500  # ~5% of the catalogue
 
 
+def _core_artifact_paths() -> tuple[Path, Path, Path]:
+    return VECTORS_PATH, INDEX_PATH, SCHEMA_PATH
+
+
+def _ensure_core_artifacts() -> None:
+    missing = [path for path in _core_artifact_paths() if not path.exists()]
+    if not missing:
+        return
+
+    warnings.warn(
+        "Missing core artifacts: "
+        + ", ".join(str(path) for path in missing)
+        + ". Attempting to rebuild from source data."
+    )
+
+    from . import vectorizer
+
+    vectorizer.run()
+
+    still_missing = [path for path in _core_artifact_paths() if not path.exists()]
+    if still_missing:
+        raise FileNotFoundError(
+            "Auto-rebuild did not produce required artifacts: "
+            + ", ".join(str(path) for path in still_missing)
+        )
+
+
 def _build_faiss_index(vectors: np.ndarray):
     normalized = vectors.copy().astype(np.float32)
     faiss.normalize_L2(normalized)
@@ -291,6 +318,8 @@ def infer_product_subtype(product_name: str, category: str = None):
 # Load artifacts
 # ---------------------------
 def load_artifacts():
+    _ensure_core_artifacts()
+
     vectors = np.load(VECTORS_PATH)
 
     with open(INDEX_PATH) as f:

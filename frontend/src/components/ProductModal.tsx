@@ -27,6 +27,7 @@ const ProductModal = ({ product, onClose }: ProductModalProps) => {
   const [loading, setLoading] = useState(false);
   const [showDupes, setShowDupes] = useState(false);
   const [dupes, setDupes] = useState<DupeProduct[]>([]);
+  const [dupeMessage, setDupeMessage] = useState<string>("");
   const [dupesLoading, setDupesLoading] = useState(false);
 
   useEffect(() => {
@@ -44,8 +45,10 @@ const ProductModal = ({ product, onClose }: ProductModalProps) => {
     if (!product) return;
     setShowDupes(true);
     setDupesLoading(true);
+    setDupeMessage("");
     const res = await getDupes(product.product_id);
     setDupes(res.dupes);
+    setDupeMessage(res.message || "");
     setDupesLoading(false);
   };
 
@@ -170,6 +173,7 @@ const ProductModal = ({ product, onClose }: ProductModalProps) => {
             ) : (
               <div>
                 <h3 className="mb-3 font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground">Similar Products</h3>
+                {dupeMessage ? <p className="mb-3 text-sm text-muted-foreground">{dupeMessage}</p> : null}
                 <DupeList dupes={dupes} loading={dupesLoading} />
               </div>
             )}

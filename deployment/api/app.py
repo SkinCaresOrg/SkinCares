@@ -47,7 +47,8 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY")
+SUPABASE_KEY = SUPABASE_SERVICE_ROLE_KEY
 
 Category = Literal[
     "cleanser",
@@ -167,6 +168,7 @@ class RecommendationsResponse(BaseModel):
 class DupesResponse(BaseModel):
     source_product_id: int
     dupes: List[DupeProduct]
+    message: str = ""
 
 
 class FeedbackRequest(BaseModel):
@@ -589,13 +591,16 @@ def _load_dupes_from_db(db: Session, source_product_id: int) -> List[DupeProduct
         .all()
     )
 
-    print(f"[DEBUG] source_product_id={source_product_id} rows_found={len(rows)}")
+    logger.debug("source_product_id=%s rows_found=%s", source_product_id, len(rows))
 
     dupes: List[DupeProduct] = []
     for row in rows:
         product = PRODUCTS.get(row.dupe_product_id)
         if product is None:
-            print(f"[DEBUG] Missing product in PRODUCTS for dupe_product_id={row.dupe_product_id}")
+            logger.debug(
+                "Missing product in PRODUCTS for dupe_product_id=%s",
+                row.dupe_product_id,
+            )
             continue
 
         dupes.append(
@@ -608,6 +613,19 @@ def _load_dupes_from_db(db: Session, source_product_id: int) -> List[DupeProduct
     return dupes
 
 
+def _resolve_api_dupe_product_id(raw_id: object) -> Optional[int]:
+    try:
+        candidate = int(raw_id)
+    except (TypeError, ValueError):
+        return None
+
+    if candidate in PRODUCTS:
+        return candidate
+    if candidate + 1 in PRODUCTS:
+        return candidate + 1
+    return None
+
+
 def _load_dupes_from_supabase(source_product_id: int) -> List[DupeProduct]:
     if not SUPABASE_URL or not SUPABASE_KEY:
         return []
@@ -618,17 +636,28 @@ def _load_dupes_from_supabase(source_product_id: int) -> List[DupeProduct]:
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Accept": "application/json",
     }
-    params = {
-        "select": "*",
-        "source_product_id": f"eq.{source_product_id}",
-        "order": "dupe_score.desc",
-        "limit": "24",
-    }
 
-    try:
+    def query_rows(product_id: int) -> list:
+        params = {
+            "select": "*",
+            "source_product_id": f"eq.{product_id}",
+            "order": "dupe_score.desc",
+            "limit": "24",
+        }
         response = requests.get(url, headers=headers, params=params, timeout=10)
         response.raise_for_status()
         rows = response.json()
+        return rows if isinstance(rows, list) else []
+
+    try:
+        rows = query_rows(source_product_id)
+        if not rows and source_product_id >= 1:
+            logger.debug(
+                "Retrying Supabase dupe query using legacy artifact source_product_id=%s for API product_id=%s",
+                source_product_id - 1,
+                source_product_id,
+            )
+            rows = query_rows(source_product_id - 1)
     except Exception as exc:
         logger.warning(
             "Supabase dupe query failed for source_product_id=%s: %s",
@@ -642,14 +671,16 @@ def _load_dupes_from_supabase(source_product_id: int) -> List[DupeProduct]:
 
     dupes: List[DupeProduct] = []
     for row in rows:
-        product = PRODUCTS.get(int(row.get("dupe_product_id", -1)))
-        if product is None:
+        raw_dupe_id = row.get("dupe_product_id", -1)
+        dupe_id = _resolve_api_dupe_product_id(raw_dupe_id)
+        if dupe_id is None:
             logger.debug(
                 "Missing product in PRODUCTS for dupe_product_id=%s",
-                row.get("dupe_product_id"),
+                raw_dupe_id,
             )
             continue
 
+        product = PRODUCTS[dupe_id]
         dupes.append(
             DupeProduct(
                 **_product_to_card(product).model_dump(),
@@ -1066,7 +1097,11 @@ def get_dupes(product_id: int, db: Session = Depends(get_db)) -> DupesResponse:
         product_id,
     )
 
-    return DupesResponse(source_product_id=product_id, dupes=[])
+    return DupesResponse(
+        source_product_id=product_id,
+        dupes=[],
+        message="No dupes found for this product.",
+    )
 
 
 @app.post("/api/feedback", response_model=FeedbackResponse)

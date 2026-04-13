@@ -58,8 +58,8 @@ def run():
 
             for _, row in results.iterrows():
                 batch.append({
-                    "source_product_id": int(product_id),
-                    "dupe_product_id":   int(row["product_id"]),
+                    "source_product_id": int(product_id) + 1,
+                    "dupe_product_id":   int(row["product_id"]) + 1,
                     "dupe_score":        float(row["dupe_score"]),
                     "cosine_sim":        float(row["cosine_sim"]),
                     "price_score":       float(row["price_score"]),

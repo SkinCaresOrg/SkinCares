@@ -128,7 +128,7 @@ export async function getRecommendations(userId: string, category?: Category): P
   return fetchApi(`/recommendations/${userId}${qs}`);
 }
 
-export async function getDupes(productId: number): Promise<{ source_product_id: number; dupes: DupeProduct[] }> {
+export async function getDupes(productId: number): Promise<{ source_product_id: number; dupes: DupeProduct[]; message?: string }> {
   return fetchApi(`/dupes/${productId}`);
 }
 

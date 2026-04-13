@@ -215,20 +215,25 @@ async def lifespan(_: FastAPI):
         "yes",
         "on",
     }
+    db_ready = True
 
     try:
         init_db()
     except Exception as exc:
+        db_ready = False
         logger.warning("Database initialization failed during startup: %s", exc)
         if strict_db_init:
             raise
 
-    try:
-        with SessionLocal() as db:
-            _sync_products_table_from_csv(db)
-            db.commit()
-    except SQLAlchemyError as exc:
-        logger.warning("Could not sync products table from CSV: %s", exc)
+    if db_ready:
+        try:
+            with SessionLocal() as db:
+                _sync_products_table_from_csv(db)
+                db.commit()
+        except SQLAlchemyError as exc:
+            logger.warning("Could not sync products table from CSV: %s", exc)
+    else:
+        logger.warning("Skipping products table sync because DB is unavailable.")
     yield
 
 

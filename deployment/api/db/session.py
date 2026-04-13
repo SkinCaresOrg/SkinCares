@@ -39,10 +39,13 @@ if (
 connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
+elif DATABASE_URL.startswith("postgresql+"):
+    connect_args = {"connect_timeout": int(os.getenv("DB_CONNECT_TIMEOUT", "5"))}
 
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
+    pool_timeout=int(os.getenv("DB_POOL_TIMEOUT", "5")),
     connect_args=connect_args,
 )
 

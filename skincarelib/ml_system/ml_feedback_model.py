@@ -765,7 +765,6 @@ class XLearnFeedback:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "wb") as f:
             pickle.dump({"model_path": self.model_path, "scaler": self.scaler}, f)
-        import shutil
         if os.path.exists(self.model_path):
             shutil.copy(self.model_path, str(path) + ".xlearn")
 
@@ -774,7 +773,6 @@ class XLearnFeedback:
         with open(path, "rb") as f:
             data = pickle.load(f)
             self.scaler = data.get("scaler", StandardScaler())
-        import shutil
         xlearn_path = str(path) + ".xlearn"
         if os.path.exists(xlearn_path):
             shutil.copy(xlearn_path, self.model_path)

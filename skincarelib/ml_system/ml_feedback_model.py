@@ -55,6 +55,11 @@ class UserState:
         self.liked_vectors: List[np.ndarray] = []
         self.disliked_vectors: List[np.ndarray] = []
         self.irritation_vectors: List[np.ndarray] = []
+        
+        # Track product IDs for repeated feedback analysis
+        self.liked_product_ids: List[int] = []
+        self.disliked_product_ids: List[int] = []
+        self.irritation_product_ids: List[int] = []
 
         # Metadata for explanations
         self.liked_reasons: List[str] = []
@@ -80,15 +85,19 @@ class UserState:
         self.avoid_ingredients: Dict[str, float] = {}
         self.avoid_ingredient_last_seen_at: Dict[str, str] = {}
 
-    def add_liked(self, vec: np.ndarray, reasons: Optional[List[str]] = None):
+    def add_liked(self, vec: np.ndarray, product_id: Optional[int] = None, reasons: Optional[List[str]] = None):
         self.liked_vectors.append(vec.astype(np.float32))
+        if product_id is not None:
+            self.liked_product_ids.append(product_id)
         if reasons:
             self.liked_reasons.extend(reasons)
         self.interactions += 1
         self.liked_count += 1
 
-    def add_disliked(self, vec: np.ndarray, reasons: Optional[List[str]] = None):
+    def add_disliked(self, vec: np.ndarray, product_id: Optional[int] = None, reasons: Optional[List[str]] = None):
         self.disliked_vectors.append(vec.astype(np.float32))
+        if product_id is not None:
+            self.disliked_product_ids.append(product_id)
         if reasons:
             self.disliked_reasons.extend(reasons)
             # Track ingredients to avoid when marked as "contains_X"
@@ -99,8 +108,10 @@ class UserState:
         self.interactions += 1
         self.disliked_count += 1
 
-    def add_irritation(self, vec: np.ndarray, reasons: Optional[List[str]] = None):
+    def add_irritation(self, vec: np.ndarray, product_id: Optional[int] = None, reasons: Optional[List[str]] = None):
         self.irritation_vectors.append(vec.astype(np.float32))
+        if product_id is not None:
+            self.irritation_product_ids.append(product_id)
         if reasons:
             self.irritation_reasons.extend(reasons)
             # Track ingredients to avoid when marked as "contains_X"

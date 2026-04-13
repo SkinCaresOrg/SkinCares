@@ -1103,7 +1103,7 @@ def _seed_user_model_from_onboarding(
         for product_id, _ in suited_products[:top_count]:
             vec = get_product_vector_safe(product_id, product_index)
             if vec is not None:
-                user_state.add_liked(vec)
+                user_state.add_liked(vec, product_id=product_id)
 
     # Add unsuitable products as pseudo-dislikes
     if unsuited_products:
@@ -1114,7 +1114,7 @@ def _seed_user_model_from_onboarding(
         for product_id in unsuited_products[:dislike_count]:
             vec = get_product_vector_safe(product_id, product_index)
             if vec is not None:
-                user_state.add_disliked(vec)
+                user_state.add_disliked(vec, product_id=product_id)
 
     print(
         f"[Onboarding Seeding] user={user_id} skin_type={skin_type} "
@@ -1262,31 +1262,16 @@ def get_recommendations(
                     if user_state.liked_vectors:
                         # We have liked feedback, but we need to know which product each vector belongs to
                         # Since we don't have product_id directly from vectors, we need to use a different approach
-                        # Query database for count information
-                        feedback_rows = (
-                            db.query(UserProductEvent.product_id)
-                            .filter(UserProductEvent.user_id == user_id)
-                            .filter(UserProductEvent.has_tried.is_(True))
-                            .filter(UserProductEvent.reaction == "like")
-                            .all()
-                        )
-                        
-                        for (product_id,) in feedback_rows:
+                        # Directly count from user_state's tracked product IDs (includes onboarding seeds + real feedback)
+                        for product_id in user_state.liked_product_ids:
                             product_like_counts[product_id] = product_like_counts.get(product_id, 0) + 1
                         
                         # Find the mean of all liked vectors
                         mean_vector = np.mean(user_state.liked_vectors, axis=0)
                         preferred_class = 1.0
                     elif user_state.disliked_vectors:
-                        feedback_rows = (
-                            db.query(UserProductEvent.product_id)
-                            .filter(UserProductEvent.user_id == user_id)
-                            .filter(UserProductEvent.has_tried.is_(True))
-                            .filter(UserProductEvent.reaction == "dislike")
-                            .all()
-                        )
-                        
-                        for (product_id,) in feedback_rows:
+                        # Directly count from user_state's tracked product IDs
+                        for product_id in user_state.disliked_product_ids:
                             product_dislike_counts[product_id] = product_dislike_counts.get(product_id, 0) + 1
                         
                         mean_vector = np.mean(user_state.disliked_vectors, axis=0)
@@ -1312,14 +1297,21 @@ def get_recommendations(
                                 
                                 # Boost score for products with repeated feedback
                                 product_feedback_count = product_like_counts.get(product.product_id, 0) or product_dislike_counts.get(product.product_id, 0)
-                                if product_feedback_count > 1:
-                                    # Boost by 0.08 per feedback (capped at 0.32 total boost for 5 feedbacks)
-                                    boost = min(0.32, (product_feedback_count - 1) * 0.08)
+                                if product_feedback_count >= 5:
+                                    # Strong boost for products with 5+ feedbacks (user shown clear preference)
+                                    # For boost: 5 -> +0.3, 6 -> +0.35, 7 -> +0.4, 8+ -> +0.4
+                                    boost = min(0.4, 0.2 + (product_feedback_count - 5) * 0.05)
                                     if preferred_class == 1.0:
-                                        # For liked products, increase score
-                                        score = min(1.0, score + boost)
+                                        # For liked products, use multiplicative boost for low scores
+                                        original_score = score
+                                        if score < 0.7:
+                                            score = min(1.0, score * (1.0 + boost))
+                                        else:
+                                            score = min(1.0, score + boost)
+                                        if product_feedback_count >= 8:
+                                            logger.info(f"[DEBUG] Boosting product {product.product_id}: count={product_feedback_count}, original={original_score:.4f}, boosted={score:.4f}")
                                     else:
-                                        # For disliked products, decrease score
+                                        # For disliked products, penalize significantly
                                         score = max(0.0, score - boost)
                                 
                                 # Apply adjustments
@@ -1516,11 +1508,11 @@ def submit_feedback(
                     reasons = reasons + [payload.free_text]
 
                 if payload.reaction == "like":
-                    user_state.add_liked(vec, reasons=reasons if reasons else None)
+                    user_state.add_liked(vec, product_id=payload.product_id, reasons=reasons if reasons else None)
                 elif payload.reaction == "dislike":
-                    user_state.add_disliked(vec, reasons=reasons if reasons else None)
+                    user_state.add_disliked(vec, product_id=payload.product_id, reasons=reasons if reasons else None)
                 elif payload.reaction == "irritation":
-                    user_state.add_irritation(vec, reasons=reasons if reasons else None)
+                    user_state.add_irritation(vec, product_id=payload.product_id, reasons=reasons if reasons else None)
                 
                 logger.info(f"[DEBUG] feedback: user_id={payload.user_id}, product_id={payload.product_id}, reactions={payload.reaction}, total_interactions={user_state.interactions}")
                 

@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from typing import Optional
 import warnings
@@ -27,10 +28,22 @@ def _core_artifact_paths() -> tuple[Path, Path, Path]:
     return VECTORS_PATH, INDEX_PATH, SCHEMA_PATH
 
 
+def _auto_build_enabled() -> bool:
+    value = os.getenv("DUPES_AUTO_BUILD_ARTIFACTS", "0").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
 def _ensure_core_artifacts() -> None:
     missing = [path for path in _core_artifact_paths() if not path.exists()]
     if not missing:
         return
+
+    if not _auto_build_enabled():
+        raise FileNotFoundError(
+            "Missing core artifacts: "
+            + ", ".join(str(path) for path in missing)
+            + ". Set DUPES_AUTO_BUILD_ARTIFACTS=1 to rebuild automatically."
+        )
 
     warnings.warn(
         "Missing core artifacts: "
@@ -347,28 +360,58 @@ def load_artifacts():
 
 
 _LOAD_ERROR: Optional[Exception] = None
+_INITIALIZED = False
 
-try:
-    VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA, FAISS_INDEX = load_artifacts()
-except (FileNotFoundError, RuntimeError) as e:
-    _LOAD_ERROR = e
-    warnings.warn(f"Could not load artifacts: {e}. Running in degraded mode.")
+VECTORS = None
+PRODUCT_INDEX = {}
+FEATURE_SCHEMA = None
+FAISS_INDEX = None
+METADATA = pd.DataFrame(
+    columns=["product_id", "product_name", "brand", "category", "price"]
+)
+INDEX_TO_ID = {}
+_PRICE_LOOKUP = {}
+SCORER = None
 
-    VECTORS = None
-    PRODUCT_INDEX = {}
-    FEATURE_SCHEMA = None
-    FAISS_INDEX = None
-    METADATA = pd.DataFrame(
-        columns=["product_id", "product_name", "brand", "category", "price"]
-    )
 
-INDEX_TO_ID = {v: k for k, v in PRODUCT_INDEX.items()}
-_PRICE_LOOKUP = METADATA.set_index("product_id")["price"].to_dict()
+def _initialize_runtime() -> None:
+    global _INITIALIZED
+    global _LOAD_ERROR
+    global VECTORS
+    global PRODUCT_INDEX
+    global FEATURE_SCHEMA
+    global METADATA
+    global FAISS_INDEX
+    global INDEX_TO_ID
+    global _PRICE_LOOKUP
+    global SCORER
 
-if FEATURE_SCHEMA is not None and PRODUCT_INDEX:
-    SCORER = DupeScorer(VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, _PRICE_LOOKUP)
-else:
-    SCORER = None
+    if _INITIALIZED:
+        return
+
+    try:
+        VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA, FAISS_INDEX = load_artifacts()
+        INDEX_TO_ID = {v: k for k, v in PRODUCT_INDEX.items()}
+        _PRICE_LOOKUP = METADATA.set_index("product_id")["price"].to_dict()
+        if FEATURE_SCHEMA is not None and PRODUCT_INDEX:
+            SCORER = DupeScorer(VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, _PRICE_LOOKUP)
+        else:
+            SCORER = None
+    except (FileNotFoundError, RuntimeError, ValueError) as error:
+        _LOAD_ERROR = error
+        warnings.warn(f"Could not load artifacts: {error}. Running in degraded mode.")
+        VECTORS = None
+        PRODUCT_INDEX = {}
+        FEATURE_SCHEMA = None
+        FAISS_INDEX = None
+        METADATA = pd.DataFrame(
+            columns=["product_id", "product_name", "brand", "category", "price"]
+        )
+        INDEX_TO_ID = {}
+        _PRICE_LOOKUP = {}
+        SCORER = None
+    finally:
+        _INITIALIZED = True
 
 
 # ---------------------------
@@ -399,9 +442,11 @@ def _faiss_candidates(source_id: str, k: int = FAISS_RETRIEVAL_K) -> list:
 # Main dupe finder
 # ---------------------------
 def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
+    _initialize_runtime()
+
     if SCORER is None or FAISS_INDEX is None:
         raise RuntimeError(
-            "DupeScorer not initialized — artifacts failed to load at import time.\n"
+            "DupeScorer not initialized — artifacts could not be loaded.\n"
             f"Expected files:\n"
             f"  {VECTORS_PATH}\n"
             f"  {INDEX_PATH}\n"
@@ -409,7 +454,7 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
             f"  {METADATA_PATH}\n"
             f"  {FAISS_INDEX_PATH}\n"
             f"Original error: {_LOAD_ERROR}\n"
-            "Run vectorizer.py to regenerate missing artifacts."
+            "Set DUPES_AUTO_BUILD_ARTIFACTS=1 to allow automatic rebuilds."
         )
 
     if product_id not in PRODUCT_INDEX:

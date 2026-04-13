@@ -19,7 +19,7 @@ METADATA_PATH = ROOT / "data" / "processed" / "products_with_signals.csv"
 FAISS_INDEX_PATH = ROOT / "artifacts" / "faiss.index"
 
 # How many ANN neighbours to fetch from FAISS before price/subtype filtering.
-FAISS_RETRIEVAL_K = 2500  # ~5% of the catalogue
+FAISS_RETRIEVAL_K = 1000  # ~2% of the catalogue
 
 
 def _core_artifact_paths() -> tuple[Path, Path, Path]:
@@ -48,11 +48,15 @@ def _ensure_core_artifacts() -> None:
             + ", ".join(str(path) for path in still_missing)
         )
 
-
 def _build_faiss_index(vectors: np.ndarray):
     normalized = vectors.copy().astype(np.float32)
     faiss.normalize_L2(normalized)
-    index = faiss.IndexFlatIP(normalized.shape[1])
+
+    dim = normalized.shape[1]
+    index = faiss.IndexHNSWFlat(dim, 48, faiss.METRIC_INNER_PRODUCT)
+    index.hnsw.efConstruction = 300
+    index.hnsw.efSearch = 256
+
     index.add(normalized)
     return index
 

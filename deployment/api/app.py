@@ -1,5 +1,6 @@
 import csv
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 import json
 import logging
 import os
@@ -102,30 +103,172 @@ def _normalize_ingredient_name(ingredient: str) -> str:
     return ingredient.lower().strip().replace("_", " ")
 
 
-def _compute_reason_adjustment(reason_tags: Optional[List[str]], reaction: str) -> float:
-    """Compute adjustment factor based on reason tags and reaction type."""
-    if not reason_tags:
+def _compute_reason_adjustment(product: ProductDetail, user_state: UserState) -> float:
+    """Compute adjustment factor based on reason tags with time decay.
+    
+    Args:
+        product: Product to evaluate
+        user_state: User's state with reason preferences and timestamps
+        
+    Returns:
+        Adjustment factor (negative for avoided reasons, positive for preferred)
+    """
+    if not hasattr(user_state, 'reason_tag_preferences') or not user_state.reason_tag_preferences:
         return 0.0
-    # Stub: return positive for likes, negative for dislikes
-    return 0.1 if reaction == "like" else -0.1
+    
+    if not hasattr(product, 'ingredients') or not product.ingredients:
+        return 0.0
+    
+    now = datetime.now(timezone.utc)
+    total_adjustment = 0.0
+    active_preferences = 0
+    
+    # Check each reason tag preference
+    for reason_tag, preference_strength in user_state.reason_tag_preferences.items():
+        if reason_tag not in _AVOID_INGREDIENT_TRIGGERS:
+            continue
+            
+        target_ingredient = _AVOID_INGREDIENT_TRIGGERS[reason_tag].lower()
+        
+        # Check if any product ingredient matches
+        has_match = any(
+            target_ingredient in _normalize_ingredient_name(ing)
+            for ing in product.ingredients
+        )
+        
+        if not has_match:
+            continue
+        
+        active_preferences += 1
+        
+        # Apply time decay
+        decay_factor = 1.0
+        if reason_tag in user_state.reason_tag_last_seen_at:
+            try:
+                last_seen_str = user_state.reason_tag_last_seen_at[reason_tag]
+                last_seen = datetime.fromisoformat(last_seen_str)
+                if last_seen.tzinfo is None:
+                    last_seen = last_seen.replace(tzinfo=timezone.utc)
+                days_ago = (now - last_seen).days
+                # Decay: 0 days = 1.0x, 365 days = 0.1x
+                decay_factor = max(0.1, 1.0 - (days_ago / 365.0) * 0.9)
+            except (ValueError, AttributeError):
+                decay_factor = 1.0
+        
+        total_adjustment += preference_strength * decay_factor
+    
+    return total_adjustment if active_preferences > 0 else 0.0
 
 
-def _compute_structured_adjustment(reason_tags: Optional[List[str]], reaction: str) -> float:
-    """Compute adjustment factor for structured signals (ingredient avoidance)."""
-    if not reason_tags:
+def _compute_structured_adjustment(
+    product: ProductDetail,
+    user_state: UserState,
+    user_profile: OnboardingRequest
+) -> float:
+    """Compute adjustment factor for structured signals (ingredient avoidance) with time decay.
+    
+    Args:
+        product: Product to evaluate
+        user_state: User's state with avoid_ingredients tracking
+        user_profile: User's profile with ingredient_exclusions
+        
+    Returns:
+        Adjustment factor (negative for avoided ingredients)
+    """
+    if not hasattr(product, 'ingredients') or not product.ingredients:
         return 0.0
-    # Stub: return stronger adjustment for structured signals
-    return 0.2 if reaction == "like" else -0.2
+    
+    now = datetime.now(timezone.utc)
+    total_adjustment = 0.0
+    active_avoids = 0
+    
+    # Check profile-level ingredient exclusions first (highest priority)
+    if hasattr(user_profile, 'ingredient_exclusions') and user_profile.ingredient_exclusions:
+        for exclusion in user_profile.ingredient_exclusions:
+            exclusion_norm = _normalize_ingredient_name(exclusion)
+            has_match = any(
+                exclusion_norm in _normalize_ingredient_name(ing)
+                for ing in product.ingredients
+            )
+            if has_match:
+                # Profile exclusions override everything
+                return -1.0
+    
+    # Check avoid_ingredients with time decay
+    if hasattr(user_state, 'avoid_ingredients') and user_state.avoid_ingredients:
+        for ingredient_key, avoidance_strength in user_state.avoid_ingredients.items():
+            # Check if any product ingredient matches
+            has_match = any(
+                ingredient_key in _normalize_ingredient_name(ing)
+                or _normalize_ingredient_name(ing) in ingredient_key
+                for ing in product.ingredients
+            )
+            
+            if not has_match:
+                continue
+            
+            active_avoids += 1
+            
+            # Apply time decay
+            decay_factor = 1.0
+            if hasattr(user_state, 'avoid_ingredient_last_seen_at'):
+                if ingredient_key in user_state.avoid_ingredient_last_seen_at:
+                    try:
+                        last_seen_str = user_state.avoid_ingredient_last_seen_at[ingredient_key]
+                        last_seen = datetime.fromisoformat(last_seen_str)
+                        if last_seen.tzinfo is None:
+                            last_seen = last_seen.replace(tzinfo=timezone.utc)
+                        days_ago = (now - last_seen).days
+                        # Decay: 0 days = 1.0x, 365 days = 0.1x
+                        decay_factor = max(0.1, 1.0 - (days_ago / 365.0) * 0.9)
+                    except (ValueError, AttributeError):
+                        decay_factor = 1.0
+            
+            total_adjustment -= avoidance_strength * decay_factor
+    
+    return total_adjustment if active_avoids > 0 else 0.0
 
 
 def _replay_questionnaire_feedback_from_db() -> dict:
     """Replay questionnaire feedback from database to rebuild user models."""
-    # Stub implementation that returns status
-    return {
-        "startup_replay_processed": 0,
-        "startup_replay_skipped": 0,
-        "startup_replay_errors": 0,
-    }
+    global PROCESSED_QUESTIONNAIRE_RESPONSE_IDS, QUESTIONNAIRE_PIPELINE_STATUS
+    
+    try:
+        db = SessionLocal()
+        
+        # Query UserProductEvent entries that haven't been processed yet
+        all_events = db.query(UserProductEvent).all()
+        new_event_ids = []
+        
+        for event in all_events:
+            if event.id not in PROCESSED_QUESTIONNAIRE_RESPONSE_IDS:
+                PROCESSED_QUESTIONNAIRE_RESPONSE_IDS.add(event.id)
+                new_event_ids.append(event.id)
+                
+                # Try to update user state based on event
+                if hasattr(event, 'user_id') and hasattr(event, 'reaction'):
+                    user_state = get_user_state(event.user_id)
+                    if hasattr(event, 'reason_tags') and event.reason_tags:
+                        # Track reason tags with timestamp
+                        now = datetime.now(timezone.utc).isoformat()
+                        for reason_tag in event.reason_tags:
+                            if event.reaction == "like":
+                                user_state.reason_tag_preferences[reason_tag] = user_state.reason_tag_preferences.get(reason_tag, 0.0) + 1.0
+                            else:
+                                user_state.reason_tag_preferences[reason_tag] = user_state.reason_tag_preferences.get(reason_tag, 0.0) - 1.0
+                            user_state.reason_tag_last_seen_at[reason_tag] = now
+                            user_state.reason_signal_count += 1
+        
+        QUESTIONNAIRE_PIPELINE_STATUS["startup_replay_processed"] += len(new_event_ids)
+        QUESTIONNAIRE_PIPELINE_STATUS["last_run_processed_ids"] = new_event_ids
+        
+        db.close()
+        
+    except Exception as e:
+        logger.error(f"Error in questionnaire replay: {e}")
+        QUESTIONNAIRE_PIPELINE_STATUS["startup_replay_errors"] += 1
+    
+    return QUESTIONNAIRE_PIPELINE_STATUS
 
 
 Category = Literal[
@@ -482,6 +625,32 @@ USER_STATES: Dict[str, UserState] = {}
 USER_PROFILES: Dict[str, OnboardingRequest] = {}
 USER_FEEDBACK: List[FeedbackRequest] = []
 DB_INITIALIZED = False
+
+# Questionnaire pipeline tracking
+PROCESSED_QUESTIONNAIRE_RESPONSE_IDS: set = set()
+QUESTIONNAIRE_PIPELINE_STATUS: Dict = {
+    "startup_replay_processed": 0,
+    "startup_replay_skipped": 0,
+    "startup_replay_errors": 0,
+    "last_run_processed_ids": [],
+    "last_run_timestamp": None,
+    "last_run_source": None,
+}
+QUESTIONNAIRE_COMPLETION_METRICS: Dict = {
+    "total_swipes": 0,
+    "completed_questionnaires": 0,
+    "skipped_questionnaires": 0,
+}
+QUESTIONNAIRE_OUTCOME_METRICS: Dict = {
+    "cohorts": {
+        "after_skipped": {"samples": 0, "like_count": 0, "dislike_count": 0},
+        "after_completed": {"samples": 0, "like_count": 0, "dislike_count": 0},
+    },
+    "uplift": {
+        "absolute_like_rate_uplift": 0.0,
+        "relative_like_rate_uplift": 0.0,
+    }
+}
 
 
 def get_user_session(user_id: str) -> SwipeSession:
@@ -1047,7 +1216,20 @@ def get_recommendations(
                         vec = get_product_vector_safe(product.product_id, product_index)
                         if vec is not None:
                             score = float(model.predict_preference(vec))
-                            scores.append(max(0.1, score))
+                            
+                            # Apply reason-based and structured adjustments
+                            reason_adjustment = _compute_reason_adjustment(product, user_state)
+                            user_profile = USER_PROFILES.get(user_id)
+                            if user_profile:
+                                structured_adjustment = _compute_structured_adjustment(
+                                    product, user_state, user_profile
+                                )
+                            else:
+                                structured_adjustment = 0.0
+                            
+                            # Combine adjustments (structured is higher priority)
+                            combined_score = score + reason_adjustment + structured_adjustment
+                            scores.append(max(0.1, combined_score))
                         else:
                             scores.append(0.5)
         except Exception as e:
@@ -1167,6 +1349,30 @@ def submit_feedback(
                     user_state.add_disliked(vec, reasons=reasons if reasons else None)
                 elif payload.reaction == "irritation":
                     user_state.add_irritation(vec, reasons=reasons if reasons else None)
+                
+                # Update reason tag preferences with time tracking
+                now = datetime.now(timezone.utc).isoformat()
+                if payload.reason_tags:
+                    for reason_tag in payload.reason_tags:
+                        if payload.reaction == "like":
+                            user_state.reason_tag_preferences[reason_tag] = (
+                                user_state.reason_tag_preferences.get(reason_tag, 0.0) + 1.0
+                            )
+                        elif payload.reaction == "dislike" or payload.reaction == "irritation":
+                            user_state.reason_tag_preferences[reason_tag] = (
+                                user_state.reason_tag_preferences.get(reason_tag, 0.0) - 1.0
+                            )
+                        user_state.reason_tag_last_seen_at[reason_tag] = now
+                        user_state.reason_signal_count += 1
+                        
+                        # Also track avoided ingredients for structured signals
+                        if reason_tag in _AVOID_INGREDIENT_TRIGGERS:
+                            ingredient_key = _AVOID_INGREDIENT_TRIGGERS[reason_tag].lower()
+                            if payload.reaction == "dislike" or payload.reaction == "irritation":
+                                user_state.avoid_ingredients[ingredient_key] = (
+                                    user_state.avoid_ingredients.get(ingredient_key, 0.0) + 1.0
+                                )
+                                user_state.avoid_ingredient_last_seen_at[ingredient_key] = now
 
             _persist_user_model_state(db, payload.user_id, user_state)
             _persist_model_checkpoint(db, payload.user_id, user_state)
@@ -1348,7 +1554,10 @@ def debug_questionnaire_status() -> dict:
     """Get questionnaire pipeline status."""
     if not DEBUG_ENDPOINTS_ENABLED:
         raise HTTPException(status_code=404, detail="Not found")
-    return {"processed_response_ids_count": 0}
+    return {
+        "processed_response_ids_count": len(PROCESSED_QUESTIONNAIRE_RESPONSE_IDS),
+        **QUESTIONNAIRE_PIPELINE_STATUS
+    }
 
 
 @app.get("/api/debug/questionnaire-completion-metrics")
@@ -1356,7 +1565,21 @@ def debug_questionnaire_completion() -> dict:
     """Get questionnaire completion metrics."""
     if not DEBUG_ENDPOINTS_ENABLED:
         raise HTTPException(status_code=404, detail="Not found")
-    return {"completion_rate": 0.0, "all_time": {"completed": 0, "total": 0}}
+    total = (QUESTIONNAIRE_COMPLETION_METRICS["completed_questionnaires"] + 
+             QUESTIONNAIRE_COMPLETION_METRICS["skipped_questionnaires"])
+    completion_rate = (
+        QUESTIONNAIRE_COMPLETION_METRICS["completed_questionnaires"] / total
+        if total > 0 else 0.0
+    )
+    return {
+        "completion_rate": completion_rate,
+        "all_time": {
+            "total_swipes": QUESTIONNAIRE_COMPLETION_METRICS["total_swipes"],
+            "completed_questionnaires": QUESTIONNAIRE_COMPLETION_METRICS["completed_questionnaires"],
+            "skipped_questionnaires": QUESTIONNAIRE_COMPLETION_METRICS["skipped_questionnaires"],
+            "completion_rate": completion_rate,
+        }
+    }
 
 
 @app.get("/api/debug/questionnaire-outcome-metrics")
@@ -1364,7 +1587,7 @@ def debug_questionnaire_outcome() -> dict:
     """Get questionnaire outcome metrics."""
     if not DEBUG_ENDPOINTS_ENABLED:
         raise HTTPException(status_code=404, detail="Not found")
-    return {"outcome_metrics": {}, "cohorts": {}}
+    return QUESTIONNAIRE_OUTCOME_METRICS
 
 
 @app.post("/api/debug/questionnaire-pipeline-replay")
@@ -1372,12 +1595,19 @@ def debug_questionnaire_replay(db: Session = Depends(get_db)) -> dict:
     """Replay questionnaire pipeline from DB."""
     if not DEBUG_ENDPOINTS_ENABLED:
         raise HTTPException(status_code=404, detail="Not found")
-    events = db.query(UserProductEvent).all()
+    
+    # Perform the replay
+    _replay_questionnaire_feedback_from_db()
+    
+    # Update status to indicate manual replay
+    QUESTIONNAIRE_PIPELINE_STATUS["last_run_source"] = "manual"
+    QUESTIONNAIRE_PIPELINE_STATUS["last_run_timestamp"] = datetime.now(timezone.utc).isoformat()
+    
     return {
-        "interactions": len(events),
-        "reason_signal_count": len(events),
-        "last_run_source": "database",
-        "timestamp": None,
+        "processed_response_ids_count": len(PROCESSED_QUESTIONNAIRE_RESPONSE_IDS),
+        "last_run_source": QUESTIONNAIRE_PIPELINE_STATUS["last_run_source"],
+        "last_run_timestamp": QUESTIONNAIRE_PIPELINE_STATUS["last_run_timestamp"],
+        "last_run_processed_ids": QUESTIONNAIRE_PIPELINE_STATUS["last_run_processed_ids"],
     }
 
 

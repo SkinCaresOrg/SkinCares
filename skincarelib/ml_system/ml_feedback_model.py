@@ -69,6 +69,16 @@ class UserState:
         
         # Track avoided ingredients based on feedback reasons
         self.avoided_ingredients: set = set()
+        
+        # Reason tag preferences with time decay tracking
+        self.reason_tag_preferences: Dict[str, float] = {}
+        self.reason_tag_last_seen_at: Dict[str, str] = {}
+        self.reason_signal_count: int = 0
+        
+        # Ingredient-level preferences
+        self.preferred_ingredients: Dict[str, float] = {}
+        self.avoid_ingredients: Dict[str, float] = {}
+        self.avoid_ingredient_last_seen_at: Dict[str, str] = {}
 
     def add_liked(self, vec: np.ndarray, reasons: Optional[List[str]] = None):
         self.liked_vectors.append(vec.astype(np.float32))

@@ -66,6 +66,9 @@ class UserState:
         self.liked_count: int = 0
         self.disliked_count: int = 0
         self.irritation_count: int = 0
+        
+        # Track avoided ingredients based on feedback reasons
+        self.avoided_ingredients: set = set()
 
     def add_liked(self, vec: np.ndarray, reasons: List[str] | None = None):
         self.liked_vectors.append(vec.astype(np.float32))
@@ -78,6 +81,11 @@ class UserState:
         self.disliked_vectors.append(vec.astype(np.float32))
         if reasons:
             self.disliked_reasons.extend(reasons)
+            # Track ingredients to avoid when marked as "contains_X"
+            for reason in reasons:
+                if "contains_" in reason.lower():
+                    ingredient = reason.lower().replace("contains_", "").strip()
+                    self.avoided_ingredients.add(ingredient)
         self.interactions += 1
         self.disliked_count += 1
 
@@ -85,6 +93,11 @@ class UserState:
         self.irritation_vectors.append(vec.astype(np.float32))
         if reasons:
             self.irritation_reasons.extend(reasons)
+            # Track ingredients to avoid when marked as "contains_X"
+            for reason in reasons:
+                if "contains_" in reason.lower():
+                    ingredient = reason.lower().replace("contains_", "").strip()
+                    self.avoided_ingredients.add(ingredient)
         self.interactions += 1
         self.irritation_count += 1
 

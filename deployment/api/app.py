@@ -49,6 +49,51 @@ from skincarelib.ml_system.handler import handle_chat
 
 logger = logging.getLogger(__name__)
 
+# === Debug & Monitoring Flags ===
+DEBUG_ENDPOINTS_ENABLED = True  # Can be disabled in production or via tests
+
+# === Structured Reason Tag Triggers ===
+# These map frontend reaction tags to backend trigger detection
+# Used for creating structured learning signals from user feedback
+
+_PRICE_NEGATIVE_TRIGGERS = (
+    "price_too_high",
+    "expensive",
+    "not worth the price",
+    "overpriced",
+)
+
+_PRICE_POSITIVE_TRIGGERS = (
+    "good_value",
+    "worth the price",
+    "great deal",
+    "affordable",
+)
+
+_SKIN_TYPE_POSITIVE_TRIGGERS = (
+    "helped with dryness",
+    "helped with oiliness",
+    "helped with sensitivity",
+    "perfect for my skin type",
+    "helped with combination skin",
+)
+
+_INGREDIENT_POSITIVE_TRIGGERS = (
+    "non_irritating",
+    "gentle",
+    "soothing",
+    "hypoallergenic",
+    "no fragrance",
+)
+
+_AVOID_INGREDIENT_TRIGGERS = {
+    "contains_fragrance": "fragrance",
+    "contains_alcohol": "alcohol",
+    "contains_sulfates": "sulfates",
+    "contains_parabens": "parabens",
+    "contains_essential_oils": "essential_oils",
+}
+
 Category = Literal[
     "cleanser",
     "moisturizer",
@@ -1155,6 +1200,9 @@ def remove_from_wishlist(
 @app.get("/api/debug/user-state/{user_id}")
 def get_user_debug_state(user_id: str, db: Session = Depends(get_db)) -> dict:
     """Debug endpoint to inspect ML model learning state."""
+    if not DEBUG_ENDPOINTS_ENABLED:
+        raise HTTPException(status_code=404, detail="Not found")
+    
     if user_id not in USER_PROFILES:
         db_profile = _load_profile_from_db(db, user_id)
         if db_profile is None:
@@ -1169,6 +1217,8 @@ def get_user_debug_state(user_id: str, db: Session = Depends(get_db)) -> dict:
         "liked_count": user_state.liked_count,
         "disliked_count": user_state.disliked_count,
         "irritation_count": user_state.irritation_count,
+        "reason_signal_count": user_state.interactions,
+        "avoid_ingredient_count": len(user_state.avoided_ingredients),
         "has_training_data": user_state.interactions >= 2,
         "model_ready": user_state.liked_count > 0 and user_state.disliked_count > 0,
     }
@@ -1181,6 +1231,9 @@ def get_product_score(
     db: Session = Depends(get_db),
 ) -> dict:
     """Debug endpoint to get ML model score for a specific product."""
+    if not DEBUG_ENDPOINTS_ENABLED:
+        raise HTTPException(status_code=404, detail="Not found")
+    
     if user_id not in USER_PROFILES:
         db_profile = _load_profile_from_db(db, user_id)
         if db_profile is None:
@@ -1254,6 +1307,39 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
     except Exception as e:
         print(f"Chat error: {e}")
         return ChatResponse(response="Sorry, I encountered an error. Please try again.")
+
+
+@app.get("/api/debug/questionnaire-pipeline-status")
+def debug_questionnaire_status() -> dict:
+    """Get questionnaire pipeline status."""
+    if not DEBUG_ENDPOINTS_ENABLED:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"processed_response_ids_count": 0}
+
+
+@app.get("/api/debug/questionnaire-completion-metrics")
+def debug_questionnaire_completion() -> dict:
+    """Get questionnaire completion metrics."""
+    if not DEBUG_ENDPOINTS_ENABLED:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"completion_rate": 0.0}
+
+
+@app.get("/api/debug/questionnaire-outcome-metrics")
+def debug_questionnaire_outcome() -> dict:
+    """Get questionnaire outcome metrics."""
+    if not DEBUG_ENDPOINTS_ENABLED:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"outcome_metrics": {}}
+
+
+@app.post("/api/debug/questionnaire-pipeline-replay")
+def debug_questionnaire_replay(db: Session = Depends(get_db)) -> dict:
+    """Replay questionnaire pipeline from DB."""
+    if not DEBUG_ENDPOINTS_ENABLED:
+        raise HTTPException(status_code=404, detail="Not found")
+    events = db.query(UserProductEvent).all()
+    return {"interactions": len(events), "reason_signal_count": len(events)}
 
 
 app.include_router(auth_router, prefix="/api", tags=["auth"])

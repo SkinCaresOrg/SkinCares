@@ -5,12 +5,16 @@ Replaces simple weighted average with proper machine learning:
 - Logistic Regression
 - Random Forest Classifier
 - Gradient Boosting Classifier
+- LightGBM (large-scale)
+- XLearn FFM (ultra-large-scale)
 - Contextual Bandit (online learning)
 """
 
 from __future__ import annotations
 
+import os
 import pickle
+import shutil
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
@@ -25,6 +29,20 @@ try:
     VW_AVAILABLE = True
 except ImportError:
     VW_AVAILABLE = False
+
+try:
+    import lightgbm as lgb
+
+    LIGHTGBM_AVAILABLE = True
+except ImportError:
+    LIGHTGBM_AVAILABLE = False
+
+try:
+    import xlearn
+
+    XLEARN_AVAILABLE = True
+except ImportError:
+    XLEARN_AVAILABLE = False
 
 
 class UserState:
@@ -484,3 +502,267 @@ def compute_user_vector(user: UserState, schema: Optional[Dict] = None) -> np.nd
         user_vec = user_vec / norm
 
     return user_vec
+
+
+class LightGBMFeedback:
+    """
+    LightGBM model for user preference prediction.
+
+    Optimized for large datasets (2000+ samples).
+    Fast training, handles categorical features, high accuracy.
+    """
+
+    def __init__(self, n_estimators: int = 100, learning_rate: float = 0.1):
+        if not LIGHTGBM_AVAILABLE:
+            raise ImportError(
+                "lightgbm is required for LightGBMFeedback. Install with: pip install lightgbm"
+            )
+
+        self.n_estimators = n_estimators
+        self.learning_rate = learning_rate
+        self.model = None
+        self.scaler = StandardScaler()
+        self.is_trained = False
+
+    def fit(self, user_state: UserState):
+        """Train LightGBM on user interactions."""
+        data = user_state.get_training_data()
+        if data is None:
+            return False
+
+        X, y = data
+        if len(np.unique(y)) < 2:
+            return False
+
+        X_scaled = self.scaler.fit_transform(X)
+
+        try:
+            self.model = lgb.LGBMClassifier(
+                n_estimators=self.n_estimators,
+                learning_rate=self.learning_rate,
+                num_leaves=31,
+                max_depth=-1,
+                random_state=42,
+                verbose=-1,
+            )
+            self.model.fit(X_scaled, y, log_eval_period=0)
+            self.is_trained = True
+            return True
+        except Exception:
+            return False
+
+    def predict_preference(self, product_vector: np.ndarray) -> float:
+        """Predict preference for a product (0.0 to 1.0)."""
+        if not self.is_trained or self.model is None:
+            return 0.5
+
+        X = product_vector.reshape(1, -1).astype(np.float32)
+        X_scaled = self.scaler.transform(X)
+        return float(self.model.predict_proba(X_scaled)[0, 1])
+
+    def score_products(self, product_vectors: np.ndarray) -> np.ndarray:
+        """Score multiple products."""
+        if not self.is_trained or self.model is None:
+            return np.ones(len(product_vectors)) * 0.5
+
+        X_scaled = self.scaler.transform(product_vectors.astype(np.float32))
+        return self.model.predict_proba(X_scaled)[:, 1].astype(np.float32)
+
+    def get_feature_importance(self) -> np.ndarray:
+        """Get feature importance scores."""
+        if not self.is_trained or self.model is None:
+            return np.array([])
+        return self.model.feature_importances_.astype(np.float32)
+
+    def save(self, path: Path):
+        """Save model to disk."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "wb") as f:
+            pickle.dump({"model": self.model, "scaler": self.scaler}, f)
+
+    def load(self, path: Path):
+        """Load model from disk."""
+        with open(path, "rb") as f:
+            data = pickle.load(f)
+            self.model = data["model"]
+            self.scaler = data["scaler"]
+            self.is_trained = True
+
+
+class XLearnFeedback:
+    """
+    XLearn FFM (Field-aware Factorization Machines) model for preference prediction.
+
+    Excellent for high-dimensional sparse data and feature interactions.
+    Fast training, memory efficient, good for production at scale (10000+ samples).
+    """
+
+    def __init__(self, task: str = "binary", epoch: int = 10, learning_rate: float = 0.1):
+        if not XLEARN_AVAILABLE:
+            raise ImportError(
+                "xlearn is required for XLearnFeedback. Install with: pip install xlearn"
+            )
+
+        self.task = task
+        self.epoch = epoch
+        self.learning_rate = learning_rate
+        self.model = None
+        self.scaler = StandardScaler()
+        self.is_trained = False
+        self.model_path = "/tmp/xlearn_model.bin"
+
+    def fit(self, user_state: UserState):
+        """Train XLearn FFM on user interactions."""
+        data = user_state.get_training_data()
+        if data is None:
+            return False
+
+        X, y = data
+        if len(np.unique(y)) < 2:
+            return False
+
+        X_scaled = self.scaler.fit_transform(X)
+
+        try:
+            import tempfile
+            import os
+
+            # Convert to LIBFFM format (field:feature:value)
+            with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+                train_file = f.name
+                for i, (sample, label) in enumerate(zip(X_scaled, y)):
+                    fields = " ".join(
+                        f"{j}:{j}:{sample[j]:.6f}"
+                        for j in range(len(sample))
+                        if sample[j] != 0
+                    )
+                    f.write(f"{label} {fields}\n")
+
+            self.model = xlearn.FFMModel(
+                task=self.task,
+                lr=self.learning_rate,
+                epoch=self.epoch,
+                k=4,  # Latent dimension
+            )
+            self.model.fit(train_file, self.model_path)
+            self.is_trained = True
+
+            # Cleanup
+            try:
+                os.unlink(train_file)
+            except Exception:
+                pass
+
+            return True
+        except Exception:
+            return False
+
+    def predict_preference(self, product_vector: np.ndarray) -> float:
+        """Predict preference for a product (0.0 to 1.0)."""
+        if not self.is_trained or self.model is None:
+            return 0.5
+
+        try:
+            X = product_vector.reshape(1, -1).astype(np.float32)
+            X_scaled = self.scaler.transform(X)
+
+            # Create temp file for prediction
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+                test_file = f.name
+                fields = " ".join(
+                    f"{j}:{j}:{X_scaled[0][j]:.6f}"
+                    for j in range(len(X_scaled[0]))
+                    if X_scaled[0][j] != 0
+                )
+                f.write(f"0 {fields}\n")
+
+            predictions = []
+            output_file = test_file + ".out"
+            self.model.predict(test_file, output_file)
+
+            try:
+                with open(output_file, "r") as f:
+                    pred = float(f.readline().strip())
+                predictions.append(pred)
+            except Exception:
+                predictions.append(0.5)
+
+            # Cleanup
+            try:
+                import os
+                os.unlink(test_file)
+                os.unlink(output_file)
+            except Exception:
+                pass
+
+            return float(predictions[0]) if predictions else 0.5
+        except Exception:
+            return 0.5
+
+    def score_products(self, product_vectors: np.ndarray) -> np.ndarray:
+        """Score multiple products."""
+        if not self.is_trained or self.model is None:
+            return np.ones(len(product_vectors)) * 0.5
+
+        try:
+            X_scaled = self.scaler.transform(product_vectors.astype(np.float32))
+
+            import tempfile
+            import os
+
+            with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+                test_file = f.name
+                for sample in X_scaled:
+                    fields = " ".join(
+                        f"{j}:{j}:{sample[j]:.6f}"
+                        for j in range(len(sample))
+                        if sample[j] != 0
+                    )
+                    f.write(f"0 {fields}\n")
+
+            output_file = test_file + ".out"
+            self.model.predict(test_file, output_file)
+
+            scores = []
+            try:
+                with open(output_file, "r") as f:
+                    for line in f:
+                        try:
+                            scores.append(float(line.strip()))
+                        except ValueError:
+                            scores.append(0.5)
+            except Exception:
+                scores = [0.5] * len(product_vectors)
+
+            # Cleanup
+            try:
+                os.unlink(test_file)
+                os.unlink(output_file)
+            except Exception:
+                pass
+
+            return np.array(scores, dtype=np.float32)
+        except Exception:
+            return np.ones(len(product_vectors), dtype=np.float32) * 0.5
+
+    def save(self, path: Path):
+        """Save model to disk."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "wb") as f:
+            pickle.dump({"model_path": self.model_path, "scaler": self.scaler}, f)
+        import shutil
+        if os.path.exists(self.model_path):
+            shutil.copy(self.model_path, str(path) + ".xlearn")
+
+    def load(self, path: Path):
+        """Load model from disk."""
+        with open(path, "rb") as f:
+            data = pickle.load(f)
+            self.scaler = data.get("scaler", StandardScaler())
+        import shutil
+        xlearn_path = str(path) + ".xlearn"
+        if os.path.exists(xlearn_path):
+            shutil.copy(xlearn_path, self.model_path)
+            self.is_trained = True

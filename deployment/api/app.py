@@ -36,8 +36,13 @@ from deployment.api.persistence.models import (
 from skincarelib.ml_system.ml_feedback_model import (
     LogisticRegressionFeedback,
     RandomForestFeedback,
+    GradientBoostingFeedback,
     ContextualBanditFeedback,
+    LightGBMFeedback,
+    XLearnFeedback,
     UserState,
+    LIGHTGBM_AVAILABLE,
+    XLEARN_AVAILABLE,
 )
 from skincarelib.ml_system.swipe_session import SwipeSession
 from skincarelib.ml_system.handler import handle_chat
@@ -262,6 +267,8 @@ app.add_middleware(
 # TODO: Fine-tune these based on production metrics.
 EARLY_STAGE_THRESHOLD = 5  # Minimum interactions to start using complex models
 MID_STAGE_THRESHOLD = 20  # Minimum interactions to use online learning
+LARGE_SCALE_THRESHOLD = 100  # Minimum interactions to use LightGBM
+ULTRA_LARGE_THRESHOLD = 500  # Minimum interactions to use XLearn FFM
 MAX_ONBOARDING_SEED_LIKES = 40
 MAX_ONBOARDING_SEED_DISLIKES = 40
 
@@ -689,16 +696,37 @@ def get_best_model(user_state: UserState):
     Strategy:
     - Early stage (< 5 interactions): LogisticRegression (fast, lightweight)
     - Mid stage (5-20 interactions): RandomForest (captures complex patterns)
-    - Experienced (20+ interactions): ContextualBandit (online learning, exploration)
+    - Large scale (20-100 interactions): GradientBoosting (more complex patterns)
+    - Power user (100-500 interactions): LightGBM (very fast, scalable)
+    - Ultra-scale (500+): XLearn FFM (optimal for ultra-large datasets)
+    - Fallback: ContextualBandit (online learning with exploration)
     """
     interactions = user_state.interactions
 
+    # Try ultra-large scale model first
+    if interactions >= ULTRA_LARGE_THRESHOLD and XLEARN_AVAILABLE:
+        try:
+            return XLearnFeedback(), "XLearn FFM (Ultra-Scale)"
+        except Exception:
+            pass  # Fall through to next option
+
+    # Try large-scale model
+    if interactions >= LARGE_SCALE_THRESHOLD and LIGHTGBM_AVAILABLE:
+        try:
+            return LightGBMFeedback(), "LightGBM (Power User)"
+        except Exception:
+            pass  # Fall through to next option
+
+    # Standard progression for typical users
     if interactions < EARLY_STAGE_THRESHOLD:
         # Early stage: need fast feedback (< 5 interactions)
         return LogisticRegressionFeedback(), "LogisticRegression (Early Stage)"
     elif interactions < MID_STAGE_THRESHOLD:
         # Mid stage: more data available, can handle complexity (5-20 interactions)
         return RandomForestFeedback(), "RandomForest (Mid Stage)"
+    elif interactions < LARGE_SCALE_THRESHOLD:
+        # Growing user: even more data (20-100 interactions)
+        return GradientBoostingFeedback(), "GradientBoosting (Growth Stage)"
     else:
         # Experienced user: use online learning with exploration
         return ContextualBanditFeedback(

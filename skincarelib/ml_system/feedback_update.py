@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Optional
 
@@ -51,6 +52,10 @@ class UserState:
         self.disliked_vectors: List[np.ndarray] = []
         self.irritation_vectors: List[np.ndarray] = []
 
+        self.liked_timestamps: List[datetime] = []
+        self.disliked_timestamps: List[datetime] = []
+        self.irritation_timestamps: List[datetime] = []
+
         self.liked_reasons: List[str] = []
         self.disliked_reasons: List[str] = []
         self.irritation_reasons: List[str] = []
@@ -60,20 +65,29 @@ class UserState:
         self.disliked_count: int = 0
         self.irritation_count: int = 0
 
-    def add_liked(self, vec: np.ndarray, reasons: List[str]):
+    def add_liked(
+        self, vec: np.ndarray, reasons: List[str], timestamp: Optional[datetime] = None
+    ):
         self.liked_vectors.append(vec)
+        self.liked_timestamps.append(timestamp or datetime.now(timezone.utc))
         self.liked_reasons.extend(reasons)
         self.interactions += 1
         self.liked_count += 1
 
-    def add_disliked(self, vec: np.ndarray, reasons: List[str]):
+    def add_disliked(
+        self, vec: np.ndarray, reasons: List[str], timestamp: Optional[datetime] = None
+    ):
         self.disliked_vectors.append(vec)
+        self.disliked_timestamps.append(timestamp or datetime.now(timezone.utc))
         self.disliked_reasons.extend(reasons)
         self.interactions += 1
         self.disliked_count += 1
 
-    def add_irritation(self, vec: np.ndarray, reasons: List[str]):
+    def add_irritation(
+        self, vec: np.ndarray, reasons: List[str], timestamp: Optional[datetime] = None
+    ):
         self.irritation_vectors.append(vec)
+        self.irritation_timestamps.append(timestamp or datetime.now(timezone.utc))
         self.irritation_reasons.extend(reasons)
         self.interactions += 1
         self.irritation_count += 1
@@ -108,6 +122,7 @@ def update_user_state(
     product_vec: np.ndarray,
     reason_tags: Optional[List[str]] = None,
     irritation_counts_as_dislike: bool = True,
+    timestamp: Optional[datetime] = None,
 ):
     """
     Update user state based on a single interaction.
@@ -122,15 +137,15 @@ def update_user_state(
     reaction = (reaction or "").lower().strip()
 
     if reaction == "like":
-        user.add_liked(product_vec, reason_tags)
+        user.add_liked(product_vec, reason_tags, timestamp=timestamp)
 
     elif reaction == "dislike":
-        user.add_disliked(product_vec, reason_tags)
+        user.add_disliked(product_vec, reason_tags, timestamp=timestamp)
 
     elif reaction == "irritation":
         if irritation_counts_as_dislike:
-            user.add_disliked(product_vec, reason_tags)
-        user.add_irritation(product_vec, reason_tags)
+            user.add_disliked(product_vec, reason_tags, timestamp=timestamp)
+        user.add_irritation(product_vec, reason_tags, timestamp=timestamp)
 
     else:
         return user
@@ -163,6 +178,70 @@ def compute_user_vector(user: UserState, schema: Optional[Dict] = None) -> np.nd
     if user.irritation_vectors:
         irritation_avg = np.mean(user.irritation_vectors, axis=0)
         user_vec -= 2.0 * irritation_avg
+
+    norm = np.linalg.norm(user_vec)
+    if norm > 1e-9:
+        user_vec = user_vec / norm
+
+    return user_vec
+
+
+def compute_user_vector_with_decay(
+    user: UserState,
+    schema: Optional[Dict] = None,
+    lambda_decay: float = 0.01,
+) -> np.ndarray:
+    """
+    Compute user preference vector with exponential temporal decay.
+
+    Recent interactions are weighted more heavily than older ones.
+    The decay weight for each interaction is:
+
+        w = exp(-lambda_decay * days_since_interaction)
+
+    Lambda guide (half-life = ln(2) / lambda):
+        lambda=0.005 → ~139 day half-life (slow, suits stable skin)
+        lambda=0.01  → ~70 day half-life  (default, seasonal shifts)
+        lambda=0.02  → ~35 day half-life  (fast, frequent routine changes)
+
+    Falls back to compute_user_vector if no timestamps are present.
+    Rocchio coefficients (+2.0 / -1.0 / -2.0) are preserved.
+    """
+    now = datetime.now(timezone.utc)
+
+    def decay_weights(timestamps: List[datetime]) -> np.ndarray:
+        weights = []
+        for ts in timestamps:
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            days = (now - ts).total_seconds() / 86400.0
+            weights.append(np.exp(-lambda_decay * days))
+        w = np.array(weights, dtype=np.float32)
+        total = w.sum()
+        return w / total if total > 1e-9 else w
+
+    # Fall back if no timestamps stored
+    if not any(
+        [user.liked_timestamps, user.disliked_timestamps, user.irritation_timestamps]
+    ):
+        return compute_user_vector(user, schema)
+
+    user_vec = np.zeros(user.dim, dtype=np.float32)
+
+    if user.liked_vectors:
+        w = decay_weights(user.liked_timestamps)
+        liked_weighted = np.average(user.liked_vectors, axis=0, weights=w)
+        user_vec += 2.0 * liked_weighted
+
+    if user.disliked_vectors:
+        w = decay_weights(user.disliked_timestamps)
+        disliked_weighted = np.average(user.disliked_vectors, axis=0, weights=w)
+        user_vec -= 1.0 * disliked_weighted
+
+    if user.irritation_vectors:
+        w = decay_weights(user.irritation_timestamps)
+        irritation_weighted = np.average(user.irritation_vectors, axis=0, weights=w)
+        user_vec -= 2.0 * irritation_weighted
 
     norm = np.linalg.norm(user_vec)
     if norm > 1e-9:

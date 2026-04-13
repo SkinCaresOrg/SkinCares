@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from typing import Optional
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -19,6 +20,67 @@ FAISS_INDEX_PATH = ROOT / "artifacts" / "faiss.index"
 
 # How many ANN neighbours to fetch from FAISS before price/subtype filtering.
 FAISS_RETRIEVAL_K = 2500  # ~5% of the catalogue
+
+
+def _core_artifact_paths() -> tuple[Path, Path, Path]:
+    return VECTORS_PATH, INDEX_PATH, SCHEMA_PATH
+
+
+def _ensure_core_artifacts() -> None:
+    missing = [path for path in _core_artifact_paths() if not path.exists()]
+    if not missing:
+        return
+
+    warnings.warn(
+        "Missing core artifacts: "
+        + ", ".join(str(path) for path in missing)
+        + ". Attempting to rebuild from source data."
+    )
+
+    from . import vectorizer
+
+    vectorizer.run()
+
+    still_missing = [path for path in _core_artifact_paths() if not path.exists()]
+    if still_missing:
+        raise FileNotFoundError(
+            "Auto-rebuild did not produce required artifacts: "
+            + ", ".join(str(path) for path in still_missing)
+        )
+
+
+def _build_faiss_index(vectors: np.ndarray):
+    normalized = vectors.copy().astype(np.float32)
+    faiss.normalize_L2(normalized)
+    index = faiss.IndexFlatIP(normalized.shape[1])
+    index.add(normalized)
+    return index
+
+
+def _load_or_rebuild_faiss_index(vectors: np.ndarray):
+    if FAISS_INDEX_PATH.exists():
+        try:
+            return faiss.read_index(str(FAISS_INDEX_PATH))
+        except RuntimeError as error:
+            warnings.warn(
+                f"Could not read existing FAISS index at {FAISS_INDEX_PATH}: {error}. "
+                "Rebuilding from vectors."
+            )
+    else:
+        warnings.warn(
+            f"Missing FAISS index at {FAISS_INDEX_PATH}. Rebuilding from vectors."
+        )
+
+    index = _build_faiss_index(vectors)
+    try:
+        FAISS_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
+        faiss.write_index(index, str(FAISS_INDEX_PATH))
+    except Exception as write_error:
+        warnings.warn(
+            f"Rebuilt FAISS index in memory but could not persist to "
+            f"{FAISS_INDEX_PATH}: {write_error}"
+        )
+    return index
 
 
 # ---------------------------
@@ -255,6 +317,8 @@ def infer_product_subtype(product_name: str, category: str = None):
 # Load artifacts
 # ---------------------------
 def load_artifacts():
+    _ensure_core_artifacts()
+
     vectors = np.load(VECTORS_PATH)
 
     with open(INDEX_PATH) as f:
@@ -276,9 +340,7 @@ def load_artifacts():
     metadata = metadata[metadata["product_id"].isin(product_index)].copy()
     metadata = metadata.reset_index(drop=True)
 
-    # faiss.read_index raises RuntimeError if the file is missing,
-    # not FileNotFoundError, so we catch both at the call site
-    faiss_index = faiss.read_index(str(FAISS_INDEX_PATH))
+    faiss_index = _load_or_rebuild_faiss_index(vectors)
 
     return vectors, product_index, feature_schema, metadata, faiss_index
 
@@ -288,8 +350,6 @@ _LOAD_ERROR: Optional[Exception] = None
 try:
     VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA, FAISS_INDEX = load_artifacts()
 except (FileNotFoundError, RuntimeError) as e:
-    import warnings
-
     _LOAD_ERROR = e
     warnings.warn(f"Could not load artifacts: {e}. Running in degraded mode.")
 

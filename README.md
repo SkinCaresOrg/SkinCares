@@ -1,141 +1,137 @@
-# SkinCares: Skincare Product Recommendation System
+# SkinCares
 
-SkinCares is a machine learning system designed to recommend skincare products based on ingredient similarity, product attributes, and user preferences.
+SkinCares is a skincare recommendation system that combines:
 
-The system processes cosmetic product data, standardizes ingredient lists, and applies similarity-based models to generate personalized skincare recommendations.
+- ingredient- and profile-aware ranking,
+- feedback-aware ML updates, and
+- a FastAPI backend with a React frontend.
 
----
-
-## Project Overview
-
-This project implements a full machine learning pipeline for skincare recommendation, including:
-
-- Data preprocessing and ingredient standardization
-- Feature engineering for product comparison
-- Similarity-based recommendation models
-- Evaluation and tuning of recommendation strategies
-
-The system is designed with modular components to support experimentation, evaluation, and deployment.
-
----
+It includes local experimentation tooling, artifact generation for retrieval/ranking, and deployment-oriented API wiring.
 
 ## Repository Structure
 
-```
+```text
 SkinCares/
-│
-├── data/                # Raw and processed datasets
-├── docs/                # Project documentation
-├── examples/            # EDA and experimentation notebooks
-├── skincarelib/           # Core ML pipeline
-│   ├── features/        # Feature engineering
-│   ├── models/          # Recommendation models
-│   ├── evaluation/      # Model evaluation
-│   ├── tuning/          # Hyperparameter tuning
-│   └── utils/           # Shared utilities
-│
-├── deployment/          # Deployment configuration
-├── scripts/             # Pipeline execution scripts
-├── tests/               # Unit tests
-│
-├── Dockerfile
+├── skincarelib/            # Core recommendation and ML modules
+├── deployment/             # FastAPI app, DB models, SQL migrations, Docker API image
+├── frontend/               # React + Vite frontend
+├── scripts/                # Utility scripts (artifact build, manifest verify, seeding, eval)
+├── data/processed/         # Processed datasets (including products_with_signals.csv)
+├── artifacts/              # Generated model/retrieval artifacts (mostly ignored in git)
+├── docs/                   # Architecture and integration docs
+├── tests/                  # Python tests
 ├── docker-compose.yml
-├── setup.py
-└── README.md
+└── setup.py
 ```
 
----
+## Quick Start (Local)
 
-## Installation
-
-Clone the repository:
-
-```bash
-git clone https://github.com/cayetana-h/SkinCares.git
-cd SkinCares
-```
-
-Create a virtual environment:
+### 1) Install dependencies
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-```
-
-Install dependencies:
-
-```bash
+python -m pip install --upgrade pip
 pip install -e .[dev]
 ```
 
----
-
-## Dependencies
-
-Main dependencies include:
-
-- Python 3.9+
-- pandas
-- numpy
-- scikit-learn
-- matplotlib
-- seaborn
-- jupyter
-- pytest
-- ruff (linting)
-
-These dependencies are installed automatically through `setup.py`.
-
----
-
-## Running the Pipeline
-
-Example preprocessing workflow:
+### 2) Run backend API
 
 ```bash
-python scripts/preprocess_dataset.py
+uvicorn deployment.api:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Example model training:
+- OpenAPI docs: `http://localhost:8000/docs`
+
+### 3) Run frontend (optional)
 
 ```bash
-python scripts/train_model.py
+cd frontend
+npm install
+npm run dev
 ```
 
----
+## Data and Artifacts
+
+- Source data for API/product metadata lives in `data/processed/`.
+- `products_with_signals.csv` is kept in the repo for reproducibility.
+- Large generated binaries (for example FAISS indexes) should stay out of git.
+
+Current artifact schema version: `v2`.
+
+Build artifacts manually:
+
+```bash
+python scripts/build_artifacts.py --schema-version v2
+```
+
+If `faiss` is not installed, the build still succeeds and skips `artifacts/faiss.index`.
+Install FAISS when you need ANN/dupe retrieval:
+
+```bash
+pip install faiss-cpu
+```
+
+Verify artifact manifest:
+
+```bash
+python scripts/verify_manifest.py
+```
+
+## Docker
+
+Run API + frontend with Docker Compose:
+
+```bash
+docker compose up --build api frontend
+```
+
+Run evaluation container:
+
+```bash
+docker compose up --build evaluation
+```
 
 ## Development
 
-Run tests:
+Run Python tests:
 
 ```bash
 python -m pytest tests --disable-warnings --maxfail=1
 ```
 
-Lint code:
+Run lint:
 
 ```bash
 ruff check .
 ```
 
-Install pre-commit hooks:
+Run frontend tests:
+
+```bash
+cd frontend && npm test
+```
+
+Install and run pre-commit hooks:
 
 ```bash
 pre-commit install --hook-type pre-commit --hook-type pre-push
 pre-commit install-hooks
-```
-
-Run hooks manually (optional):
-
-```bash
 pre-commit run --all-files
-pre-commit run --hook-stage push --all-files
 ```
 
-If Ruff auto-fixes files during commit, the commit will fail intentionally so you can re-stage the modified files and commit again.
+## Configuration Notes
 
----
+- Copy `.env.example` to `.env` and set required values.
+- For database-backed auth/persistence, set `DATABASE_URL` and `SECRET_KEY`.
+- API product CSV can be overridden with `PRODUCTS_CSV_PATH`.
+
+## Documentation
+
+- Main docs index: `docs/README.md`
+- Deployment notes: `deployment/README.md`
+- ML feedback quickstart: `QUICK_START.md`
 
 ## License
 
-This project is licensed under the MIT License.
+MIT License (see `LICENSE`).

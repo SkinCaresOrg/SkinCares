@@ -138,7 +138,6 @@ notebooks/data/
 dev.db 
 local.db
 
-.ruff_cache/data/processed/products_with_signals.csv
 data/processed/products_dataset_clean_tokens.csv
 
 # Large generated artifacts (do not commit)

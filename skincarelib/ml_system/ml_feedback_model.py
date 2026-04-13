@@ -11,6 +11,7 @@ Replaces simple weighted average with proper machine learning:
 from __future__ import annotations
 
 import pickle
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
@@ -38,6 +39,11 @@ class UserState:
         self.disliked_vectors: List[np.ndarray] = []
         self.irritation_vectors: List[np.ndarray] = []
 
+        # Timestamps for temporal decay
+        self.liked_timestamps: List[datetime] = []
+        self.disliked_timestamps: List[datetime] = []
+        self.irritation_timestamps: List[datetime] = []
+
         # Metadata for explanations
         self.liked_reasons: List[str] = []
         self.disliked_reasons: List[str] = []
@@ -49,22 +55,40 @@ class UserState:
         self.disliked_count: int = 0
         self.irritation_count: int = 0
 
-    def add_liked(self, vec: np.ndarray, reasons: List[str] | None = None):
+    def add_liked(
+        self,
+        vec: np.ndarray,
+        reasons: List[str] | None = None,
+        timestamp: Optional[datetime] = None,
+    ):
         self.liked_vectors.append(vec.astype(np.float32))
+        self.liked_timestamps.append(timestamp or datetime.now(timezone.utc))
         if reasons:
             self.liked_reasons.extend(reasons)
         self.interactions += 1
         self.liked_count += 1
 
-    def add_disliked(self, vec: np.ndarray, reasons: List[str] | None = None):
+    def add_disliked(
+        self,
+        vec: np.ndarray,
+        reasons: List[str] | None = None,
+        timestamp: Optional[datetime] = None,
+    ):
         self.disliked_vectors.append(vec.astype(np.float32))
+        self.disliked_timestamps.append(timestamp or datetime.now(timezone.utc))
         if reasons:
             self.disliked_reasons.extend(reasons)
         self.interactions += 1
         self.disliked_count += 1
 
-    def add_irritation(self, vec: np.ndarray, reasons: List[str] | None = None):
+    def add_irritation(
+        self,
+        vec: np.ndarray,
+        reasons: List[str] | None = None,
+        timestamp: Optional[datetime] = None,
+    ):
         self.irritation_vectors.append(vec.astype(np.float32))
+        self.irritation_timestamps.append(timestamp or datetime.now(timezone.utc))
         if reasons:
             self.irritation_reasons.extend(reasons)
         self.interactions += 1

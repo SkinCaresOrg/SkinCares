@@ -5,16 +5,18 @@ import logging
 import os
 from pathlib import Path
 import re
-from typing import Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID as UUIDValue, uuid4
 
 import numpy as np
 import pandas as pd
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+import requests
 
 from deployment.api.auth.models import User
 from deployment.api.auth.security import hash_password
@@ -42,6 +44,10 @@ from skincarelib.ml_system.swipe_session import SwipeSession
 from skincarelib.ml_system.handler import handle_chat
 
 logger = logging.getLogger(__name__)
+
+load_dotenv()
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 Category = Literal[
     "cleanser",
@@ -208,7 +214,11 @@ class WishlistResponse(BaseModel):
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    init_db()
+    try:
+        init_db()
+    except SQLAlchemyError as exc:
+        logger.warning("Could not initialize database at startup: %s", exc)
+
     try:
         with SessionLocal() as db:
             _sync_products_table_from_csv(db)
@@ -578,11 +588,16 @@ def _load_dupes_from_db(db: Session, source_product_id: int) -> List[DupeProduct
         .limit(24)
         .all()
     )
+
+    print(f"[DEBUG] source_product_id={source_product_id} rows_found={len(rows)}")
+
     dupes: List[DupeProduct] = []
     for row in rows:
         product = PRODUCTS.get(row.dupe_product_id)
         if product is None:
+            print(f"[DEBUG] Missing product in PRODUCTS for dupe_product_id={row.dupe_product_id}")
             continue
+
         dupes.append(
             DupeProduct(
                 **_product_to_card(product).model_dump(),
@@ -590,6 +605,59 @@ def _load_dupes_from_db(db: Session, source_product_id: int) -> List[DupeProduct
                 explanation=row.explanation or "",
             )
         )
+    return dupes
+
+
+def _load_dupes_from_supabase(source_product_id: int) -> List[DupeProduct]:
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return []
+
+    url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/product_dupes"
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Accept": "application/json",
+    }
+    params = {
+        "select": "*",
+        "source_product_id": f"eq.{source_product_id}",
+        "order": "dupe_score.desc",
+        "limit": "24",
+    }
+
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=10)
+        response.raise_for_status()
+        rows = response.json()
+    except Exception as exc:
+        logger.warning(
+            "Supabase dupe query failed for source_product_id=%s: %s",
+            source_product_id,
+            exc,
+        )
+        return []
+
+    if not isinstance(rows, list) or not rows:
+        return []
+
+    dupes: List[DupeProduct] = []
+    for row in rows:
+        product = PRODUCTS.get(int(row.get("dupe_product_id", -1)))
+        if product is None:
+            logger.debug(
+                "Missing product in PRODUCTS for dupe_product_id=%s",
+                row.get("dupe_product_id"),
+            )
+            continue
+
+        dupes.append(
+            DupeProduct(
+                **_product_to_card(product).model_dump(),
+                dupe_score=float(row.get("dupe_score", 0.0)),
+                explanation=str(row.get("explanation", "")) if row.get("explanation") is not None else "",
+            )
+        )
+
     return dupes
 
 
@@ -985,26 +1053,20 @@ def get_dupes(product_id: int, db: Session = Depends(get_db)) -> DupesResponse:
     if source is None:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    db_dupes = _load_dupes_from_db(db, product_id)
+    if SUPABASE_URL and SUPABASE_KEY:
+        db_dupes = _load_dupes_from_supabase(product_id)
+    else:
+        db_dupes = _load_dupes_from_db(db, product_id)
+
     if db_dupes:
         return DupesResponse(source_product_id=product_id, dupes=db_dupes)
 
-    alternatives = [
-        product
-        for product in PRODUCTS.values()
-        if product.product_id != product_id and product.category == source.category
-    ]
+    logger.warning(
+        "No precomputed dupes found for product_id=%s; returning an empty dupe list",
+        product_id,
+    )
 
-    dupes = [
-        DupeProduct(
-            **_product_to_card(product).model_dump(),
-            dupe_score=max(0.1, 0.92 - (index * 0.07)),
-            explanation="Similar texture and use case at a comparable/lower price",
-        )
-        for index, product in enumerate(alternatives)
-    ]
-
-    return DupesResponse(source_product_id=product_id, dupes=dupes)
+    return DupesResponse(source_product_id=product_id, dupes=[])
 
 
 @app.post("/api/feedback", response_model=FeedbackResponse)

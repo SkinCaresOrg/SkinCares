@@ -44,6 +44,18 @@ from skincarelib.ml_system.handler import handle_chat
 logger = logging.getLogger(__name__)
 REMOTE_ASSET_MODE = bool(os.getenv("SUPABASE_URL", "").strip())
 
+
+def _is_truthy(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+USE_LOCAL_CSV_PRODUCTS = _is_truthy(
+    os.getenv(
+        "SKINCARES_USE_LOCAL_CSV_PRODUCTS",
+        "false" if REMOTE_ASSET_MODE else "true",
+    )
+)
+
 Category = Literal[
     "cleanser",
     "moisturizer",
@@ -209,13 +221,21 @@ class WishlistResponse(BaseModel):
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    global PRODUCTS
     init_db()
     try:
         with SessionLocal() as db:
-            _sync_products_table_from_csv(db)
+            if USE_LOCAL_CSV_PRODUCTS:
+                _sync_products_table_from_csv(db)
             db.commit()
+            PRODUCTS = _load_products_from_db(db)
+            if not PRODUCTS and USE_LOCAL_CSV_PRODUCTS:
+                PRODUCTS = load_products_from_csv()
+            if not PRODUCTS:
+                logger.warning("No products available from database.")
+            _ensure_product_vectors_shape()
     except SQLAlchemyError as exc:
-        logger.warning("Could not sync products table from CSV: %s", exc)
+        logger.warning("Could not initialize products at startup: %s", exc)
     yield
 
 
@@ -381,7 +401,59 @@ def load_products_from_csv() -> Dict[int, ProductDetail]:
     return products
 
 
-PRODUCTS = load_products_from_csv()
+def _coerce_ingredients(raw_ingredients: object) -> List[str]:
+    if raw_ingredients is None:
+        return []
+    if isinstance(raw_ingredients, list):
+        return [str(item).strip() for item in raw_ingredients if str(item).strip()]
+    if isinstance(raw_ingredients, tuple):
+        return [str(item).strip() for item in raw_ingredients if str(item).strip()]
+
+    text = str(raw_ingredients).strip()
+    if not text:
+        return []
+    return [item.strip() for item in text.split(",") if item.strip()]
+
+
+def _load_products_from_db(db: Session) -> Dict[int, ProductDetail]:
+    rows = db.query(Product).order_by(Product.product_id.asc()).all()
+    products: Dict[int, ProductDetail] = {}
+
+    for row in rows:
+        try:
+            category = normalize_category(
+                str(row.category or ""), product_name=str(row.product_name or "")
+            )
+            ingredients = _coerce_ingredients(row.ingredients)
+            product_id = int(row.product_id)
+
+            products[product_id] = ProductDetail(
+                product_id=product_id,
+                product_name=str(row.product_name or "").strip(),
+                brand=str(row.brand or "").strip(),
+                category=category,
+                price=float(row.price or 0),
+                image_url=str(row.image_url or "").strip(),
+                short_description=str(row.short_description or "").strip(),
+                rating_count=0,
+                wishlist_supported=True,
+                ingredients=ingredients,
+                ingredient_highlights=ingredients[:2],
+                concerns_targeted=[],
+                skin_types_supported=[],
+            )
+        except Exception as exc:
+            logger.warning(
+                "Skipping invalid product row product_id=%s: %s",
+                getattr(row, "product_id", None),
+                exc,
+            )
+
+    logger.info("Loaded %d products from database", len(products))
+    return products
+
+
+PRODUCTS = load_products_from_csv() if USE_LOCAL_CSV_PRODUCTS else {}
 
 # Load ML assets
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -396,6 +468,29 @@ except FileNotFoundError:
     else:
         logger.warning(message)
     PRODUCT_VECTORS = np.random.randn(len(PRODUCTS), 128).astype(np.float32)
+
+
+def _ensure_product_vectors_shape() -> None:
+    global PRODUCT_VECTORS
+
+    product_count = len(PRODUCTS)
+    if product_count == 0:
+        return
+
+    if PRODUCT_VECTORS.ndim != 2:
+        PRODUCT_VECTORS = np.random.randn(product_count, 128).astype(np.float32)
+        return
+
+    if PRODUCT_VECTORS.shape[0] != product_count:
+        vector_dim = PRODUCT_VECTORS.shape[1] if PRODUCT_VECTORS.shape[1] > 0 else 128
+        logger.info(
+            "Product vector count (%d) does not match products count (%d); "
+            "reinitializing fallback vectors.",
+            PRODUCT_VECTORS.shape[0],
+            product_count,
+        )
+        PRODUCT_VECTORS = np.random.randn(product_count, vector_dim).astype(np.float32)
+
 
 # User sessions for online learning
 USER_SESSIONS: Dict[str, SwipeSession] = {}

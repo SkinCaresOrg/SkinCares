@@ -1,7 +1,10 @@
 from fastapi.testclient import TestClient
+import importlib
 
 from deployment.api import app
-import deployment.api.app as api_module
+
+
+api_module = importlib.import_module("deployment.api.app")
 
 
 client = TestClient(app)

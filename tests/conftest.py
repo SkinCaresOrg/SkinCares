@@ -2,37 +2,35 @@
 
 import csv
 from pathlib import Path
-import pytest
+import numpy as np
 
 
-@pytest.fixture(scope="session", autouse=True)
-def ensure_test_products_csv():
-    """Ensure products CSV exists with minimal test data for CI environments."""
+def _create_test_data():
+    """Create test data files at module import time.
+    
+    This runs BEFORE test modules are imported, so the app sees fresh data.
+    """
+    
+    # Generate products CSV
     csv_path = Path(__file__).parent.parent / "data" / "processed" / "products_with_signals.csv"
-    
-    # If CSV already exists, don't overwrite it
-    if csv_path.exists():
-        return
-    
-    # Create directories if needed
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # Generate minimal test products (30 products)
+    # Generate 50 test products (tests use IDs up to ~24)
     products_data = []
-    for i in range(1, 31):
-        product_type = ["cleanser", "moisturizer", "treatment", "sunscreen", "serum", "mask"][i % 6]
+    for i in range(1, 51):
+        product_type = ["cleanser", "moisturizer", "treatment", "sunscreen", "serum", "mask", "repair"][i % 7]
         
-        # Add fragrance to half of them for testing
+        # Add fragrance to even-numbered products
         has_fragrance = "fragrance" if i % 2 == 0 else ""
         
         ingredients = ["water", "glycerin", "hyaluronic acid"]
         if has_fragrance:
             ingredients.append("fragrance")
-        ingredients.extend(["niacinamide", "cetyl alcohol"][:3])  # Max 5
+        ingredients.extend(["niacinamide", "cetyl alcohol"][:3])
         
         products_data.append({
             "product_name": f"Test {product_type.title()} {i}",
-            "brand": f"TestBrand{i % 3 + 1}",
+            "brand": f"TestBrand{i % 5 + 1}",
             "usage_type": "skincare",
             "category": product_type,
             "price": 15 + (i % 50),
@@ -40,7 +38,7 @@ def ensure_test_products_csv():
             "ingredients": ",".join(ingredients),
         })
     
-    # Write CSV
+    # Always overwrite to ensure fresh state for CI
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=[
             "product_name", "brand", "usage_type", "category", "price", "image_url", "ingredients"
@@ -48,27 +46,15 @@ def ensure_test_products_csv():
         writer.writeheader()
         writer.writerows(products_data)
     
-    print(f"✓ Generated test products CSV at {csv_path}")
-
-
-@pytest.fixture(scope="session", autouse=True)
-def ensure_test_vectors():
-    """Ensure product vectors exist for CI environments."""
-    import numpy as np
-    
+    # Generate product vectors
     vectors_path = Path(__file__).parent.parent / "artifacts" / "product_vectors.npy"
-    
-    # If vectors already exist, don't overwrite them
-    if vectors_path.exists():
-        return
-    
-    # Create directories if needed
     vectors_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # Generate minimal test vectors (30 products, 128 dimensions)
-    # This matches what the app expects
+    # Generate 50 test vectors (128 dimensions, to match PRODUCTS)
     np.random.seed(42)
-    test_vectors = np.random.randn(30, 128).astype(np.float32)
-    
+    test_vectors = np.random.randn(50, 128).astype(np.float32)
     np.save(vectors_path, test_vectors)
-    print(f"✓ Generated test vectors at {vectors_path}")
+
+
+# Execute at conftest module import time - runs BEFORE test modules import the app
+_create_test_data()

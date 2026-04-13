@@ -778,6 +778,8 @@ def _persist_user_model_state(db: Session, user_id: str, user_state: UserState) 
     liked_reasons = list(getattr(user_state, "liked_reasons", []) or [])
     disliked_reasons = list(getattr(user_state, "disliked_reasons", []) or [])
     irritation_reasons = list(getattr(user_state, "irritation_reasons", []) or [])
+    avoid_ingredients = dict(getattr(user_state, "avoid_ingredients", {}) or {})
+    avoid_ingredient_last_seen_at = dict(getattr(user_state, "avoid_ingredient_last_seen_at", {}) or {})
 
     if row is None:
         row = UserModelState(user_id=user_id)
@@ -790,6 +792,8 @@ def _persist_user_model_state(db: Session, user_id: str, user_state: UserState) 
     row.liked_reasons = liked_reasons
     row.disliked_reasons = disliked_reasons
     row.irritation_reasons = irritation_reasons
+    row.avoid_ingredients = avoid_ingredients
+    row.avoid_ingredient_last_seen_at = avoid_ingredient_last_seen_at
 
 
 def _persist_model_checkpoint(db: Session, user_id: str, user_state: UserState) -> None:
@@ -932,6 +936,18 @@ def _load_user_state_from_db(db: Session, user_id: str) -> UserState:
             user_state.add_disliked(vec, reasons=reasons if reasons else None)
         elif feedback.reaction == "irritation":
             user_state.add_irritation(vec, reasons=reasons if reasons else None)
+
+    # Restore persisted ingredient preferences from UserModelState
+    model_state_row = (
+        db.query(UserModelState)
+        .filter(UserModelState.user_id == user_id)
+        .first()
+    )
+    if model_state_row:
+        user_state.avoid_ingredients = dict(model_state_row.avoid_ingredients or {})
+        user_state.avoid_ingredient_last_seen_at = dict(
+            model_state_row.avoid_ingredient_last_seen_at or {}
+        )
 
     USER_STATES[user_id] = user_state
     return user_state
@@ -1390,6 +1406,10 @@ def submit_feedback(
 
             _persist_user_model_state(db, payload.user_id, user_state)
             _persist_model_checkpoint(db, payload.user_id, user_state)
+            
+            # Update in-memory cache so subsequent get_recommendations() calls see the updated state
+            USER_STATES[payload.user_id] = user_state
+            
             db.commit()
     except Exception as e:
         logger.warning(

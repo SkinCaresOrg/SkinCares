@@ -113,6 +113,8 @@ class UserModelState(Base):
     liked_reasons = Column(JSON, nullable=False, default=list)
     disliked_reasons = Column(JSON, nullable=False, default=list)
     irritation_reasons = Column(JSON, nullable=False, default=list)
+    avoid_ingredients = Column(JSON, nullable=False, default=dict)
+    avoid_ingredient_last_seen_at = Column(JSON, nullable=False, default=dict)
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -25,7 +25,8 @@ import {
   SensitivityLevel,
   IngredientExclusion,
   PriceRange,
-  RoutineSize
+  RoutineSize,
+  Category
 } from "@/lib/types";
 import { 
   SKIN_TYPES, 

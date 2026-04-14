@@ -575,6 +575,26 @@ def get_artifacts():
     return VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA
 
 
+def ensure_runtime_artifacts_loaded() -> bool:
+    """Reload in-memory artifacts/scorer when assets become available after import."""
+    global VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA, FAISS_INDEX
+    global INDEX_TO_ID, _PRICE_LOOKUP, SCORER, _LOAD_ERROR
+
+    if SCORER is not None and PRODUCT_INDEX:
+        return True
+
+    try:
+        VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, METADATA, FAISS_INDEX = load_artifacts()
+        INDEX_TO_ID = {v: k for k, v in PRODUCT_INDEX.items()}
+        _PRICE_LOOKUP = METADATA.set_index("product_id")["price"].to_dict()
+        SCORER = DupeScorer(VECTORS, PRODUCT_INDEX, FEATURE_SCHEMA, _PRICE_LOOKUP)
+        _LOAD_ERROR = None
+        return True
+    except Exception as error:
+        _LOAD_ERROR = error
+        return False
+
+
 # ---------------------------
 # Demo run
 # ---------------------------

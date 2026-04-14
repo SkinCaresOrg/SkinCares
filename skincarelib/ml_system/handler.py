@@ -1,18 +1,301 @@
 import os
+import time
+from pathlib import Path
 from typing import Optional, Dict, Any
 
 import requests
 
 from skincarelib.ml_system.intent import detect_intent
-from skincarelib.models.dupe_finder import find_dupes, get_artifacts
+from skincarelib.models.dupe_finder import (
+    find_dupes,
+    get_artifacts,
+    ensure_runtime_artifacts_loaded,
+)
 from skincarelib.models.recommender_ranker import recommend
 
 METADATA = None
+_ARTIFACTS_BOOTSTRAP_DONE = False
+ROOT = Path(__file__).resolve().parents[2]
+
+REQUIRED_ARTIFACTS: list[tuple[str, Path]] = [
+    ("feature_schema.json", ROOT / "artifacts" / "feature_schema.json"),
+    ("product_index.json", ROOT / "artifacts" / "product_index.json"),
+    ("product_vectors.npy", ROOT / "artifacts" / "product_vectors.npy"),
+    ("tfidf.joblib", ROOT / "artifacts" / "tfidf.joblib"),
+]
+
+OPTIONAL_ARTIFACTS: list[tuple[str, Path]] = [
+    ("faiss.index", ROOT / "artifacts" / "faiss.index"),
+    ("manifest.json", ROOT / "artifacts" / "manifest.json"),
+]
+
+REQUIRED_DATASETS: list[tuple[str, Path]] = [
+    (
+        "products_with_signals.csv",
+        ROOT / "data" / "processed" / "products_with_signals.csv",
+    ),
+]
+
+
+def _build_asset_url(
+    supabase_url: str,
+    bucket: str,
+    prefix: str,
+    remote_rel_path: str,
+    public_bucket: bool,
+) -> str:
+    clean_base = supabase_url.rstrip("/")
+    clean_prefix = prefix.strip("/")
+    remote_part = remote_rel_path.strip("/")
+    object_path = f"{clean_prefix}/{remote_part}" if clean_prefix else remote_part
+
+    if public_bucket:
+        return f"{clean_base}/storage/v1/object/public/{bucket}/{object_path}"
+    return f"{clean_base}/storage/v1/object/{bucket}/{object_path}"
+
+
+def _download_file(
+    url: str,
+    destination: Path,
+    headers: dict[str, str],
+    timeout_sec: int,
+    retries: int = 3,
+) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    for attempt in range(1, retries + 1):
+        response = requests.get(url, headers=headers, timeout=timeout_sec, stream=True)
+        if response.status_code == 200:
+            with destination.open("wb") as output_file:
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        output_file.write(chunk)
+            return
+
+        if attempt >= retries:
+            raise RuntimeError(f"HTTP {response.status_code} downloading {url}")
+        time.sleep(min(2**attempt, 5))
+
+
+def _download_assets(
+    items: list[tuple[str, Path]],
+    *,
+    supabase_url: str,
+    bucket: str,
+    prefix: str,
+    public_bucket: bool,
+    headers: dict[str, str],
+    timeout_sec: int,
+    required: bool,
+) -> bool:
+    all_ok = True
+    for remote_rel, local_path in items:
+        if local_path.exists():
+            continue
+
+        asset_url = _build_asset_url(
+            supabase_url=supabase_url,
+            bucket=bucket,
+            prefix=prefix,
+            remote_rel_path=remote_rel,
+            public_bucket=public_bucket,
+        )
+
+        try:
+            _download_file(
+                url=asset_url,
+                destination=local_path,
+                headers=headers,
+                timeout_sec=timeout_sec,
+            )
+        except Exception as error:
+            all_ok = False
+            level = "error" if required else "warn"
+            print(f"[{level}] Failed to download {remote_rel}: {error}")
+            if required:
+                break
+
+    return all_ok
+
+
+def load_artifacts(force: bool = False) -> Dict[str, Any]:
+    """Ensure required artifacts/datasets exist locally, downloading from Supabase if needed."""
+    global _ARTIFACTS_BOOTSTRAP_DONE
+
+    required_files = REQUIRED_ARTIFACTS + REQUIRED_DATASETS
+    missing_required = [path for _, path in required_files if not path.exists()]
+
+    if not force and not missing_required:
+        _ARTIFACTS_BOOTSTRAP_DONE = True
+        return {
+            "ok": True,
+            "downloaded": False,
+            "missing": [],
+            "artifacts": {
+                name: str(path)
+                for name, path in REQUIRED_ARTIFACTS + OPTIONAL_ARTIFACTS
+            },
+            "datasets": {name: str(path) for name, path in REQUIRED_DATASETS},
+        }
+
+    if _ARTIFACTS_BOOTSTRAP_DONE and not force:
+        return {
+            "ok": True,
+            "downloaded": False,
+            "missing": [],
+            "artifacts": {
+                name: str(path)
+                for name, path in REQUIRED_ARTIFACTS + OPTIONAL_ARTIFACTS
+            },
+            "datasets": {name: str(path) for name, path in REQUIRED_DATASETS},
+        }
+
+    supabase_url = os.getenv("SUPABASE_URL", "").strip()
+    if not supabase_url:
+        return {
+            "ok": False,
+            "downloaded": False,
+            "missing": [str(path) for path in missing_required],
+            "error": "SUPABASE_URL is not set for artifact download.",
+            "artifacts": {
+                name: str(path)
+                for name, path in REQUIRED_ARTIFACTS + OPTIONAL_ARTIFACTS
+            },
+            "datasets": {name: str(path) for name, path in REQUIRED_DATASETS},
+        }
+
+    supabase_key = os.getenv("SUPABASE_KEY", "").strip()
+    artifacts_bucket = os.getenv(
+        "SUPABASE_ARTIFACTS_BUCKET", "skincares-artifacts"
+    ).strip()
+    datasets_bucket = os.getenv(
+        "SUPABASE_DATASETS_BUCKET", "skincares-datasets"
+    ).strip()
+    artifacts_prefix = os.getenv("SUPABASE_ARTIFACTS_PREFIX", "v2").strip()
+    datasets_prefix = os.getenv("SUPABASE_DATASETS_PREFIX", "v2").strip()
+    timeout_sec = int(os.getenv("SUPABASE_DOWNLOAD_TIMEOUT", "120"))
+    public_bucket = os.getenv("SUPABASE_ASSETS_PUBLIC", "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+    }
+
+    headers: dict[str, str] = {}
+    if not public_bucket:
+        if not supabase_key:
+            return {
+                "ok": False,
+                "downloaded": False,
+                "missing": [str(path) for path in missing_required],
+                "error": "SUPABASE_KEY is required for private bucket download.",
+                "artifacts": {
+                    name: str(path)
+                    for name, path in REQUIRED_ARTIFACTS + OPTIONAL_ARTIFACTS
+                },
+                "datasets": {name: str(path) for name, path in REQUIRED_DATASETS},
+            }
+
+        headers = {
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+        }
+
+    artifacts_ok = _download_assets(
+        REQUIRED_ARTIFACTS,
+        supabase_url=supabase_url,
+        bucket=artifacts_bucket,
+        prefix=artifacts_prefix,
+        public_bucket=public_bucket,
+        headers=headers,
+        timeout_sec=timeout_sec,
+        required=True,
+    )
+    if not artifacts_ok:
+        return {
+            "ok": False,
+            "downloaded": True,
+            "missing": [
+                str(path) for _, path in REQUIRED_ARTIFACTS if not path.exists()
+            ],
+            "error": "Could not download required artifacts from Supabase.",
+            "artifacts": {
+                name: str(path)
+                for name, path in REQUIRED_ARTIFACTS + OPTIONAL_ARTIFACTS
+            },
+            "datasets": {name: str(path) for name, path in REQUIRED_DATASETS},
+        }
+
+    _download_assets(
+        OPTIONAL_ARTIFACTS,
+        supabase_url=supabase_url,
+        bucket=artifacts_bucket,
+        prefix=artifacts_prefix,
+        public_bucket=public_bucket,
+        headers=headers,
+        timeout_sec=timeout_sec,
+        required=False,
+    )
+
+    datasets_ok = _download_assets(
+        REQUIRED_DATASETS,
+        supabase_url=supabase_url,
+        bucket=datasets_bucket,
+        prefix=datasets_prefix,
+        public_bucket=public_bucket,
+        headers=headers,
+        timeout_sec=timeout_sec,
+        required=True,
+    )
+    if not datasets_ok:
+        return {
+            "ok": False,
+            "downloaded": True,
+            "missing": [
+                str(path) for _, path in REQUIRED_DATASETS if not path.exists()
+            ],
+            "error": "Could not download required datasets from Supabase.",
+            "artifacts": {
+                name: str(path)
+                for name, path in REQUIRED_ARTIFACTS + OPTIONAL_ARTIFACTS
+            },
+            "datasets": {name: str(path) for name, path in REQUIRED_DATASETS},
+        }
+
+    missing_after = [str(path) for _, path in required_files if not path.exists()]
+    if missing_after:
+        return {
+            "ok": False,
+            "downloaded": True,
+            "missing": missing_after,
+            "error": "Artifacts download completed but files are still missing.",
+            "artifacts": {
+                name: str(path)
+                for name, path in REQUIRED_ARTIFACTS + OPTIONAL_ARTIFACTS
+            },
+            "datasets": {name: str(path) for name, path in REQUIRED_DATASETS},
+        }
+
+    _ARTIFACTS_BOOTSTRAP_DONE = True
+    return {
+        "ok": True,
+        "downloaded": True,
+        "missing": [],
+        "artifacts": {
+            name: str(path) for name, path in REQUIRED_ARTIFACTS + OPTIONAL_ARTIFACTS
+        },
+        "datasets": {name: str(path) for name, path in REQUIRED_DATASETS},
+    }
 
 
 def _get_metadata():
     global METADATA
     if METADATA is None:
+        artifact_status = load_artifacts()
+        if not artifact_status.get("ok"):
+            print(f"Artifact bootstrap warning: {artifact_status.get('error')}")
+        else:
+            ensure_runtime_artifacts_loaded()
         _, _, _, METADATA = get_artifacts()
         if "product_name" not in METADATA.columns and "name" in METADATA.columns:
             METADATA["product_name"] = METADATA["name"]
@@ -158,6 +441,12 @@ def handle_chat(
     profile: Optional[Dict[str, Any]] = None,
     last_intent: Optional[str] = None,
 ):
+    artifact_status = load_artifacts()
+    if not artifact_status.get("ok"):
+        print(f"Chat artifact bootstrap warning: {artifact_status.get('error')}")
+    else:
+        ensure_runtime_artifacts_loaded()
+
     msg_lower = message.lower().strip()
 
     if msg_lower in ["yes", "yeah", "y", "ok", "sure"]:

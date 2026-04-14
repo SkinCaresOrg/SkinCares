@@ -120,8 +120,9 @@ export function saveOnboardingForCurrentUser(data: {
   };
   writeOnboardingCache(cache);
 
-  localStorage.setItem("skincares_user_id", data.recommendationUserId);
-  localStorage.setItem("skincares_user_profile", JSON.stringify(data.profile));
+  // Store onboarding/profile per user
+  localStorage.setItem(`skincares_user_id_${authUserId}`, data.recommendationUserId);
+  localStorage.setItem(`skincares_user_profile_${authUserId}`, JSON.stringify(data.profile));
 }
 
 export function hasCompletedOnboardingForCurrentUser(): boolean {
@@ -139,7 +140,8 @@ export function hydrateOnboardingForCurrentUser(): boolean {
   const entry = cache[authUserId];
   if (!entry) return false;
 
-  localStorage.setItem("skincares_user_id", entry.recommendationUserId);
-  localStorage.setItem("skincares_user_profile", JSON.stringify(entry.profile));
+  // Store onboarding/profile per user
+  localStorage.setItem(`skincares_user_id_${authUserId}`, entry.recommendationUserId);
+  localStorage.setItem(`skincares_user_profile_${authUserId}`, JSON.stringify(entry.profile));
   return true;
 }

@@ -11,7 +11,7 @@ version = version_data.get("__version__", "0.0")
 install_requires = [
     "numpy>=1.21,<2",
     "pandas>=2,<3",
-    "scikit-learn>=1.2,<2",
+    "scikit-learn>=1.2,<1.7",
     "scipy>=1.8,<2",
     "joblib>=1.2,<2",
     "SQLAlchemy>=2.0,<3",
@@ -23,8 +23,6 @@ install_requires = [
     "bcrypt>=4,<5",
     "python-dotenv>=0.21,<1",
     "psycopg[binary]>=3.2,<4",
-    "vowpalwabbit>=9.0,<10",
-    "faiss-cpu>=1.7,<2",
     "requests>=2.31,<3",  # For Ollama integration (local AI)
 ]
 
@@ -45,6 +43,13 @@ extras_require = {
     ],
     "vw": [
         "vowpalwabbit>=9.0,<10",
+    ],
+    "faiss": [
+        "faiss-cpu>=1.7,<2",
+    ],
+    "ml-heavy": [
+        "vowpalwabbit>=9.0,<10",
+        "faiss-cpu>=1.7,<2",
     ],
     "scraping": [
         "requests>=2.31,<3",

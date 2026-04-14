@@ -1,280 +1,23 @@
 import os
-import time
-from pathlib import Path
-import requests
 from typing import Optional, Dict, Any
+
+from groq import Groq
 
 from skincarelib.ml_system.intent import detect_intent
 from skincarelib.models.dupe_finder import find_dupes, get_artifacts
 from skincarelib.models.recommender_ranker import recommend
 
 METADATA = None
-
-ROOT = Path(__file__).resolve().parents[2]
-
-REQUIRED_ARTIFACTS: list[tuple[str, Path]] = [
-    ("feature_schema.json", ROOT / "artifacts" / "feature_schema.json"),
-    ("product_index.json", ROOT / "artifacts" / "product_index.json"),
-    ("product_vectors.npy", ROOT / "artifacts" / "product_vectors.npy"),
-    ("tfidf.joblib", ROOT / "artifacts" / "tfidf.joblib"),
-    ("manifest.json", ROOT / "artifacts" / "manifest.json"),
-]
-
-OPTIONAL_ARTIFACTS: list[tuple[str, Path]] = [
-    ("faiss.index", ROOT / "artifacts" / "faiss.index"),
-]
-
-REQUIRED_DATASETS: list[tuple[str, Path]] = [
-    (
-        "products_with_signals.csv",
-        ROOT / "data" / "processed" / "products_with_signals.csv",
-    ),
-]
-
-
-def _build_asset_url(
-    supabase_url: str,
-    bucket: str,
-    prefix: str,
-    remote_rel_path: str,
-    public_bucket: bool,
-) -> str:
-    clean_base = supabase_url.rstrip("/")
-    clean_prefix = prefix.strip("/")
-    remote_part = remote_rel_path.strip("/")
-    object_path = f"{clean_prefix}/{remote_part}" if clean_prefix else remote_part
-
-    if public_bucket:
-        return f"{clean_base}/storage/v1/object/public/{bucket}/{object_path}"
-    return f"{clean_base}/storage/v1/object/{bucket}/{object_path}"
-
-
-def _download_file(
-    url: str,
-    destination: Path,
-    headers: dict[str, str],
-    timeout_sec: int,
-    retries: int = 3,
-) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-
-    for attempt in range(1, retries + 1):
-        response = requests.get(url, headers=headers, timeout=timeout_sec, stream=True)
-        if response.status_code == 200:
-            with destination.open("wb") as output_file:
-                for chunk in response.iter_content(chunk_size=1024 * 1024):
-                    if chunk:
-                        output_file.write(chunk)
-            return
-
-        if attempt >= retries:
-            raise RuntimeError(f"HTTP {response.status_code} downloading {url}")
-        time.sleep(min(2**attempt, 5))
-
-
-def _download_assets(
-    items: list[tuple[str, Path]],
-    *,
-    supabase_url: str,
-    bucket: str,
-    prefix: str,
-    public_bucket: bool,
-    headers: dict[str, str],
-    timeout_sec: int,
-    required: bool,
-) -> bool:
-    all_ok = True
-    for remote_rel, local_path in items:
-        if local_path.exists():
-            continue
-
-        asset_url = _build_asset_url(
-            supabase_url=supabase_url,
-            bucket=bucket,
-            prefix=prefix,
-            remote_rel_path=remote_rel,
-            public_bucket=public_bucket,
-        )
-        try:
-            _download_file(
-                url=asset_url,
-                destination=local_path,
-                headers=headers,
-                timeout_sec=timeout_sec,
-            )
-        except Exception:
-            all_ok = False
-            if required:
-                break
-
-    return all_ok
-
-
-def load_artifacts(force: bool = False) -> Dict[str, Any]:
-    """Ensure required artifacts/datasets exist locally, downloading from Supabase when needed."""
-    required_files = REQUIRED_ARTIFACTS + REQUIRED_DATASETS
-    missing_required = [path for _, path in required_files if not path.exists()]
-
-    if not force and not missing_required:
-        return {
-            "ok": True,
-            "downloaded": False,
-            "missing": [],
-            "artifacts": {
-                name: str(path)
-                for name, path in REQUIRED_ARTIFACTS + OPTIONAL_ARTIFACTS
-            },
-            "datasets": {name: str(path) for name, path in REQUIRED_DATASETS},
-        }
-
-    supabase_url = os.getenv("SUPABASE_URL", "").strip()
-    if not supabase_url:
-        return {
-            "ok": False,
-            "downloaded": False,
-            "missing": [str(path) for path in missing_required],
-            "error": "SUPABASE_URL is not set for artifact download.",
-            "artifacts": {
-                name: str(path)
-                for name, path in REQUIRED_ARTIFACTS + OPTIONAL_ARTIFACTS
-            },
-            "datasets": {name: str(path) for name, path in REQUIRED_DATASETS},
-        }
-
-    supabase_key = os.getenv("SUPABASE_KEY", "").strip()
-    artifacts_bucket = os.getenv(
-        "SUPABASE_ARTIFACTS_BUCKET", "skincares-artifacts"
-    ).strip()
-    datasets_bucket = os.getenv(
-        "SUPABASE_DATASETS_BUCKET", "skincares-datasets"
-    ).strip()
-    artifacts_prefix = os.getenv("SUPABASE_ARTIFACTS_PREFIX", "v2").strip()
-    datasets_prefix = os.getenv("SUPABASE_DATASETS_PREFIX", "v2").strip()
-    timeout_sec = int(os.getenv("SUPABASE_DOWNLOAD_TIMEOUT", "120"))
-    public_bucket = os.getenv("SUPABASE_ASSETS_PUBLIC", "true").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "y",
-    }
-
-    headers: dict[str, str] = {}
-    if not public_bucket:
-        if not supabase_key:
-            return {
-                "ok": False,
-                "downloaded": False,
-                "missing": [str(path) for path in missing_required],
-                "error": "SUPABASE_KEY is required for private bucket download.",
-                "artifacts": {
-                    name: str(path)
-                    for name, path in REQUIRED_ARTIFACTS + OPTIONAL_ARTIFACTS
-                },
-                "datasets": {name: str(path) for name, path in REQUIRED_DATASETS},
-            }
-        headers = {
-            "apikey": supabase_key,
-            "Authorization": f"Bearer {supabase_key}",
-        }
-
-    artifacts_ok = _download_assets(
-        REQUIRED_ARTIFACTS,
-        supabase_url=supabase_url,
-        bucket=artifacts_bucket,
-        prefix=artifacts_prefix,
-        public_bucket=public_bucket,
-        headers=headers,
-        timeout_sec=timeout_sec,
-        required=True,
-    )
-    if not artifacts_ok:
-        return {
-            "ok": False,
-            "downloaded": True,
-            "missing": [
-                str(path) for _, path in REQUIRED_ARTIFACTS if not path.exists()
-            ],
-            "error": "Could not download required artifacts from Supabase.",
-            "artifacts": {
-                name: str(path)
-                for name, path in REQUIRED_ARTIFACTS + OPTIONAL_ARTIFACTS
-            },
-            "datasets": {name: str(path) for name, path in REQUIRED_DATASETS},
-        }
-
-    _download_assets(
-        OPTIONAL_ARTIFACTS,
-        supabase_url=supabase_url,
-        bucket=artifacts_bucket,
-        prefix=artifacts_prefix,
-        public_bucket=public_bucket,
-        headers=headers,
-        timeout_sec=timeout_sec,
-        required=False,
-    )
-
-    datasets_ok = _download_assets(
-        REQUIRED_DATASETS,
-        supabase_url=supabase_url,
-        bucket=datasets_bucket,
-        prefix=datasets_prefix,
-        public_bucket=public_bucket,
-        headers=headers,
-        timeout_sec=timeout_sec,
-        required=True,
-    )
-    if not datasets_ok:
-        return {
-            "ok": False,
-            "downloaded": True,
-            "missing": [
-                str(path) for _, path in REQUIRED_DATASETS if not path.exists()
-            ],
-            "error": "Could not download required datasets from Supabase.",
-            "artifacts": {
-                name: str(path)
-                for name, path in REQUIRED_ARTIFACTS + OPTIONAL_ARTIFACTS
-            },
-            "datasets": {name: str(path) for name, path in REQUIRED_DATASETS},
-        }
-
-    missing_after = [str(path) for _, path in required_files if not path.exists()]
-    if missing_after:
-        return {
-            "ok": False,
-            "downloaded": True,
-            "missing": missing_after,
-            "error": "Artifacts download completed but files are still missing.",
-            "artifacts": {
-                name: str(path)
-                for name, path in REQUIRED_ARTIFACTS + OPTIONAL_ARTIFACTS
-            },
-            "datasets": {name: str(path) for name, path in REQUIRED_DATASETS},
-        }
-
-    return {
-        "ok": True,
-        "downloaded": True,
-        "missing": [],
-        "artifacts": {
-            name: str(path) for name, path in REQUIRED_ARTIFACTS + OPTIONAL_ARTIFACTS
-        },
-        "datasets": {name: str(path) for name, path in REQUIRED_DATASETS},
-    }
+_groq_client = None
 
 
 def _get_metadata():
     global METADATA
     if METADATA is None:
-        load_artifacts()
         _, _, _, METADATA = get_artifacts()
         if "product_name" not in METADATA.columns and "name" in METADATA.columns:
             METADATA["product_name"] = METADATA["name"]
     return METADATA
-
-
-# Initialize OpenAI client lazily (only when needed)
-_client = None
 
 
 def _find_product_id(product_name: str):
@@ -282,7 +25,7 @@ def _find_product_id(product_name: str):
     metadata = _get_metadata().copy()
     name_col = "product_name" if "product_name" in metadata.columns else "name"
 
-    STOPWORDS = {
+    stopwords = {
         "cream",
         "cleanser",
         "moisturizer",
@@ -294,29 +37,27 @@ def _find_product_id(product_name: str):
         "care",
     }
 
-    query_words = [w for w in product_name.split() if w not in STOPWORDS]
+    query_words = [w for w in product_name.split() if w not in stopwords]
 
     def score(row):
         text = f"{row[name_col]} {row['brand']}".lower()
-
         matched = 0
 
         for word in query_words:
             if word in text:
                 matched += 1
 
-        # 🚨 HARD RULE: ALL important words must match
         if matched == 0:
-            return -100  # reject completely
+            return -100
 
-        score = matched * 3
+        total = matched * 3
 
         if product_name in text:
-            score += 10
+            total += 10
 
-        return score
+        return total
 
-    metadata["match_score"] = metadata.apply(score, axis=1)  # ← ADD THIS BACK
+    metadata["match_score"] = metadata.apply(score, axis=1)
     matches = metadata.sort_values("match_score", ascending=False)
 
     if matches.empty:
@@ -338,27 +79,24 @@ def _get_profile_field(profile, field, default):
     return getattr(profile, field, default)
 
 
-def get_openai_client():
-    """Get OpenAI client, only if openai package is installed and API key is set."""
-    global _client
-    if _client is None and os.getenv("OPENAI_API_KEY"):
+def get_groq_client():
+    global _groq_client
+
+    if _groq_client is None and os.getenv("GROQ_API_KEY"):
         try:
-            from openai import OpenAI
-
-            _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        except ImportError:
-            print("Warning: openai package not installed. Skipping OpenAI integration.")
+            _groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        except Exception as e:
+            print(f"Failed to initialize Groq client: {e}")
             return None
-    return _client
+
+    return _groq_client
 
 
-def query_groq(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
-    """Query Groq Chat Completions API using GROQ_API_KEY."""
-    groq_api_key = os.getenv("GROQ_API_KEY", "").strip()
-    if not groq_api_key:
+def query_groq(message: str, profile: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    client = get_groq_client()
+    if not client:
+        print("Groq not configured: GROQ_API_KEY missing or client init failed.")
         return None
-
-    groq_model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant").strip()
 
     try:
         context = ""
@@ -366,38 +104,66 @@ def query_groq(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
             skin_type = _get_profile_field(profile, "skin_type", "")
             concerns = _get_profile_field(profile, "concerns", [])
             if skin_type or concerns:
-                context = f" The user has {skin_type} skin and is concerned about {', '.join(concerns)}."
+                context = (
+                    f" The user has {skin_type} skin and is concerned about "
+                    f"{', '.join(concerns)}."
+                )
 
-        response = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {groq_api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": groq_model,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": f"You are a helpful skincare expert assistant.{context} Keep responses concise (1-2 sentences).",
-                    },
-                    {"role": "user", "content": message},
-                ],
-                "temperature": 0.7,
-            },
-            timeout=30,
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a helpful skincare expert assistant."
+                        f"{context} Keep responses concise (1-2 sentences)."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": message,
+                },
+            ],
+            temperature=0.7,
+            max_completion_tokens=150,
         )
 
-        if response.status_code == 200:
-            data = response.json()
-            choices = data.get("choices", [])
-            if choices:
-                content = choices[0].get("message", {}).get("content", "")
-                return content.strip() if content else None
+        content = response.choices[0].message.content
+        if content:
+            return content.strip()
+
+        print("Groq returned an empty response.")
         return None
+
     except Exception as e:
         print(f"Groq error: {e}")
         return None
+
+
+def test_groq_connection() -> bool:
+    client = get_groq_client()
+    if not client:
+        print("Groq test failed: client not initialized.")
+        return False
+
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "You are a test assistant."},
+                {"role": "user", "content": "Reply with exactly: Groq is working"},
+            ],
+            temperature=0,
+            max_completion_tokens=20,
+        )
+
+        content = response.choices[0].message.content.strip()
+        print("Groq test response:", content)
+        return "GROQ IS WORKING" in content.upper()
+
+    except Exception as e:
+        print(f"Groq test error: {e}")
+        return False
 
 
 def handle_chat(
@@ -407,7 +173,6 @@ def handle_chat(
 ):
     msg_lower = message.lower().strip()
 
-    # 1. QUICK HANDLING (safe things only)
     if msg_lower in ["yes", "yeah", "y", "ok", "sure"]:
         if last_intent == "recommend":
             return (
@@ -417,14 +182,11 @@ def handle_chat(
 
     if any(greet in msg_lower for greet in ["hi", "hello", "hey"]):
         last_intent = "greeting"
-
         fallback = _smart_fallback(message, profile)
-
         return (
             fallback if fallback else "I'm not sure how to help with that yet."
         ), last_intent
 
-    # 2. HARD RULES (only true garbage filtering)
     if len(msg_lower) < 4 or not any(c.isalpha() for c in msg_lower):
         return (
             "I didn’t quite get that 😅\n\n"
@@ -433,6 +195,7 @@ def handle_chat(
             "• 'Find a dupe for CeraVe cleanser'\n"
             "• 'What should I use for acne?'\n"
         ), last_intent
+
     if any(
         q in msg_lower
         for q in [
@@ -463,10 +226,6 @@ def handle_chat(
     elif intent in ["dupe", "info"]:
         last_intent = intent
 
-    # 4. HANDLE INTENTS FIRST (🔥 THIS FIXES YOUR BUG)
-
-    # 4. HANDLE INTENTS FIRST
-
     if intent == "dupe":
         return handle_dupe(message, profile), last_intent
 
@@ -474,49 +233,41 @@ def handle_chat(
         return handle_info(message, profile), last_intent
 
     elif intent == "recommend" or last_intent == "recommend":
-        SKIN_TYPES = ["oily", "dry", "sensitive", "combination", "normal"]
-        detected_skin = next((s for s in SKIN_TYPES if s in msg_lower), None)
+        skin_types = ["oily", "dry", "sensitive", "combination", "normal"]
+        detected_skin = next((s for s in skin_types if s in msg_lower), None)
 
-        # if user just answered skin type with no category, ask for category
         if detected_skin and not any(
             cat in msg_lower for cat in ["moisturizer", "cleanser", "serum"]
         ):
-            skin_type = detected_skin
             return (
                 "What category are you interested in? (moisturizer, cleanser, serum)",
                 last_intent,
             )
+
         if any(cat in msg_lower for cat in ["moisturizer", "cleanser", "serum"]):
             category = next(
                 cat for cat in ["moisturizer", "cleanser", "serum"] if cat in msg_lower
             )
 
-            category = category.lower().strip()
-
             skin_type = _get_profile_field(profile, "skin_type", "")
-
-            # ✅ ADD THIS BLOCK HERE
-            SKIN_TYPES = ["oily", "dry", "sensitive", "combination", "normal"]
-
-            detected_skin = next((s for s in SKIN_TYPES if s in msg_lower), None)
+            detected_skin = next((s for s in skin_types if s in msg_lower), None)
 
             if detected_skin:
                 skin_type = detected_skin
 
-            # 🔥 ADD THIS CHECK RIGHT AFTER
             if not skin_type:
                 return (
                     "What’s your skin type? (oily, dry, combination, sensitive, normal)",
                     last_intent,
                 )
 
-            CATEGORY_MAP = {
+            category_map = {
                 "moisturizer": ["moisturizer"],
                 "cleanser": ["cleanser"],
                 "serum": ["treatment", "serum"],
             }
 
-            mapped_categories = CATEGORY_MAP.get(category, [])
+            mapped_categories = category_map.get(category, [])
 
             results = recommend(
                 liked_product_ids=[],
@@ -541,7 +292,6 @@ def handle_chat(
 
             for _, row in results.iterrows():
                 product_id = row["product_id"]
-
                 product_info = metadata[metadata["product_id"] == product_id]
 
                 if not product_info.empty:
@@ -556,42 +306,21 @@ def handle_chat(
 
             return response, last_intent
 
-        # 🔗 LINK HANDLING (VERY IMPORTANT FOR UX)
-
-        if any(
-            q in msg_lower
-            for q in ["how do i get", "how can i get", "where do i get", "how to get"]
-        ):
-            if "recommend" in msg_lower or "routine" in msg_lower:
-                return (
-                    "You can get personalized recommendations by filling out our quick skin quiz here:\n"
-                    "👉 [recommendation page link]"
-                ), last_intent
-
-            if "dupe" in msg_lower or "alternative" in msg_lower:
-                return (
-                    "You can find product dupes using our dupe finder here:\n"
-                    "👉 [dupe finder link]"
-                ), last_intent
-
-        # If we are still in recommendation flow → guide user
         if last_intent == "recommend":
             return (
                 "What category are you interested in? (moisturizer, cleanser, serum)",
                 last_intent,
             )
 
-        else:
-            return handle_ai_fallback(message, profile), last_intent
+        return handle_ai_fallback(message, profile), last_intent
 
-    else:  # ← THIS, at the same level as the if/elif above
+    else:
         return handle_ai_fallback(message, profile), last_intent
 
 
 def handle_dupe(message: str, profile=None) -> str:
     msg = message.lower()
 
-    # 🔹 extract product name
     product_name = (
         msg.replace("dupe for", "")
         .replace("dupe", "")
@@ -606,39 +335,30 @@ def handle_dupe(message: str, profile=None) -> str:
         return "Tell me which product you want a dupe for 🙂"
 
     try:
-        # 🔹 STEP 1: find product
         product_id = _find_product_id(product_name)
 
-        # 🔥 STEP 2: fallback → suggestions
         if not product_id:
-            metadata = (
-                _get_metadata().copy()
-            )  # copy to avoid mutating the shared singleton
+            metadata = _get_metadata().copy()
             name_col = "product_name" if "product_name" in metadata.columns else "name"
-            STOPWORDS = {"cream", "cleanser", "moisturizer", "serum", "lotion", "gel"}
+            stopwords = {"cream", "cleanser", "moisturizer", "serum", "lotion", "gel"}
 
-            # 🔹 smarter scoring
             def loose_score(row):
                 text = f"{row[name_col]} {row['brand']}".lower()
                 return sum(
                     word in text
                     for word in product_name.split()
-                    if word not in STOPWORDS
+                    if word not in stopwords
                 )
 
             metadata["loose_score"] = metadata.apply(loose_score, axis=1)
-
             suggestions = metadata.sort_values("loose_score", ascending=False).head(3)
 
             if suggestions.empty:
                 return f"I couldn't find '{product_name}' 😕"
 
-            # 🔹 extract meaningful keywords
-            keywords_used = [w for w in product_name.split() if w not in STOPWORDS]
-
+            keywords_used = [w for w in product_name.split() if w not in stopwords]
             keywords_str = ", ".join(keywords_used) if keywords_used else product_name
 
-            # 🔹 category hint
             if "cream" in product_name:
                 category_hint = "creams"
             elif "cleanser" in product_name:
@@ -648,7 +368,6 @@ def handle_dupe(message: str, profile=None) -> str:
             else:
                 category_hint = "products"
 
-            # 🔹 response
             response = f"I couldn't find '{product_name}' in our dataset 😕\n"
             response += f"But here are similar {category_hint} based on keywords like {keywords_str}:\n"
 
@@ -657,7 +376,6 @@ def handle_dupe(message: str, profile=None) -> str:
 
             return response
 
-        # 🔹 STEP 4: find dupes
         results = find_dupes(product_id)
 
         if "product_name" not in results.columns and "name" in results.columns:
@@ -666,14 +384,14 @@ def handle_dupe(message: str, profile=None) -> str:
         if results.empty:
             return "No cheaper dupes found 😢"
 
-        # 🔹 STEP 5: build response
         response = f"Here are dupes for {product_name}:\n"
         for _, row in results.head(3).iterrows():
             response += f"- {row['product_name']} by {row['brand']} (${row['price']})\n"
 
         return response
 
-    except Exception:
+    except Exception as e:
+        print(f"Dupe handler error: {e}")
         return "Something went wrong while finding dupes"
 
 
@@ -684,12 +402,10 @@ def handle_recommend(message: str, profile: Optional[Dict[str, Any]] = None) -> 
 
     response = f"Based on your {skin_type} skin and {concerns_str}, I'd recommend checking out our personalized products. "
     response += "Would you like recommendations for a specific category like moisturizer, cleanser, or treatment?"
-
     return response
 
 
 def handle_info(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
-    """Handle ingredient and skincare information requests."""
     ingredient = (
         message.replace("what is", "")
         .replace("tell me about", "")
@@ -740,47 +456,19 @@ def handle_info(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
 
 
 def handle_ai_fallback(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
-    """Handle general skincare questions using Groq or OpenAI. Last resort only."""
     groq_response = query_groq(message, profile)
     if groq_response:
         return groq_response
-
-    client = get_openai_client()
-
-    if client:
-        try:
-            context = ""
-            if profile:
-                context = f"The user has {_get_profile_field(profile, 'skin_type', '')} skin and concerns: {', '.join(_get_profile_field(profile, 'concerns', []))}."
-
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": f"You are a helpful skincare expert assistant. {context} Keep responses concise (1-2 sentences).",
-                    },
-                    {"role": "user", "content": message},
-                ],
-                temperature=0.7,
-                max_tokens=150,
-            )
-
-            return response.choices[0].message.content
-        except Exception as e:
-            print(f"OpenAI error: {e}")
 
     return _smart_fallback(message, profile)
 
 
 def _smart_fallback(message: str, profile: Optional[Any] = None) -> str:
-    """Smart fallback responses based on keywords and patterns, personalized with user profile"""
     message_lower = message.lower().strip()
 
     skin_type = _get_profile_field(profile, "skin_type", "")
     concerns = _get_profile_field(profile, "concerns", [])
 
-    # Greetings
     if message_lower in [
         "hi",
         "hello",
@@ -802,25 +490,22 @@ def _smart_fallback(message: str, profile: Optional[Any] = None) -> str:
             "• 'What is niacinamide?'\n\n"
             "I’m here to help 🙂"
         )
-    # Dry skin
+
     if any(word in message_lower for word in ["dry", "dehydrated"]):
         if skin_type == "dry":
             return "Since you have dry skin, I especially recommend using a rich moisturizer, avoiding hot water, and adding hydrating ingredients like hyaluronic acid or glycerin. Consider a facial oil or humidifier to lock in moisture!"
         return "For dry skin, use a rich moisturizer, avoid hot water, and add hydrating ingredients like hyaluronic acid or glycerin. Consider a facial oil or humidifier to lock in moisture!"
 
-    # Oily skin
     if any(word in message_lower for word in ["oily", "greasy"]):
         if skin_type == "oily":
             return "For your oily skin, use a gentle cleanser, apply oil-free moisturizer, and try ingredients like niacinamide or salicylic acid. Don't skip moisturizer—it helps balance oil production!"
         return "For oily skin, use a gentle cleanser, apply oil-free moisturizer, and try ingredients like niacinamide or salicylic acid. Don't skip moisturizer—it helps balance oil production!"
 
-    # Acne
     if any(word in message_lower for word in ["acne", "pimple", "breakout"]):
         if "acne" in concerns:
             return "To help with your acne concerns, maintain a consistent skincare routine with a gentle cleanser, non-comedogenic moisturizer, and try ingredients like salicylic acid or benzoyl peroxide. Keep your skin clean and avoid touching your face!"
         return "To prevent acne, maintain a consistent skincare routine with a gentle cleanser, non-comedogenic moisturizer, and try ingredients like salicylic acid or benzoyl peroxide. Keep your skin clean and avoid touching your face!"
 
-    # Wrinkles/aging
     if (
         "wrinkle" in message_lower
         or "fine line" in message_lower
@@ -830,7 +515,6 @@ def _smart_fallback(message: str, profile: Optional[Any] = None) -> str:
             return "To help reduce your fine lines, use sunscreen daily, moisturize regularly, and consider retinol or vitamin C products. Getting enough sleep and staying hydrated also helps maintain skin elasticity!"
         return "To reduce wrinkles, use sunscreen daily, moisturize regularly, and consider retinol or vitamin C products. Getting enough sleep and staying hydrated also helps maintain skin elasticity!"
 
-    # Routine questions
     if (
         "routine" in message_lower
         or "order" in message_lower
@@ -838,7 +522,6 @@ def _smart_fallback(message: str, profile: Optional[Any] = None) -> str:
     ):
         return "A basic skincare routine involves: 1) Cleanser 2) Toner (optional) 3) Serums 4) Moisturizer 5) Sunscreen (AM). Apply products from thinnest to thickest consistency!"
 
-    # Skincare tips/prevention/improvement
     if any(
         word in message_lower
         for word in [
@@ -854,14 +537,12 @@ def _smart_fallback(message: str, profile: Optional[Any] = None) -> str:
     ):
         return "A consistent skincare routine is key! Cleanse daily, use a moisturizer suited to your skin type, wear sunscreen, and add targeted treatments like serums or masks. Consistency matters more than complexity!"
 
-    # General skincare importance
     if any(
         word in message_lower
         for word in ["important", "necessary", "why", "need", "should"]
     ):
         return "Skincare is important for maintaining healthy, youthful skin. A basic routine of cleansing, moisturizing, and sun protection goes a long way!"
 
-    # DEFAULT
     return (
         "I'm not sure I fully understood 😅\n\n"
         "You can try things like:\n"
@@ -870,3 +551,10 @@ def _smart_fallback(message: str, profile: Optional[Any] = None) -> str:
         "• 'What should I use for acne?'\n\n"
         "Tell me what you're looking for and I'll help you 👍"
     )
+
+
+if __name__ == "__main__":
+    ok = test_groq_connection()
+    print("Groq connected:", ok)
+    if ok:
+        print(query_groq("What is niacinamide?"))

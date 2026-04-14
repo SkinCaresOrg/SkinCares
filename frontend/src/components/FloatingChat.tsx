@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { MessageCircle, X, Send } from "lucide-react";
 import { sendChatMessage } from "@/lib/api";
+import ReactMarkdown from "react-markdown";
 
 interface Message {
   id: string;
@@ -117,7 +118,9 @@ export default function FloatingChat() {
                       : "bg-muted text-foreground rounded-bl-none"
                   }`}
                 >
-                  <p className="text-sm">{msg.text}</p>
+                  <ReactMarkdown className="text-sm prose prose-sm max-w-none whitespace-pre-wrap">
+                    {msg.text}
+                  </ReactMarkdown>
                 </div>
               </div>
             ))}

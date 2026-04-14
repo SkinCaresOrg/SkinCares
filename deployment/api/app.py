@@ -821,14 +821,17 @@ def get_best_model(user_state: UserState):
             return LightGBMFeedback(), "LightGBM (Advanced Stage)"
         except ImportError:
             # Fallback if LightGBM not installed
-            return RandomForestFeedback(), "RandomForest (Fallback)"
+            return RandomForestFeedback(), "RandomForest (Fallback from LightGBM)"
     elif interactions < 100:
         # Experienced stage: use linear + factorization (50-100 interactions)
         try:
             return XLearnFeedback(model_type="linear"), "XLearn Linear (Experienced Stage)"
         except ImportError:
             # Fallback if XLearn not installed
-            return LightGBMFeedback() if "LightGBMFeedback" in dir() else RandomForestFeedback(), "Fallback"
+            try:
+                return LightGBMFeedback(), "LightGBM (Fallback from XLearn)"
+            except ImportError:
+                return RandomForestFeedback(), "RandomForest (Fallback from XLearn)"
     else:
         # Expert user: use online learning with exploration (100+ interactions)
         return ContextualBanditFeedback(

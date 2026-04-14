@@ -1,16 +1,40 @@
 import json
+import os
 from pathlib import Path
 
 import numpy as np
 
 
 def find_project_root() -> Path:
+    candidates = []
+
+    configured_root = os.getenv("SKINCARES_PROJECT_ROOT")
+    if configured_root:
+        candidates.append(Path(configured_root).expanduser().resolve())
+
+    github_workspace = os.getenv("GITHUB_WORKSPACE")
+    if github_workspace:
+        candidates.append(Path(github_workspace).expanduser().resolve())
+
+    cwd = Path.cwd().resolve()
+    candidates.extend([cwd, *cwd.parents])
+
     here = Path(__file__).resolve()
-    for p in [here] + list(here.parents):
-        if (p / "artifacts").exists():
-            return p
+    candidates.extend([here, *here.parents])
+
+    seen = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+
+        root = candidate if candidate.is_dir() else candidate.parent
+        if (root / "artifacts").exists():
+            return root
+
     raise FileNotFoundError(
-        "Could not find project root (folder containing 'artifacts/')."
+        "Could not find project root (folder containing 'artifacts/'). "
+        "Set SKINCARES_PROJECT_ROOT or run from repository root."
     )
 
 

@@ -11,7 +11,7 @@ SCHEMA_PATH = ROOT / "artifacts" / "feature_schema.json"
 def _build_default_weights():
     """
     Build a weight vector from feature_schema.json.
-    Up-weights group and category dims relative to the TF-IDF block so
+    Up-weights group, category, and signal dims relative to the TF-IDF block so
     high-level structure contributes meaningfully despite fewer dims.
     Returns None if the schema has not been generated yet.
     """
@@ -31,6 +31,12 @@ def _build_default_weights():
     w[groups_start:groups_end] = 3.0  # group dims × 3
     w[cat_start:cat_end] = 5.0  # category dims × 5
     w[price_dim] = 0.5  # price is a soft signal
+
+    # signal dims (hydration, barrier, acne_control, etc.) — up-weight like groups
+    signals = schema.get("signals", {})
+    for sig_info in signals.values():
+        w[sig_info["start"]] = 3.0
+
     return w
 
 

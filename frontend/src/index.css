@@ -1,6 +1,7 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&display=swap');
 
 @layer base {
   :root {
@@ -106,4 +107,9 @@
   ::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--muted-foreground) / 0.3);
   }
+  .logo-font {
+  font-family: 'Playfair Display', serif;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
 }

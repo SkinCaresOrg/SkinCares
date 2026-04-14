@@ -11,6 +11,25 @@ python scripts/build_artifacts.py --schema-version v1
 docker compose up --build
 ```
 
+To run only API + frontend locally:
+
+```bash
+docker compose up --build api frontend
+```
+
+The API image no longer bakes in the full `data/` directory. In local compose, the required
+product CSV is mounted as a read-only volume. You can also override the CSV path with:
+
+```bash
+PRODUCTS_CSV_PATH=/absolute/path/to/products_dataset_processed.csv
+```
+
+Local URLs:
+- Frontend: `http://localhost:8080`
+- API docs: `http://localhost:8000/docs`
+
+The frontend container proxies `/api/*` to the API container, so app requests work at `http://localhost:8080`.
+
 If you want a one-off run without Compose:
 
 ```bash
@@ -39,3 +58,20 @@ uvicorn deployment.api:app --reload --host 0.0.0.0 --port 8000
 Open docs:
 - `http://localhost:8000/docs`
 - `http://localhost:8000/openapi.json`
+
+## Auth/API environment variables
+
+When auth is enabled, backend startup requires:
+- `SECRET_KEY`
+- Database URL via `DATABASE_URL`
+
+If you created Postgres through Vercel Integrations, Vercel usually injects one of:
+- `POSTGRES_URL`
+- `POSTGRES_PRISMA_URL`
+- `POSTGRES_URL_NON_POOLING`
+
+For a backend running on Render, copy the connection string value into Render env vars
+as `DATABASE_URL` (or set one of the `POSTGRES_*` vars above).
+
+Also set CORS on Render:
+- `CORS_ALLOW_ORIGINS=https://skinscares.es,https://www.skinscares.es`

@@ -1,13 +1,36 @@
 import csv
-from itertools import count
+from contextlib import asynccontextmanager
+import json
+import logging
+import os
 from pathlib import Path
+import re
 from typing import Dict, List, Literal, Optional
+from uuid import UUID as UUIDValue, uuid4
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+
+from deployment.api.auth.models import User
+from deployment.api.auth.security import hash_password
+from deployment.api.auth.routes import router as auth_router
+from deployment.api.db.init_db import init_db
+from deployment.api.db.session import SessionLocal, get_db
+from deployment.api.persistence.models import (
+    ModelCheckpoint,
+    Product,
+    ProductDupe,
+    RecommendationLog,
+    UserModelState,
+    UserProductEvent,
+    UserProfileState,
+    UserWishlist,
+)
 
 from skincarelib.ml_system.ml_feedback_model import (
     LogisticRegressionFeedback,
@@ -15,8 +38,24 @@ from skincarelib.ml_system.ml_feedback_model import (
     ContextualBanditFeedback,
     UserState,
 )
+from skincarelib.ml_system.feedback_update import compute_user_vector_with_decay
 from skincarelib.ml_system.swipe_session import SwipeSession
 from skincarelib.ml_system.handler import handle_chat
+
+logger = logging.getLogger(__name__)
+REMOTE_ASSET_MODE = bool(os.getenv("SUPABASE_URL", "").strip())
+
+
+def _is_truthy(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+USE_LOCAL_CSV_PRODUCTS = _is_truthy(
+    os.getenv(
+        "SKINCARES_USE_LOCAL_CSV_PRODUCTS",
+        "false" if REMOTE_ASSET_MODE else "true",
+    )
+)
 
 Category = Literal[
     "cleanser",
@@ -163,6 +202,7 @@ class FeedbackResponse(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    user_id: Optional[str] = None
     message: str
     profile: Optional[OnboardingRequest] = None
 
@@ -171,12 +211,68 @@ class ChatResponse(BaseModel):
     response: str
 
 
-app = FastAPI(title="SkinCares API", version="1.0.0")
+class WishlistRequest(BaseModel):
+    user_id: str
+    product_id: int
+
+
+class WishlistResponse(BaseModel):
+    products: List[ProductCard]
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    global PRODUCTS
+    init_db()
+    try:
+        with SessionLocal() as db:
+            if USE_LOCAL_CSV_PRODUCTS:
+                _sync_products_table_from_csv(db)
+            db.commit()
+            PRODUCTS = _load_products_from_db(db)
+            if not PRODUCTS and USE_LOCAL_CSV_PRODUCTS:
+                PRODUCTS = load_products_from_csv()
+            if not PRODUCTS:
+                logger.warning("No products available from database.")
+            _ensure_product_vectors_shape()
+    except SQLAlchemyError as exc:
+        logger.warning("Could not initialize products at startup: %s", exc)
+    yield
+
+
+app = FastAPI(title="SkinCares API", version="1.0.0", lifespan=lifespan)
+
+DEFAULT_CORS_ALLOW_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://skinscares.es",
+    "https://www.skinscares.es",
+]
+
+
+def _normalize_origin(origin: str) -> str:
+    return origin.strip().rstrip("/")
+
+
+raw_cors_origins = os.getenv("CORS_ALLOW_ORIGINS", "")
+extra_cors_origins = [
+    _normalize_origin(origin)
+    for origin in re.split(r"[,;\s]+", raw_cors_origins)
+    if origin.strip()
+]
+cors_allow_origins = (
+    extra_cors_origins
+    if extra_cors_origins
+    else [_normalize_origin(origin) for origin in DEFAULT_CORS_ALLOW_ORIGINS]
+)
+allow_all_origins = "*" in cors_allow_origins
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["*"] if allow_all_origins else cors_allow_origins,
+    allow_credentials=not allow_all_origins,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
@@ -187,38 +283,67 @@ app.add_middleware(
 # TODO: Fine-tune these based on production metrics.
 EARLY_STAGE_THRESHOLD = 5  # Minimum interactions to start using complex models
 MID_STAGE_THRESHOLD = 20  # Minimum interactions to use online learning
+MAX_ONBOARDING_SEED_LIKES = 40
+MAX_ONBOARDING_SEED_DISLIKES = 40
 
 
-def normalize_category(raw_category: str) -> Category:
+def normalize_category(raw_category: str, product_name: str = "") -> Category:
     """Map raw category strings from CSV to Category enum."""
-    if not raw_category:
+    if not raw_category and not product_name:
         return "treatment"
     lower = raw_category.lower().strip()
-    if "clean" in lower:
-        return "cleanser"
-    elif "moisturiz" in lower:
-        return "moisturizer"
-    elif "sunscreen" in lower or "spf" in lower:
+    product_lower = product_name.lower().strip()
+    combined = f"{lower} {product_lower}"
+
+    if re.search(
+        r"\b(spf\s*\d*|sunscreen|sun\s*screen|broad\s*spectrum|uv)\b", combined
+    ):
         return "sunscreen"
-    elif "mask" in lower:
-        return "face_mask"
-    elif "eye" in lower:
+    if "eye" in lower or "eye" in product_lower:
         return "eye_cream"
+    if "mask" in lower or "mask" in product_lower:
+        return "face_mask"
+    if any(
+        keyword in combined
+        for keyword in [
+            "clean",
+            "cleanser",
+            "wash",
+            "soap",
+            "micellar",
+            "scrub",
+            "exfoliat",
+        ]
+    ):
+        return "cleanser"
+    elif any(
+        keyword in combined
+        for keyword in ["moistur", "cream", "lotion", "balm", "hydrat", "ointment"]
+    ):
+        return "moisturizer"
     return "treatment"
 
 
 def load_products_from_csv() -> Dict[int, ProductDetail]:
     """Load products from CSV file."""
     products = {}
-    csv_path = (
-        Path(__file__).parent.parent.parent
-        / "data"
-        / "processed"
-        / "products_dataset_processed.csv"
-    )
+    csv_path_env = os.getenv("PRODUCTS_CSV_PATH", "").strip()
+    if csv_path_env:
+        csv_path = Path(csv_path_env)
+    else:
+        csv_path = (
+            Path(__file__).parent.parent.parent
+            / "data"
+            / "processed"
+            / "products_with_signals.csv"
+        )
 
     if not csv_path.exists():
-        print(f"Warning: CSV file not found at {csv_path}")
+        message = f"CSV file not found at {csv_path}"
+        if REMOTE_ASSET_MODE:
+            logger.info(message)
+        else:
+            logger.warning(message)
         return products
 
     try:
@@ -240,8 +365,10 @@ def load_products_from_csv() -> Dict[int, ProductDetail]:
                 except ValueError:
                     price = 0.0
 
-                category_raw = row.get("usage_type", row.get("category", "treatment"))
-                category = normalize_category(category_raw)
+                usage_type = row.get("usage_type", "")
+                category_col = row.get("category", "")
+                category_raw = f"{usage_type} {category_col}".strip()
+                category = normalize_category(category_raw, product_name=product_name)
 
                 image_url = row.get("image_url", "").strip()
 
@@ -275,25 +402,104 @@ def load_products_from_csv() -> Dict[int, ProductDetail]:
     return products
 
 
-PRODUCTS = load_products_from_csv()
+def _coerce_ingredients(raw_ingredients: object) -> List[str]:
+    if raw_ingredients is None:
+        return []
+    if isinstance(raw_ingredients, list):
+        return [str(item).strip() for item in raw_ingredients if str(item).strip()]
+    if isinstance(raw_ingredients, tuple):
+        return [str(item).strip() for item in raw_ingredients if str(item).strip()]
+
+    text = str(raw_ingredients).strip()
+    if not text:
+        return []
+    return [item.strip() for item in text.split(",") if item.strip()]
+
+
+def _load_products_from_db(db: Session) -> Dict[int, ProductDetail]:
+    rows = db.query(Product).order_by(Product.product_id.asc()).all()
+    products: Dict[int, ProductDetail] = {}
+
+    for row in rows:
+        try:
+            category = normalize_category(
+                str(row.category or ""), product_name=str(row.product_name or "")
+            )
+            ingredients = _coerce_ingredients(row.ingredients)
+            product_id = int(row.product_id)
+
+            products[product_id] = ProductDetail(
+                product_id=product_id,
+                product_name=str(row.product_name or "").strip(),
+                brand=str(row.brand or "").strip(),
+                category=category,
+                price=float(row.price or 0),
+                image_url=str(row.image_url or "").strip(),
+                short_description=str(row.short_description or "").strip(),
+                rating_count=0,
+                wishlist_supported=True,
+                ingredients=ingredients,
+                ingredient_highlights=ingredients[:2],
+                concerns_targeted=[],
+                skin_types_supported=[],
+            )
+        except Exception as exc:
+            logger.warning(
+                "Skipping invalid product row product_id=%s: %s",
+                getattr(row, "product_id", None),
+                exc,
+            )
+
+    logger.info("Loaded %d products from database", len(products))
+    return products
+
+
+PRODUCTS = load_products_from_csv() if USE_LOCAL_CSV_PRODUCTS else {}
 
 # Load ML assets
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 PRODUCT_VECTORS_PATH = PROJECT_ROOT / "artifacts" / "product_vectors.npy"
 
 try:
-    PRODUCT_VECTORS = np.load(PRODUCT_VECTORS_PATH)
+    PRODUCT_VECTORS = np.load(PRODUCT_VECTORS_PATH, mmap_mode="r")
 except FileNotFoundError:
-    print(f"⚠️  Warning: Product vectors not found at {PRODUCT_VECTORS_PATH}")
+    message = f"Product vectors not found at {PRODUCT_VECTORS_PATH}"
+    if REMOTE_ASSET_MODE:
+        logger.info(message)
+    else:
+        logger.warning(message)
     PRODUCT_VECTORS = np.random.randn(len(PRODUCTS), 128).astype(np.float32)
+
+
+def _ensure_product_vectors_shape() -> None:
+    global PRODUCT_VECTORS
+
+    product_count = len(PRODUCTS)
+    if product_count == 0:
+        return
+
+    if PRODUCT_VECTORS.ndim != 2:
+        PRODUCT_VECTORS = np.random.randn(product_count, 128).astype(np.float32)
+        return
+
+    if PRODUCT_VECTORS.shape[0] != product_count:
+        vector_dim = PRODUCT_VECTORS.shape[1] if PRODUCT_VECTORS.shape[1] > 0 else 128
+        logger.info(
+            "Product vector count (%d) does not match products count (%d); "
+            "reinitializing fallback vectors.",
+            PRODUCT_VECTORS.shape[0],
+            product_count,
+        )
+        PRODUCT_VECTORS = np.random.randn(product_count, vector_dim).astype(np.float32)
+
 
 # User sessions for online learning
 USER_SESSIONS: Dict[str, SwipeSession] = {}
 # User ML model states for generating recommendations
 USER_STATES: Dict[str, UserState] = {}
 USER_PROFILES: Dict[str, OnboardingRequest] = {}
-USER_ID_COUNTER = count(start=1)
 USER_FEEDBACK: List[FeedbackRequest] = []
+DB_INITIALIZED = False
 
 
 def get_user_session(user_id: str) -> SwipeSession:
@@ -354,6 +560,235 @@ def get_user_state(user_id: str) -> UserState:
     return USER_STATES[user_id]
 
 
+def _build_product_index() -> Dict[int, int]:
+    return {p.product_id: i for i, p in enumerate(PRODUCTS.values())}
+
+
+def _ensure_db_initialized() -> None:
+    global DB_INITIALIZED
+    if DB_INITIALIZED:
+        return
+    init_db()
+    DB_INITIALIZED = True
+
+
+def _generate_user_id() -> str:
+    return str(uuid4())
+
+
+def _ensure_user_exists(db: Session, user_id: str) -> None:
+    _ensure_db_initialized()
+    existing = db.query(User).filter(User.id == user_id).first()
+    if existing is not None:
+        return
+
+    db.add(
+        User(
+            id=user_id,
+            email=f"onboarding+{user_id}@local.test",
+            hashed_password=hash_password(uuid4().hex),
+        )
+    )
+
+
+def _normalize_optional_user_id(user_id: Optional[str]) -> Optional[str]:
+    if not user_id:
+        return None
+    try:
+        return str(UUIDValue(user_id))
+    except (TypeError, ValueError):
+        return None
+
+
+def _sync_products_table_from_csv(db: Session) -> None:
+    _ensure_db_initialized()
+    for product in PRODUCTS.values():
+        db.merge(
+            Product(
+                product_id=product.product_id,
+                product_name=product.product_name,
+                brand=product.brand,
+                category=product.category,
+                price=product.price,
+                image_url=product.image_url,
+                ingredients=product.ingredients,
+                short_description=product.short_description,
+            )
+        )
+
+
+def _persist_user_model_state(db: Session, user_id: str, user_state: UserState) -> None:
+    _ensure_db_initialized()
+    row = db.query(UserModelState).filter(UserModelState.user_id == user_id).first()
+    liked_reasons = list(getattr(user_state, "liked_reasons", []) or [])
+    disliked_reasons = list(getattr(user_state, "disliked_reasons", []) or [])
+    irritation_reasons = list(getattr(user_state, "irritation_reasons", []) or [])
+
+    if row is None:
+        row = UserModelState(user_id=user_id)
+        db.add(row)
+
+    row.interactions = int(user_state.interactions)
+    row.liked_count = int(user_state.liked_count)
+    row.disliked_count = int(user_state.disliked_count)
+    row.irritation_count = int(user_state.irritation_count)
+    row.liked_reasons = liked_reasons
+    row.disliked_reasons = disliked_reasons
+    row.irritation_reasons = irritation_reasons
+
+
+def _persist_model_checkpoint(db: Session, user_id: str, user_state: UserState) -> None:
+    _ensure_db_initialized()
+    snapshot = {
+        "interactions": int(user_state.interactions),
+        "liked_count": int(user_state.liked_count),
+        "disliked_count": int(user_state.disliked_count),
+        "irritation_count": int(user_state.irritation_count),
+    }
+    db.add(
+        ModelCheckpoint(
+            user_id=user_id,
+            model_type="user_state_snapshot",
+            model_blob=json.dumps(snapshot).encode("utf-8"),
+            n_updates=int(user_state.interactions),
+        )
+    )
+
+
+def _log_recommendation_rows(
+    db: Session,
+    user_id: str,
+    recommendations: List[tuple[ProductDetail, float]],
+    model_name: str,
+) -> None:
+    _ensure_db_initialized()
+    for position, (product, score) in enumerate(recommendations, start=1):
+        db.add(
+            RecommendationLog(
+                user_id=user_id,
+                product_id=product.product_id,
+                model_used=model_name,
+                rank_position=position,
+                score=float(score),
+            )
+        )
+
+
+def _load_dupes_from_db(db: Session, source_product_id: int) -> List[DupeProduct]:
+    _ensure_db_initialized()
+    rows = (
+        db.query(ProductDupe)
+        .filter(ProductDupe.source_product_id == source_product_id)
+        .order_by(ProductDupe.dupe_score.desc())
+        .limit(24)
+        .all()
+    )
+    dupes: List[DupeProduct] = []
+    for row in rows:
+        product = PRODUCTS.get(row.dupe_product_id)
+        if product is None:
+            continue
+        dupes.append(
+            DupeProduct(
+                **_product_to_card(product).model_dump(),
+                dupe_score=float(row.dupe_score),
+                explanation=row.explanation or "",
+            )
+        )
+    return dupes
+
+
+def _load_profile_from_db(db: Session, user_id: str) -> Optional[OnboardingRequest]:
+    _ensure_db_initialized()
+    profile_row = (
+        db.query(UserProfileState).filter(UserProfileState.user_id == user_id).first()
+    )
+    if profile_row is None:
+        return None
+    return OnboardingRequest.model_validate(profile_row.profile)
+
+
+def _save_profile_to_db(db: Session, user_id: str, payload: OnboardingRequest) -> None:
+    _ensure_db_initialized()
+    profile_row = (
+        db.query(UserProfileState).filter(UserProfileState.user_id == user_id).first()
+    )
+    profile_data = payload.model_dump()
+    if profile_row is None:
+        profile_row = UserProfileState(user_id=user_id, profile=profile_data)
+        db.add(profile_row)
+    else:
+        profile_row.profile = profile_data
+
+
+def _save_feedback_to_db(db: Session, payload: FeedbackRequest) -> None:
+    _ensure_db_initialized()
+
+    if payload.has_tried and payload.reaction == "like":
+        event_type = "tried_like"
+    elif payload.has_tried and payload.reaction == "dislike":
+        event_type = "tried_dislike"
+    elif payload.has_tried and payload.reaction == "irritation":
+        event_type = "tried_irritation"
+    elif payload.has_tried:
+        event_type = "tried"
+    else:
+        event_type = "not_tried"
+
+    db.add(
+        UserProductEvent(
+            user_id=payload.user_id,
+            product_id=payload.product_id,
+            event_type=event_type,
+            has_tried=payload.has_tried,
+            reaction=payload.reaction,
+            reason_tags=payload.reason_tags,
+            free_text=payload.free_text,
+            skipped_questionnaire=not payload.has_tried,
+        )
+    )
+
+
+def _load_user_state_from_db(db: Session, user_id: str) -> UserState:
+    _ensure_db_initialized()
+    user_state = UserState(dim=PRODUCT_VECTORS.shape[1])
+    product_index = _build_product_index()
+
+    feedback_rows = (
+        db.query(UserProductEvent)
+        .filter(UserProductEvent.user_id == user_id)
+        .filter(UserProductEvent.has_tried.is_(True))
+        .order_by(UserProductEvent.id.asc())
+        .all()
+    )
+
+    for feedback in feedback_rows:
+        vec = get_product_vector_safe(feedback.product_id, product_index)
+        if vec is None:
+            continue
+
+        reasons = list(feedback.reason_tags or [])
+        if feedback.free_text:
+            reasons.append(feedback.free_text)
+
+        ts = feedback.created_at
+        if feedback.reaction == "like":
+            user_state.add_liked(
+                vec, reasons=reasons if reasons else None, timestamp=ts
+            )
+        elif feedback.reaction == "dislike":
+            user_state.add_disliked(
+                vec, reasons=reasons if reasons else None, timestamp=ts
+            )
+        elif feedback.reaction == "irritation":
+            user_state.add_irritation(
+                vec, reasons=reasons if reasons else None, timestamp=ts
+            )
+
+    USER_STATES[user_id] = user_state
+    return user_state
+
+
 def _product_to_card(product: ProductDetail) -> ProductCard:
     return ProductCard(**product.model_dump())
 
@@ -397,10 +832,129 @@ def options_feedback():
     return {"detail": "OK"}
 
 
+def _seed_user_model_from_onboarding(
+    user_id: str,
+    skin_type: str,
+    skin_concerns: List[str],
+) -> None:
+    """
+    Seed user's ML model with pseudo-feedback from onboarding answers.
+
+    Improves Day 1 recommendations by giving the model initial training data
+    based on the user's stated skin type and concerns.
+
+    Args:
+        user_id: User identifier
+        skin_type: User's skin type (dry, oily, sensitive, etc.)
+        skin_concerns: List of user's skin concerns (dryness, acne, etc.)
+    """
+    user_state = get_user_state(user_id)
+
+    if not PRODUCTS:
+        return  # No products to seed with
+
+    concerns_lower = [c.lower() for c in skin_concerns]
+    suited_products = []
+    unsuited_products = []
+
+    # Build product index for vector lookup
+    product_index = {p.product_id: i for i, p in enumerate(PRODUCTS.values())}
+
+    # Score products based on metadata match with user's profile
+    for product in PRODUCTS.values():
+        product_text = (
+            f"{product.product_name.lower()} "
+            f"{product.category.lower()} "
+            f"{product.brand.lower()}"
+        )
+
+        # Count matching keywords
+        match_count = sum(1 for concern in concerns_lower if concern in product_text)
+
+        # Add bonus for common skincare keywords
+        skincare_keywords = {
+            "dry": ["hydrat", "moistur", "nourish", "repair"],
+            "oily": ["oil control", "matte", "purifying", "sebum"],
+            "sensitive": ["gentle", "soothing", "calm", "hypoallergen"],
+            "acne": ["acne", "pimple", "blemish", "purifying"],
+            "anti-aging": ["anti-aging", "wrinkle", "firming", "collagen"],
+        }
+
+        skin_keywords = skincare_keywords.get(skin_type.lower(), [])
+        match_count += sum(1 for keyword in skin_keywords if keyword in product_text)
+
+        if match_count > 0:
+            suited_products.append((product.product_id, match_count))
+        else:
+            unsuited_products.append(product.product_id)
+
+    # Add top-matched products as pseudo-likes
+    if suited_products:
+        suited_products.sort(key=lambda x: x[1], reverse=True)
+        top_count = min(MAX_ONBOARDING_SEED_LIKES, max(1, len(suited_products) // 10))
+
+        for product_id, _ in suited_products[:top_count]:
+            vec = get_product_vector_safe(product_id, product_index)
+            if vec is not None:
+                user_state.add_liked(vec)
+
+    # Add unsuitable products as pseudo-dislikes
+    if unsuited_products:
+        dislike_count = min(
+            MAX_ONBOARDING_SEED_DISLIKES,
+            max(1, len(unsuited_products) // 20),
+        )
+        for product_id in unsuited_products[:dislike_count]:
+            vec = get_product_vector_safe(product_id, product_index)
+            if vec is not None:
+                user_state.add_disliked(vec)
+
+    print(
+        f"[Onboarding Seeding] user={user_id} skin_type={skin_type} "
+        f"concerns={skin_concerns} suited={len(suited_products)} "
+        f"unseeded by={len(unsuited_products)}"
+    )
+
+
 @app.post("/api/onboarding", response_model=OnboardingResponse)
-def submit_onboarding(payload: OnboardingRequest) -> OnboardingResponse:
-    user_id = f"user_{next(USER_ID_COUNTER)}"
+def submit_onboarding(
+    payload: OnboardingRequest,
+    db: Session = Depends(get_db),
+) -> OnboardingResponse:
+    user_id = _generate_user_id()
     USER_PROFILES[user_id] = payload
+
+    try:
+        _ensure_user_exists(db, user_id)
+        _save_profile_to_db(db, user_id, payload)
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.exception("Could not persist onboarding profile for user_id=%s", user_id)
+        raise HTTPException(
+            status_code=500,
+            detail="Could not persist onboarding profile",
+        ) from exc
+
+    # Seed the model with onboarding data
+    _seed_user_model_from_onboarding(
+        user_id=user_id,
+        skin_type=payload.skin_type,
+        skin_concerns=payload.concerns,
+    )
+
+    try:
+        user_state = USER_STATES.get(user_id)
+        if user_state is not None:
+            _persist_user_model_state(db, user_id, user_state)
+            _persist_model_checkpoint(db, user_id, user_state)
+            db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.warning(
+            "Could not persist initial model state for user_id=%s: %s", user_id, exc
+        )
+
     return OnboardingResponse(user_id=user_id, profile=payload)
 
 
@@ -414,7 +968,7 @@ def list_products(
     limit: int = Query(default=24, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> ProductListResponse:
-    items = [_product_to_card(product) for product in PRODUCTS.values()]
+    items = list(PRODUCTS.values())
 
     if category is not None:
         items = [product for product in items if product.category == category]
@@ -439,7 +993,7 @@ def list_products(
         items.sort(key=lambda product: product.price, reverse=True)
 
     total = len(items)
-    paged = items[offset : offset + limit]
+    paged = [_product_to_card(product) for product in items[offset : offset + limit]]
 
     return ProductListResponse(products=paged, total=total)
 
@@ -457,11 +1011,15 @@ def get_recommendations(
     user_id: str,
     category: Optional[Category] = None,
     limit: int = Query(default=12, ge=1, le=100),
+    db: Session = Depends(get_db),
 ) -> RecommendationsResponse:
     if user_id not in USER_PROFILES:
-        raise HTTPException(status_code=404, detail="User not found")
+        db_profile = _load_profile_from_db(db, user_id)
+        if db_profile is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        USER_PROFILES[user_id] = db_profile
 
-    user_state = get_user_state(user_id)
+    user_state = USER_STATES.get(user_id) or _load_user_state_from_db(db, user_id)
     candidates = [product for product in PRODUCTS.values()]
     if category is not None:
         candidates = [product for product in candidates if product.category == category]
@@ -471,24 +1029,62 @@ def get_recommendations(
     model_name = "default"
     if user_state.interactions > 0:
         try:
-            # Select best model based on learning stage
-            model, model_name = get_best_model(user_state)
-            model.fit(user_state)
-            
-            # Build product_index mapping for safe vector lookup
-            product_index = {p.product_id: i for i, p in enumerate(PRODUCTS.values())}
-
-            for product in candidates:
-                # Get vector for this product using safe mapping
-                vec = get_product_vector_safe(product.product_id, product_index)
-                if vec is not None:
-                    score = float(model.predict_preference(vec))
-                    scores.append(max(0.1, score))
+            training_data = user_state.get_training_data()
+            if training_data is None:
+                # Not enough data for ML — use Rocchio with temporal decay
+                user_vec = compute_user_vector_with_decay(user_state)
+                product_index = {
+                    p.product_id: i for i, p in enumerate(PRODUCTS.values())
+                }
+                for product in candidates:
+                    vec = get_product_vector_safe(product.product_id, product_index)
+                    if vec is not None:
+                        score = float(
+                            np.dot(user_vec, vec) / (np.linalg.norm(vec) + 1e-9)
+                        )
+                        scores.append(max(0.0, score))
+                    else:
+                        scores.append(0.5)
+            else:
+                _, y = training_data
+                if len(np.unique(y)) < 2:
+                    # Only one class — decay-based Rocchio is more informative than 0.5
+                    user_vec = compute_user_vector_with_decay(user_state)
+                    product_index = {
+                        p.product_id: i for i, p in enumerate(PRODUCTS.values())
+                    }
+                    for product in candidates:
+                        vec = get_product_vector_safe(product.product_id, product_index)
+                        if vec is not None:
+                            score = float(
+                                np.dot(user_vec, vec) / (np.linalg.norm(vec) + 1e-9)
+                            )
+                            scores.append(max(0.0, score))
+                        else:
+                            scores.append(0.5)
                 else:
-                    scores.append(0.5)
+                    # Select best model based on learning stage
+                    model, model_name = get_best_model(user_state)
+                    model.fit(user_state)
+
+                    # Build product_index mapping for safe vector lookup
+                    product_index = {
+                        p.product_id: i for i, p in enumerate(PRODUCTS.values())
+                    }
+
+                    for product in candidates:
+                        # Get vector for this product using safe mapping
+                        vec = get_product_vector_safe(product.product_id, product_index)
+                        if vec is not None:
+                            score = float(model.predict_preference(vec))
+                            scores.append(max(0.1, score))
+                        else:
+                            scores.append(0.5)
         except Exception as e:
             # Fallback to neutral if model fails
-            print(f"Model error: {e}")
+            logger.warning(
+                "Model error in recommendations for user_id=%s: %s", user_id, e
+            )
             scores = [0.5] * len(candidates)
     else:
         scores = [0.5] * len(candidates)
@@ -507,14 +1103,29 @@ def get_recommendations(
         for product, score in ranked[:limit]
     ]
 
+    try:
+        _log_recommendation_rows(db, user_id, ranked[:limit], model_name)
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.warning(
+            "Could not persist recommendation_log rows for user_id=%s: %s",
+            user_id,
+            exc,
+        )
+
     return RecommendationsResponse(products=result)
 
 
 @app.get("/api/dupes/{product_id}", response_model=DupesResponse)
-def get_dupes(product_id: int) -> DupesResponse:
+def get_dupes(product_id: int, db: Session = Depends(get_db)) -> DupesResponse:
     source = PRODUCTS.get(product_id)
     if source is None:
         raise HTTPException(status_code=404, detail="Product not found")
+
+    db_dupes = _load_dupes_from_db(db, product_id)
+    if db_dupes:
+        return DupesResponse(source_product_id=product_id, dupes=db_dupes)
 
     alternatives = [
         product
@@ -535,41 +1146,131 @@ def get_dupes(product_id: int) -> DupesResponse:
 
 
 @app.post("/api/feedback", response_model=FeedbackResponse)
-def submit_feedback(payload: FeedbackRequest) -> FeedbackResponse:
+def submit_feedback(
+    payload: FeedbackRequest,
+    db: Session = Depends(get_db),
+) -> FeedbackResponse:
     if payload.user_id not in USER_PROFILES:
-        raise HTTPException(status_code=404, detail="User not found")
+        db_profile = _load_profile_from_db(db, payload.user_id)
+        if db_profile is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        USER_PROFILES[payload.user_id] = db_profile
+
     if payload.product_id not in PRODUCTS:
         raise HTTPException(status_code=404, detail="Product not found")
 
     USER_FEEDBACK.append(payload)
 
+    try:
+        _save_feedback_to_db(db, payload)
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.exception(
+            "Could not persist feedback event for user_id=%s product_id=%s",
+            payload.user_id,
+            payload.product_id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Could not persist feedback event",
+        ) from exc
+
     # Update ML model state with new feedback
     try:
-        user_state = get_user_state(payload.user_id)
+        user_state = USER_STATES.get(payload.user_id) or _load_user_state_from_db(
+            db, payload.user_id
+        )
         if payload.has_tried:
             # Build product_index for this user session
-            product_index = {p.product_id: i for i, p in enumerate(PRODUCTS.values())}
+            product_index = _build_product_index()
             vec = get_product_vector_safe(payload.product_id, product_index)
             if vec is not None:
+                # Include reason_tags for richer learning signal
+                reasons = payload.reason_tags or []
+                if payload.free_text:
+                    reasons = reasons + [payload.free_text]
+
                 if payload.reaction == "like":
-                    user_state.add_liked(vec)
+                    user_state.add_liked(vec, reasons=reasons if reasons else None)
                 elif payload.reaction == "dislike":
-                    user_state.add_disliked(vec)
+                    user_state.add_disliked(vec, reasons=reasons if reasons else None)
                 elif payload.reaction == "irritation":
-                    user_state.add_irritation(vec)
+                    user_state.add_irritation(vec, reasons=reasons if reasons else None)
+
+            _persist_user_model_state(db, payload.user_id, user_state)
+            _persist_model_checkpoint(db, payload.user_id, user_state)
+            db.commit()
     except Exception as e:
-        print(f"Warning: Could not update ML model state: {e}")
+        logger.warning(
+            "Could not update ML model state for user_id=%s product_id=%s: %s",
+            payload.user_id,
+            payload.product_id,
+            e,
+        )
 
     return FeedbackResponse(success=True, message="Feedback recorded & model updated")
 
 
+@app.get("/api/wishlist/{user_id}", response_model=WishlistResponse)
+def get_wishlist(user_id: str, db: Session = Depends(get_db)) -> WishlistResponse:
+    rows = db.query(UserWishlist).filter(UserWishlist.user_id == user_id).all()
+    products = []
+    for row in rows:
+        product = PRODUCTS.get(row.product_id)
+        if product is None:
+            continue
+        products.append(_product_to_card(product))
+    return WishlistResponse(products=products)
+
+
+@app.post("/api/wishlist", response_model=FeedbackResponse)
+def add_to_wishlist(
+    payload: WishlistRequest, db: Session = Depends(get_db)
+) -> FeedbackResponse:
+    if payload.product_id not in PRODUCTS:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    existing = (
+        db.query(UserWishlist)
+        .filter(UserWishlist.user_id == payload.user_id)
+        .filter(UserWishlist.product_id == payload.product_id)
+        .first()
+    )
+    if existing is None:
+        db.add(UserWishlist(user_id=payload.user_id, product_id=payload.product_id))
+        db.commit()
+    return FeedbackResponse(success=True, message="Wishlist updated")
+
+
+@app.delete("/api/wishlist/{user_id}/{product_id}", response_model=FeedbackResponse)
+def remove_from_wishlist(
+    user_id: str,
+    product_id: int,
+    db: Session = Depends(get_db),
+) -> FeedbackResponse:
+    row = (
+        db.query(UserWishlist)
+        .filter(UserWishlist.user_id == user_id)
+        .filter(UserWishlist.product_id == product_id)
+        .first()
+    )
+    if row is not None:
+        db.delete(row)
+        db.commit()
+    return FeedbackResponse(success=True, message="Wishlist updated")
+
+
 @app.get("/api/debug/user-state/{user_id}")
-def get_user_debug_state(user_id: str) -> dict:
+def get_user_debug_state(user_id: str, db: Session = Depends(get_db)) -> dict:
     """Debug endpoint to inspect ML model learning state."""
     if user_id not in USER_PROFILES:
-        raise HTTPException(status_code=404, detail="User not found")
+        db_profile = _load_profile_from_db(db, user_id)
+        if db_profile is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        USER_PROFILES[user_id] = db_profile
 
-    user_state = get_user_state(user_id)
+    user_state = USER_STATES.get(user_id) or _load_user_state_from_db(db, user_id)
 
     return {
         "user_id": user_id,
@@ -583,15 +1284,22 @@ def get_user_debug_state(user_id: str) -> dict:
 
 
 @app.get("/api/debug/product-score/{user_id}/{product_id}")
-def get_product_score(user_id: str, product_id: int) -> dict:
+def get_product_score(
+    user_id: str,
+    product_id: int,
+    db: Session = Depends(get_db),
+) -> dict:
     """Debug endpoint to get ML model score for a specific product."""
     if user_id not in USER_PROFILES:
-        raise HTTPException(status_code=404, detail="User not found")
+        db_profile = _load_profile_from_db(db, user_id)
+        if db_profile is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        USER_PROFILES[user_id] = db_profile
 
     if product_id not in PRODUCTS:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    user_state = get_user_state(user_id)
+    user_state = USER_STATES.get(user_id) or _load_user_state_from_db(db, user_id)
     product_data = PRODUCTS[product_id]
 
     # Get product vector using safe mapping
@@ -628,10 +1336,14 @@ def get_product_score(user_id: str, product_id: int) -> dict:
 
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(request: ChatRequest) -> ChatResponse:
-    """Chat endpoint that handles ingredient questions, dupe finding, and recommendations"""
     try:
-        response_text = handle_chat(request.message, profile=request.profile)
+        response_text, _ = handle_chat(
+            request.message, profile=request.profile
+        )  # ← unpack tuple
         return ChatResponse(response=response_text)
     except Exception as e:
         print(f"Chat error: {e}")
         return ChatResponse(response="Sorry, I encountered an error. Please try again.")
+
+
+app.include_router(auth_router, prefix="/api", tags=["auth"])

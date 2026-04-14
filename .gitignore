@@ -110,6 +110,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.venv311
 
 # Spyder project settings
 .spyderproject
@@ -131,5 +132,19 @@ dmypy.json
 .DS_Store
 
 # Processed data files
-data/processed/*.csv
 notebooks/data/
+
+# local database files
+dev.db 
+local.db
+
+data/processed/products_dataset_clean_tokens.csv
+artifacts/product_vectors.npy
+artifacts/faiss.index
+
+# Large generated artifacts (do not commit)
+artifacts/faiss.index
+artifacts/product_vectors.npy
+
+# Local staging for external object storage uploads (do not commit)
+supabase_upload/

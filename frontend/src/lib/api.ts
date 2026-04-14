@@ -9,8 +9,20 @@ import {
   SortValue,
 } from "./types";
 import { getUserProfile } from "./wishlist";
+import { getAuthToken } from "./session";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+const PROD_API_FALLBACK_URL = "https://api.skinscares.es/api";
+
+const normalizeBaseUrl = (value: string) => value.replace(/\/+$/, "");
+
+const resolvedBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+const BASE_URL = normalizeBaseUrl(
+  resolvedBaseUrl || (import.meta.env.PROD ? PROD_API_FALLBACK_URL : "/api")
+);
+
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class ApiError extends Error {
   status: number;
@@ -25,15 +37,54 @@ export class ApiError extends Error {
 }
 
 export async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${url}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+  let res: Response | null = null;
+  let fetchError: unknown;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const token = getAuthToken();
+      const defaultHeaders: HeadersInit = {
+        "Content-Type": "application/json",
+      };
+
+      if (token) {
+        defaultHeaders.Authorization = `Bearer ${token}`;
+      }
+
+      res = await fetch(`${BASE_URL}${url}`, {
+        headers: {
+          ...defaultHeaders,
+          ...(options?.headers || {}),
+        },
+        ...options,
+      });
+
+      if (res.ok || !RETRYABLE_STATUS.has(res.status) || attempt === 2) {
+        break;
+      }
+    } catch (error) {
+      fetchError = error;
+      if (attempt === 2) {
+        throw error;
+      }
+    }
+
+    await sleep(250 * (attempt + 1));
+  }
+
+  if (!res) {
+    throw fetchError instanceof Error ? fetchError : new Error("Network request failed");
+  }
+
   if (!res.ok) {
     let detail = "Request failed";
     try {
       const payload = await res.json();
-      detail = payload?.detail || detail;
+      if (Array.isArray(payload?.detail)) {
+        detail = payload.detail.map((d: any) => d.msg || JSON.stringify(d)).join(", ");
+      } else {
+        detail = payload?.detail || detail;
+      }
     } catch {
       detail = res.statusText || detail;
     }
@@ -56,6 +107,7 @@ export async function getProducts(params?: {
   search?: string;
   min_price?: number;
   max_price?: number;
+  offset?: number;
 }): Promise<{ products: Product[]; total: number }> {
   const query = new URLSearchParams();
   if (params?.category) query.set("category", params.category);
@@ -67,6 +119,9 @@ export async function getProducts(params?: {
   if (params?.max_price !== undefined) {
     query.set("max_price", String(params.max_price));
   }
+  if (params?.offset !== undefined) {
+  query.set("offset", String(params.offset));
+}
   const qs = query.toString();
   return fetchApi(`/products${qs ? `?${qs}` : ""}`);
 }

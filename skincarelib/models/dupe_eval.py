@@ -77,7 +77,7 @@ def ndcg_at_k(retrieved, relevant, k):
 
 def evaluate(benchmark, k_values=(3, 5, 10), find_dupes_kwargs=None):
     """Run find_dupes over every query in the benchmark and compute metrics."""
-    from dupe_finder import find_dupes
+    from .dupe_finder import find_dupes
 
     kwargs = find_dupes_kwargs or {}
     max_k = max(k_values)
@@ -125,7 +125,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.template:
-        from dupe_finder import PRODUCT_INDEX
+        from .dupe_finder import PRODUCT_INDEX
 
         write_template(list(PRODUCT_INDEX.keys()))
         sys.exit(0)

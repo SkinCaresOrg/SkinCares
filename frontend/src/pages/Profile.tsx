@@ -80,39 +80,25 @@ const Profile = () => {
     if (activeTab === "wishlist") {
       fetchWishlist();
     }
-  }, [activeTab]);
-
-  useEffect(() => {
-    const handleSync = () => {
-      if (activeTab === "wishlist") {
-        fetchWishlist();
-      }
-    };
-    window.addEventListener("storage", handleSync);
-    window.addEventListener("skincares-wishlist-updated", handleSync);
-    return () => {
-      window.removeEventListener("storage", handleSync);
-      window.removeEventListener("skincares-wishlist-updated", handleSync);
-    };
+    // eslint-disable-next-line
   }, [activeTab]);
 
   const fetchWishlist = async () => {
-    const ids = getWishlist();
     setLoadingWishlist(true);
-    
-    if (ids.length === 0) {
-      setWishlistItems([]);
-      setLoadingWishlist(false);
-      return;
-    }
-    
     try {
+      const ids = await getWishlist();
+      if (!ids || ids.length === 0) {
+        setWishlistItems([]);
+        setLoadingWishlist(false);
+        return;
+      }
       const products = await Promise.all(
         ids.map((id) => getProductDetail(id).catch(() => null))
       );
       setWishlistItems(products.filter((p): p is Product => p !== null));
     } catch (error) {
       console.error("Failed to fetch wishlist items", error);
+      setWishlistItems([]);
     } finally {
       setLoadingWishlist(false);
     }

@@ -1,38 +1,45 @@
-import { OnboardingProfile } from "./types";
+import { supabase } from './supabaseClient';
+import { OnboardingProfile } from './types';
 
-import { getAuthUserId } from "./session";
-
-function getWishlistKeyForUser(userId: string | null) {
-  return userId ? `skincares_wishlist_${userId}` : "skincares_wishlist";
+// Supabase-backed wishlist functions
+export async function getWishlist(): Promise<number[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data, error } = await supabase
+    .from('wishlist')
+    .select('product_id')
+    .eq('user_id', user.id);
+  if (error) return [];
+  return data.map((row: { product_id: number }) => row.product_id);
 }
-function getProfileKeyForUser(userId: string | null) {
-  return userId ? `skincares_user_profile_${userId}` : "skincares_user_profile";
-}
 
-export function getWishlist(): number[] {
-  const userId = getAuthUserId();
-  try {
-    return JSON.parse(localStorage.getItem(getWishlistKeyForUser(userId)) || "[]");
-  } catch {
-    return [];
+export async function toggleWishlist(productId: number): Promise<number[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data, error } = await supabase
+    .from('wishlist')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('product_id', productId)
+    .single();
+  if (data && !error) {
+    await supabase.from('wishlist').delete().eq('id', data.id);
+  } else {
+    await supabase.from('wishlist').insert({ user_id: user.id, product_id: productId });
   }
+  return getWishlist();
 }
 
-export function toggleWishlist(productId: number): number[] {
-  const userId = getAuthUserId();
-  const key = getWishlistKeyForUser(userId);
-  const list = getWishlist();
-  const idx = list.indexOf(productId);
-  if (idx > -1) list.splice(idx, 1);
-  else list.push(productId);
-  localStorage.setItem(key, JSON.stringify(list));
-  window.dispatchEvent(new Event("storage"));
-  window.dispatchEvent(new CustomEvent("skincares-wishlist-updated"));
-  return [...list];
-}
-
-export function isInWishlist(productId: number): boolean {
-  return getWishlist().includes(productId);
+export async function isInWishlist(productId: number): Promise<boolean> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return false;
+  const { data, error } = await supabase
+    .from('wishlist')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('product_id', productId)
+    .single();
+  return !!(data && !error);
 }
 
 // Deprecated: getUserId/setUserId/clearUserId are no longer needed, use getAuthUserId from session.ts

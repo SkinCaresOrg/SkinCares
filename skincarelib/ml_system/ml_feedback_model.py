@@ -6,7 +6,7 @@ Replaces simple weighted average with proper machine learning:
 - Random Forest Classifier (mid stage)
 - Gradient Boosting Classifier (advanced)
 - LightGBM (fast gradient boosting)
-- XLearn (linear + field-aware factorization)
+- XLearn (linear + factorization machine)
 - Contextual Bandit (online learning)
 """
 
@@ -232,14 +232,16 @@ def _augment_product_vector(product_vec: np.ndarray) -> np.ndarray:
     Returns:
         Augmented vector with zeros for reason tags (266 dims or Nx266)
     """
+    reason_tag_width = len(UserState.REASON_TAGS_VOCAB)
+
     if product_vec.ndim == 1:
-        # Single vector: (256,) -> (266,)
-        reason_tags = np.zeros(10, dtype=np.float32)
+        # Single vector: (256,) -> (256 + reason_tag_width,)
+        reason_tags = np.zeros(reason_tag_width, dtype=np.float32)
         return np.concatenate([product_vec, reason_tags])
     else:
-        # Multiple vectors: (N, 256) -> (N, 266)
+        # Multiple vectors: (N, 256) -> (N, 256 + reason_tag_width)
         n_samples = product_vec.shape[0]
-        reason_tags = np.zeros((n_samples, 10), dtype=np.float32)
+        reason_tags = np.zeros((n_samples, reason_tag_width), dtype=np.float32)
         return np.concatenate([product_vec, reason_tags], axis=1)
 
 
@@ -536,7 +538,7 @@ class LightGBMFeedback:
 
 
 class XLearnFeedback:
-    """XLearn model for linear and field-aware factorization machine models."""
+    """XLearn model for linear and factorization machine models."""
 
     def __init__(self, model_type: str = "linear", learning_rate: float = 0.01):
         """
@@ -562,13 +564,32 @@ class XLearnFeedback:
         if self.model_type == "linear":
             self.model = xl.LR()
         elif self.model_type == "fm":
-            self.model = xl.FFM()
+            self.model = xl.FM()
         else:
             self.model = xl.LR()  # Default to linear
 
         # Configure learning rate
         self.model.setLearningRate(self.learning_rate)
         self.model.disableNorm()  # We handle normalization with scaler
+
+    def _cleanup_temp_model_dir(self):
+        """Clean up any instance-owned temporary model directory."""
+        temp_dir = getattr(self, "_model_temp_dir", None)
+        if temp_dir is not None:
+            temp_dir.cleanup()
+            self._model_temp_dir = None
+            self._model_path = None
+
+    def close(self):
+        """Release temporary filesystem resources owned by this model."""
+        self._cleanup_temp_model_dir()
+
+    def __del__(self):
+        """Best-effort cleanup for temporary model artifacts."""
+        try:
+            self._cleanup_temp_model_dir()
+        except Exception:
+            pass
 
     def fit(self, user_state: UserState):
         """Train XLearn model on user interactions."""
@@ -582,26 +603,36 @@ class XLearnFeedback:
         # Convert to binary labels (0, 1)
         y_binary = (y > 0).astype(np.int32) * 2 - 1  # Convert to {-1, 1} for XLearn
 
+        temp_model_dir = None
         try:
-            # Save training data to temporary file for XLearn
             import tempfile
 
-            with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
-                temp_file = f.name
-                for label, features in zip(y_binary, X_scaled):
-                    feature_str = " ".join(f"{i}:{v:.6f}" for i, v in enumerate(features) if v != 0)
-                    f.write(f"{label} {feature_str}\n")
+            explicit_model_path = getattr(self, "model_output_path", None)
+            if explicit_model_path:
+                model_path = str(explicit_model_path)
+            else:
+                self._cleanup_temp_model_dir()
+                temp_model_dir = tempfile.TemporaryDirectory(prefix="xlearnfeedback-")
+                self._model_temp_dir = temp_model_dir
+                self._model_path = str(Path(temp_model_dir.name) / f"{self.model_type}_model.bin")
+                model_path = self._model_path
 
-            # Train model
-            self.model.fit(temp_file, self.model_type + "_model.bin")
+            # Save training data to a unique temporary file for XLearn
+            with tempfile.TemporaryDirectory(prefix="xlearnfeedback-train-") as train_dir:
+                temp_file = str(Path(train_dir) / "training_data.txt")
+                with open(temp_file, "w", encoding="utf-8") as f:
+                    for label, features in zip(y_binary, X_scaled):
+                        feature_str = " ".join(f"{i}:{v:.6f}" for i, v in enumerate(features) if v != 0)
+                        f.write(f"{label} {feature_str}\n")
+
+                # Train model
+                self.model.fit(temp_file, model_path)
+
             self.is_trained = True
-
-            # Clean up
-            import os
-
-            os.remove(temp_file)
             return True
         except Exception as e:
+            if temp_model_dir is not None:
+                self._cleanup_temp_model_dir()
             logger.warning(f"XLearn training failed: {e}. Fallback to simple averaging.")
             return False
 

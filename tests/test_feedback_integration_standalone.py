@@ -12,13 +12,17 @@ Verify:
 """
 
 import sys
+from pathlib import Path
 
-sys.path.insert(0, "/Users/geethika/projects/SkinCares/SkinCares")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import os
 from datetime import datetime, timezone
 
 import numpy as np
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -32,13 +36,27 @@ from skincarelib.ml_system.ml_feedback_model import UserState
 # ============================================================================
 # SETUP: Local SQLite database for testing
 # ============================================================================
-TEST_DB = "sqlite:///./test_feedback_pipeline.db"
-if os.path.exists("./test_feedback_pipeline.db"):
-    os.remove("./test_feedback_pipeline.db")
+engine = None
+SessionLocal = None
 
-engine = create_engine(TEST_DB, echo=False)
-Base.metadata.create_all(engine)
-SessionLocal = sessionmaker(bind=engine)
+
+@pytest.fixture(autouse=True)
+def isolated_test_db(tmp_path):
+    """Create an isolated SQLite database for each test."""
+    global engine, SessionLocal
+
+    db_path = tmp_path / "test_feedback_pipeline.db"
+    test_db = f"sqlite:///{db_path}"
+
+    engine = create_engine(test_db, echo=False)
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+
+    try:
+        yield
+    finally:
+        engine.dispose()
+
 
 # Load product vectors
 try:

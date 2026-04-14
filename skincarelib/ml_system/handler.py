@@ -352,8 +352,14 @@ def get_openai_client():
     return _client
 
 
-def query_ollama(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
-    """Query local Ollama instance running on localhost:11434"""
+def query_groq(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
+    """Query Groq Chat Completions API using GROQ_API_KEY."""
+    groq_api_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not groq_api_key:
+        return None
+
+    groq_model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant").strip()
+
     try:
         context = ""
         if profile:
@@ -362,24 +368,35 @@ def query_ollama(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
             if skin_type or concerns:
                 context = f" The user has {skin_type} skin and is concerned about {', '.join(concerns)}."
 
-        prompt = f"You are a helpful skincare expert. Answer this question briefly (1-2 sentences):{context} {message}"
-
         response = requests.post(
-            "http://localhost:11434/api/generate",
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {groq_api_key}",
+                "Content-Type": "application/json",
+            },
             json={
-                "model": "mistral",
-                "prompt": prompt,
-                "stream": False,
+                "model": groq_model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": f"You are a helpful skincare expert assistant.{context} Keep responses concise (1-2 sentences).",
+                    },
+                    {"role": "user", "content": message},
+                ],
                 "temperature": 0.7,
             },
             timeout=30,
         )
 
         if response.status_code == 200:
-            return response.json().get("response", "").strip()
+            data = response.json()
+            choices = data.get("choices", [])
+            if choices:
+                content = choices[0].get("message", {}).get("content", "")
+                return content.strip() if content else None
         return None
     except Exception as e:
-        print(f"Ollama error: {e}")
+        print(f"Groq error: {e}")
         return None
 
 
@@ -723,10 +740,10 @@ def handle_info(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
 
 
 def handle_ai_fallback(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
-    """Handle general skincare questions using Ollama (local) or OpenAI. Last resort only."""
-    ollama_response = query_ollama(message, profile)
-    if ollama_response:
-        return ollama_response
+    """Handle general skincare questions using Groq or OpenAI. Last resort only."""
+    groq_response = query_groq(message, profile)
+    if groq_response:
+        return groq_response
 
     client = get_openai_client()
 

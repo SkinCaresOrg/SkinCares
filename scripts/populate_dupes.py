@@ -37,9 +37,9 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-BATCH_SIZE = 100        # rows per supabase insert
-TOP_N = 3              # dupes per product
-LOG_EVERY = 500         # print progress every N products
+BATCH_SIZE = 100  # rows per supabase insert
+TOP_N = 3  # dupes per product
+LOG_EVERY = 500  # print progress every N products
 
 
 def run():
@@ -57,15 +57,17 @@ def run():
             results = find_dupes(product_id, top_n=TOP_N, explain=True)
 
             for _, row in results.iterrows():
-                batch.append({
-                    "source_product_id": int(product_id),
-                    "dupe_product_id":   int(row["product_id"]),
-                    "dupe_score":        float(row["dupe_score"]),
-                    "cosine_sim":        float(row["cosine_sim"]),
-                    "price_score":       float(row["price_score"]),
-                    "ingredient_group_score": float(row["ingredient_group_score"]),
-                    "explanation":       str(row.get("explanation", "")),
-                })
+                batch.append(
+                    {
+                        "source_product_id": int(product_id),
+                        "dupe_product_id": int(row["product_id"]),
+                        "dupe_score": float(row["dupe_score"]),
+                        "cosine_sim": float(row["cosine_sim"]),
+                        "price_score": float(row["price_score"]),
+                        "ingredient_group_score": float(row["ingredient_group_score"]),
+                        "explanation": str(row.get("explanation", "")),
+                    }
+                )
 
         except ValueError:
             skipped += 1
@@ -82,7 +84,9 @@ def run():
             batch = []
 
         if (i + 1) % LOG_EVERY == 0:
-            print(f"  [{i+1}/{total}] inserted={inserted} skipped={skipped} errors={errors}")
+            print(
+                f"  [{i + 1}/{total}] inserted={inserted} skipped={skipped} errors={errors}"
+            )
 
     # flush remaining
     if batch:
@@ -96,8 +100,7 @@ def _flush(batch: list):
     """Insert a batch of rows, ignoring duplicates."""
     try:
         supabase.table("product_dupes").upsert(
-            batch,
-            on_conflict="source_product_id,dupe_product_id"
+            batch, on_conflict="source_product_id,dupe_product_id"
         ).execute()
     except Exception as e:
         print(f"  Supabase flush error: {e}")

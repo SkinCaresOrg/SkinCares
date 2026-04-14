@@ -230,7 +230,6 @@ def build_faiss_index(vectors: np.ndarray):
     index.hnsw.efConstruction = 300
     index.hnsw.efSearch = 256
 
-
     index.add(vectors)
     print(f"FAISS HNSW index built: {index.ntotal} vectors, dim={dim}")
     return index
@@ -250,7 +249,6 @@ def save_outputs(X, df, schema, tfidf_vec):
         json.dump(schema, f, indent=2)
 
     joblib.dump(tfidf_vec, ARTIFACT_DIR / "tfidf.joblib")
-
 
     # FAISS HNSW ANN index — used in dupe_finder for approximate candidate retrieval
     if faiss is not None:

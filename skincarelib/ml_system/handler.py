@@ -175,7 +175,7 @@ def handle_chat(
     ):
         if "recommend" in msg_lower or "routine" in msg_lower:
             return (
-                "You can get personalized recommendations here:\n👉 /recommendations",
+                "You can get personalized clicking on FOR YOU at the top of your screen and filling out our quick skin quiz when you create your account to get tailored recommendations 🙂",
                 last_intent,
             )
         if "dupe" in msg_lower or "alternative" in msg_lower:

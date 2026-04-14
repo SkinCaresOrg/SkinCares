@@ -1,11 +1,11 @@
 from pathlib import Path
 
 from .v1_utils import (
-    load_df,
-    validate_data,
-    standardize_data,
-    flag_non_ingredients,
     apply_review_actions,
+    flag_non_ingredients,
+    load_df,
+    standardize_data,
+    validate_data,
 )
 
 """
@@ -17,7 +17,7 @@ This module implements the full preprocessing pipeline for the old dataset, incl
     5. Applying manual review actions (used xls file with review decisions)
     6. Re-standardizing after manual review
     7. Re-validating the cleaned dataset
-    8. Saving the processed dataset to a new file 
+    8. Saving the processed dataset to a new file
 """
 
 

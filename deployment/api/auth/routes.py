@@ -1,11 +1,12 @@
 import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from . import schemas, service, security
 from deployment.api.db.session import get_db
-from .dependencies import get_current_user
 
+from . import schemas, security, service
+from .dependencies import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])

@@ -4,8 +4,9 @@ Test to verify all onboarding factors are integrated into ML recommendations
 Tests: skin type, product interests, ingredient exclusions, and price range
 """
 
-import requests
 import json
+
+import requests
 
 BASE_URL = "http://localhost:8000"
 

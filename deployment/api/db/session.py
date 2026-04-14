@@ -1,4 +1,5 @@
 import os
+
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -25,8 +26,8 @@ if not SECRET_KEY and not is_production:
 if not DATABASE_URL:
     if is_production:
         raise ValueError(
-            "Database URL is not set. Define DATABASE_URL, or one of Vercel Postgres vars: "
-            "POSTGRES_URL / POSTGRES_PRISMA_URL / POSTGRES_URL_NON_POOLING"
+            "Database URL is not set. Define DATABASE_URL or one of: "
+            "POSTGRES_URL, POSTGRES_PRISMA_URL, POSTGRES_URL_NON_POOLING"
         )
     DATABASE_URL = "sqlite:///./local.db"
 

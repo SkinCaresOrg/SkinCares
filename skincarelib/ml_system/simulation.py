@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 import argparse
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
-from skincarelib.ml_system.artifacts import load_artifacts, find_project_root
+from skincarelib.ml_system.artifacts import find_project_root, load_artifacts
 from skincarelib.ml_system.feedback_update import (
     UserState,
-    update_user_state,
     compute_user_vector,
     create_feedback_model,
+    update_user_state,
 )
 from skincarelib.ml_system.reranker import rerank_candidates
 from skincarelib.models.recommender_ranker import rank_products

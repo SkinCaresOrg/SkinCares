@@ -3,11 +3,12 @@
 # instead of building known ingredients from the dataset itself.
 # Run this on products_dataset_processed.csv to generate the updated tokens.
 from pathlib import Path
+
 from v2_utils import (
-    load_csv,
-    load_cosing_ingredients,
-    run_pipeline2,
     CANON_RULES_SMALL_COMPILED,
+    load_cosing_ingredients,
+    load_csv,
+    run_pipeline2,
 )
 
 

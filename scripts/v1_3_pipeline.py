@@ -1,11 +1,12 @@
 from pathlib import Path
+
 import pandas as pd
 
 from .v1_utils import (
+    apply_canon_to_tokens,
+    apply_synonyms_to_tokens,
     clean_ingredients,
     ingredient_tokens,
-    apply_synonyms_to_tokens,
-    apply_canon_to_tokens,
 )
 
 
@@ -15,8 +16,8 @@ def build_clean_tokenized_ingredients(
     """
     Cleans and standardizes ingredient lists.
 
-    Overwrites df["Ingredients"] with the cleaned + canonical ingredient string
-    Adds df["ingredient_tokens"] with the final list of tokens (synonyms + canon applied)
+    Overwrites df["Ingredients"] with cleaned canonical ingredient string.
+    Adds df["ingredient_tokens"] with tokens (synonyms + canon applied).
     """
     df_out = df.copy()
 

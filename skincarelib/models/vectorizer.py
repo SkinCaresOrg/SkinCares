@@ -2,9 +2,9 @@ import json
 import sys
 from pathlib import Path
 
+import joblib
 import numpy as np
 import pandas as pd
-import joblib
 from scipy.sparse import csr_matrix, hstack
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
@@ -15,7 +15,6 @@ except ImportError:
     faiss = None
 
 from skincarelib.ml_system.artifacts import find_project_root
-
 
 ROOT = find_project_root()
 

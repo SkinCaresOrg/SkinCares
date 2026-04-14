@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
 
-
 # cosine captures ingredient similarity via TF-IDF
 # price rewards candidates close to the source price, not just the cheapest
 # ingredient_group captures functional overlap using the 15-group taxonomy

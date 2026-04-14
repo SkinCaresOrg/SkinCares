@@ -1,5 +1,6 @@
-from pydantic import BaseModel, EmailStr, Field
 from uuid import UUID
+
+from pydantic import BaseModel, EmailStr, Field
 
 """pydantic models for validating and serializing user data"""
 

@@ -9,8 +9,8 @@ Tests validate the new implementations for:
 import numpy as np
 import pytest
 
-from skincarelib.ml_system.feedback_lr_model import FeedbackLogisticRegression
 from skincarelib.ml_system.embedding_collab_filter import EmbeddingCollaborativeFilter
+from skincarelib.ml_system.feedback_lr_model import FeedbackLogisticRegression
 from skincarelib.ml_system.feedback_update import UserState, compute_user_vector_lr
 
 

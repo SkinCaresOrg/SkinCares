@@ -1,5 +1,5 @@
-from skincarelib.models.dupe_finder import find_dupes
 from skincarelib.ml_system.handler import _find_product_id, _get_metadata
+from skincarelib.models.dupe_finder import find_dupes
 
 # 🔍 STEP 1: find product id
 query = "cerave cleanser"

@@ -11,7 +11,6 @@ This enables:
 
 from typing import Dict, List, Optional, Tuple
 
-
 # Category-specific follow-up questions
 FEEDBACK_QUESTIONS = {
     "Cleanser": {

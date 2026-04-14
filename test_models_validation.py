@@ -3,13 +3,14 @@
 Comprehensive test of LightGBM and XLearn models with real product data
 """
 import numpy as np
+
 from deployment.api.app import PRODUCT_VECTORS, get_best_model
 from skincarelib.ml_system.ml_feedback_model import (
-    UserState,
     LightGBMFeedback,
-    XLearnFeedback,
     LogisticRegressionFeedback,
     RandomForestFeedback,
+    UserState,
+    XLearnFeedback,
 )
 
 print("=" * 60)
@@ -66,28 +67,28 @@ for name, model in models_to_test:
         if not fit_success:
             print(f"   ❌ {name:20s} - Training failed (insufficient data)")
             continue
-            
+
         test_vec = sample_products[50]
         single_pred = model.predict_preference(test_vec)
         batch_preds = model.score_products(sample_products[:10])
-        
+
         assert 0.0 <= single_pred <= 1.0, f"Single prediction out of range: {single_pred}"
         assert len(batch_preds) == 10, "Batch predictions length mismatch"
         assert all(0.0 <= p <= 1.0 for p in batch_preds), "Some batch predictions out of range"
-        
+
         if hasattr(model, 'get_feature_importance'):
             importance = model.get_feature_importance()
             has_importance = len(importance) > 0
         else:
             has_importance = False
-        
+
         print(f"   ✅ {name:20s} - Trained & Validated")
         print(f"      • Single prediction: {single_pred:.4f}")
         print(f"      • Batch predictions: min={batch_preds.min():.4f}, max={batch_preds.max():.4f}, mean={batch_preds.mean():.4f}")
         print(f"      • Feature importance: {'Yes' if has_importance else 'N/A'}")
-        
+
         results.append((name, True, single_pred, batch_preds))
-        
+
     except ImportError as e:
         print(f"   ⚠️  {name:20s} - Not installed: {str(e)[:50]}")
     except Exception as e:

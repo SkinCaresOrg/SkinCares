@@ -11,29 +11,30 @@ This script:
 6. Saves trained models
 """
 
-import sys
 import os
+import sys
 from pathlib import Path
 
 # Add root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 import logging
-import numpy as np
-import pandas as pd
 import pickle
 from datetime import datetime, timezone
 
+import numpy as np
+import pandas as pd
+
 from skincarelib.ml_system.ml_feedback_model import (
-    UserState,
-    LogisticRegressionFeedback,
-    RandomForestFeedback,
-    GradientBoostingFeedback,
-    LightGBMFeedback,
-    XLearnFeedback,
-    ContextualBanditFeedback,
     LIGHTGBM_AVAILABLE,
     XLEARN_AVAILABLE,
+    ContextualBanditFeedback,
+    GradientBoostingFeedback,
+    LightGBMFeedback,
+    LogisticRegressionFeedback,
+    RandomForestFeedback,
+    UserState,
+    XLearnFeedback,
 )
 
 # Configure logging
@@ -119,7 +120,7 @@ class ModelTrainer:
 
                 # Add noise and use more balanced thresholds
                 noisy_score = preference_score + np.random.normal(0, 0.15)
-                
+
                 # 40% base chance of like to start, adjusted by score
                 like_prob = 0.4 + (noisy_score - 0.5) * 0.5
                 like_prob = np.clip(like_prob, 0.1, 0.9)

@@ -3,6 +3,7 @@
 
 import os
 import sys
+
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -14,13 +15,13 @@ print("=" * 60)
 
 # Check if Supabase SDK is installed
 try:
-    from supabase import create_client, Client
+    from supabase import Client, create_client
     print("\n✅ Supabase SDK is installed")
 except ImportError:
     print("\n❌ Supabase SDK not found. Installing...")
     import subprocess
     subprocess.run([sys.executable, "-m", "pip", "install", "supabase", "-q"])
-    from supabase import create_client, Client
+    from supabase import Client, create_client
     print("✅ Supabase SDK installed successfully")
 
 # Get Supabase credentials from .env
@@ -44,12 +45,12 @@ try:
     print("\n🔗 Connecting to Supabase...")
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
     print("✅ Supabase client created successfully!")
-    
+
     # Try to ping the API
     print("\n📡 Testing API connectivity...")
     # Simple test: try to check auth status
     print("✅ Connection successful!")
-    
+
     print("\n" + "=" * 60)
     print("✅ SUCCESS: Supabase is configured and ready!")
     print("=" * 60)
@@ -57,7 +58,7 @@ try:
     print("  1. Initialize database tables: python3 -m scripts.init_db")
     print("  2. Start backend: uvicorn deployment.api.app:app --reload")
     print("  3. Test endpoints: curl http://localhost:8000/api/health")
-    
+
 except Exception as e:
     print("\n❌ ERROR connecting to Supabase:")
     print(f"   {str(e)}")

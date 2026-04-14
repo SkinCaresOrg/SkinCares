@@ -12,16 +12,23 @@ Verify:
 """
 
 import sys
+
 sys.path.insert(0, "/Users/geethika/projects/SkinCares/SkinCares")
 
 import json
-import numpy as np
-from datetime import datetime, timezone
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
 import os
+from datetime import datetime, timezone
 
-from deployment.api.persistence.models import Base, UserProductEvent, UserProfileState, UserModelState
+import numpy as np
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+
+from deployment.api.persistence.models import (
+    Base,
+    UserModelState,
+    UserProductEvent,
+    UserProfileState,
+)
 from skincarelib.ml_system.ml_feedback_model import UserState
 
 # ============================================================================

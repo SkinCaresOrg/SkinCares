@@ -7,13 +7,13 @@ import pandas as pd
 
 from skincarelib.ml_system.artifacts import load_artifacts
 from skincarelib.ml_system.candidate_source import get_candidates
+from skincarelib.ml_system.embedding_collab_filter import EmbeddingCollaborativeFilter
+from skincarelib.ml_system.feedback_lr_model import FeedbackLogisticRegression
 from skincarelib.ml_system.feedback_update import (
     UserState,
     compute_user_vector,
     compute_user_vector_lr,
 )
-from skincarelib.ml_system.embedding_collab_filter import EmbeddingCollaborativeFilter
-from skincarelib.ml_system.feedback_lr_model import FeedbackLogisticRegression
 from skincarelib.ml_system.reranker import rerank_candidates
 
 

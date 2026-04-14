@@ -1,15 +1,16 @@
 import json
+import logging
 import os
+import warnings
 from pathlib import Path
 from typing import Optional
-import warnings
-import logging
 
+import faiss
 import numpy as np
 import pandas as pd
-import faiss
-from .dupe_scorer import DupeScorer
+
 from .dupe_explainer import explain_dupe
+from .dupe_scorer import DupeScorer
 
 logger = logging.getLogger(__name__)
 

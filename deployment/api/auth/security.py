@@ -3,8 +3,8 @@ from typing import Optional
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from deployment.api.db.session import SECRET_KEY
 
+from deployment.api.db.session import SECRET_KEY
 
 if not SECRET_KEY:
     raise ValueError("SECRET_KEY is not set")

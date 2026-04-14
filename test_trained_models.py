@@ -10,24 +10,25 @@ This script:
 5. Tests the 5-stage model progression
 """
 
-import sys
 import os
+import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-import logging
-import numpy as np
-import pickle
 import json
+import logging
+import pickle
+
+import numpy as np
 
 from skincarelib.ml_system.ml_feedback_model import (
-    UserState,
-    LogisticRegressionFeedback,
-    RandomForestFeedback,
+    ContextualBanditFeedback,
     GradientBoostingFeedback,
     LightGBMFeedback,
-    ContextualBanditFeedback,
+    LogisticRegressionFeedback,
+    RandomForestFeedback,
+    UserState,
 )
 
 logging.basicConfig(
@@ -90,7 +91,7 @@ class ModelTester:
             try:
                 # Test predict_preference
                 prob = model.predict_preference(test_vector)
-                
+
                 # Validate output
                 assert isinstance(prob, (float, np.floating)), f"Expected float, got {type(prob)}"
                 assert 0.0 <= prob <= 1.0, f"Probability out of range: {prob}"
@@ -118,7 +119,7 @@ class ModelTester:
                 # Test score_products (batch prediction)
                 if hasattr(model, 'score_products'):
                     scores = model.score_products(test_vectors)
-                    
+
                     # Validate output
                     assert len(scores) == len(test_vectors), "Score count mismatch"
                     assert np.all((scores >= 0) & (scores <= 1)), "Scores out of range [0, 1]"
@@ -156,12 +157,12 @@ class ModelTester:
         for interactions, description in progression_stages:
             # Create synthetic user
             user = UserState(dim=self.product_vectors.shape[1])
-            
+
             # Add synthetic interactions
             for i in range(interactions):
                 idx = np.random.randint(0, len(self.product_vectors))
                 vec = self.product_vectors[idx]
-                
+
                 if i % 2 == 0:
                     user.add_liked(vec)
                 else:

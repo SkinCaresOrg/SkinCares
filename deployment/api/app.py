@@ -1,14 +1,13 @@
 import csv
-from collections import deque
-from contextlib import asynccontextmanager
 import json
 import logging
 import os
-from pathlib import Path
 import re
-import time
+from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Dict, List, Literal, Optional
-from uuid import UUID as UUIDValue, uuid4
+from uuid import UUID as UUIDValue
+from uuid import uuid4
 
 import numpy as np
 import pandas as pd
@@ -19,8 +18,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from deployment.api.auth.models import User
-from deployment.api.auth.security import hash_password
 from deployment.api.auth.routes import router as auth_router
+from deployment.api.auth.security import hash_password
 from deployment.api.db.init_db import init_db
 from deployment.api.db.session import SessionLocal, get_db
 from deployment.api.persistence.models import (
@@ -33,16 +32,15 @@ from deployment.api.persistence.models import (
     UserProfileState,
     UserWishlist,
 )
-
+from skincarelib.ml_system.feedback_update import compute_user_vector_with_decay
+from skincarelib.ml_system.handler import handle_chat
 from skincarelib.ml_system.ml_feedback_model import (
+    ContextualBanditFeedback,
+    LightGBMFeedback,
     LogisticRegressionFeedback,
     RandomForestFeedback,
-    LightGBMFeedback,
-    XLearnFeedback,
-    ContextualBanditFeedback,
     UserState,
 )
-from skincarelib.ml_system.feedback_update import compute_user_vector_with_decay
 from skincarelib.ml_system.swipe_session import SwipeSession
 
 logger = logging.getLogger(__name__)
@@ -58,13 +56,6 @@ USE_LOCAL_CSV_PRODUCTS = _is_truthy(
         "SKINCARES_USE_LOCAL_CSV_PRODUCTS",
         "false" if REMOTE_ASSET_MODE else "true",
     )
-)
-
-MAX_IN_MEMORY_USERS = int(os.getenv("SKINCARES_MAX_IN_MEMORY_USERS", "800"))
-IN_MEMORY_USER_TTL_SECONDS = int(os.getenv("SKINCARES_USER_CACHE_TTL_SECONDS", "1800"))
-MAX_FEEDBACK_EVENTS_IN_MEMORY = int(os.getenv("SKINCARES_MAX_FEEDBACK_EVENTS", "5000"))
-CACHE_CLEANUP_INTERVAL_SECONDS = int(
-    os.getenv("SKINCARES_CACHE_CLEANUP_INTERVAL_SECONDS", "300")
 )
 
 Category = Literal[
@@ -508,68 +499,12 @@ USER_SESSIONS: Dict[str, SwipeSession] = {}
 # User ML model states for generating recommendations
 USER_STATES: Dict[str, UserState] = {}
 USER_PROFILES: Dict[str, OnboardingRequest] = {}
-USER_FEEDBACK = deque(maxlen=MAX_FEEDBACK_EVENTS_IN_MEMORY)
-USER_LAST_SEEN: Dict[str, float] = {}
-LAST_CACHE_CLEANUP_TS = 0.0
+USER_FEEDBACK: List[FeedbackRequest] = []
 DB_INITIALIZED = False
-_CHAT_HANDLER = None
-
-
-def _now_seconds() -> float:
-    return time.monotonic()
-
-
-def _touch_user_cache(user_id: Optional[str]) -> None:
-    if not user_id:
-        return
-    USER_LAST_SEEN[user_id] = _now_seconds()
-
-
-def _evict_user_caches(force: bool = False) -> None:
-    global LAST_CACHE_CLEANUP_TS
-
-    now = _now_seconds()
-    if not force and (now - LAST_CACHE_CLEANUP_TS) < CACHE_CLEANUP_INTERVAL_SECONDS:
-        return
-    LAST_CACHE_CLEANUP_TS = now
-
-    if IN_MEMORY_USER_TTL_SECONDS > 0:
-        stale_ids = [
-            user_id
-            for user_id, last_seen in USER_LAST_SEEN.items()
-            if (now - last_seen) > IN_MEMORY_USER_TTL_SECONDS
-        ]
-        for user_id in stale_ids:
-            USER_LAST_SEEN.pop(user_id, None)
-            USER_SESSIONS.pop(user_id, None)
-            USER_STATES.pop(user_id, None)
-            USER_PROFILES.pop(user_id, None)
-
-    if len(USER_LAST_SEEN) <= MAX_IN_MEMORY_USERS:
-        return
-
-    overflow = len(USER_LAST_SEEN) - MAX_IN_MEMORY_USERS
-    oldest_ids = sorted(USER_LAST_SEEN, key=USER_LAST_SEEN.get)[:overflow]
-    for user_id in oldest_ids:
-        USER_LAST_SEEN.pop(user_id, None)
-        USER_SESSIONS.pop(user_id, None)
-        USER_STATES.pop(user_id, None)
-        USER_PROFILES.pop(user_id, None)
-
-
-def _get_chat_handler():
-    global _CHAT_HANDLER
-    if _CHAT_HANDLER is None:
-        from skincarelib.ml_system.handler import handle_chat as imported_handle_chat
-
-        _CHAT_HANDLER = imported_handle_chat
-    return _CHAT_HANDLER
 
 
 def get_user_session(user_id: str) -> SwipeSession:
     """Get or create user's learning session."""
-    _evict_user_caches()
-    _touch_user_cache(user_id)
     if user_id not in USER_SESSIONS:
         product_metadata = pd.DataFrame(
             [
@@ -621,8 +556,6 @@ def get_product_vector_safe(
 
 def get_user_state(user_id: str) -> UserState:
     """Get or create user's ML model state for recommendations."""
-    _evict_user_caches()
-    _touch_user_cache(user_id)
     if user_id not in USER_STATES:
         USER_STATES[user_id] = UserState(dim=PRODUCT_VECTORS.shape[1])
     return USER_STATES[user_id]
@@ -854,7 +787,6 @@ def _load_user_state_from_db(db: Session, user_id: str) -> UserState:
             )
 
     USER_STATES[user_id] = user_state
-    _touch_user_cache(user_id)
     return user_state
 
 
@@ -870,7 +802,7 @@ def get_best_model(user_state: UserState):
     - Early stage (< 5 interactions): LogisticRegression (fast, lightweight)
     - Mid stage (5-20 interactions): RandomForest (captures complex patterns)
     - Advanced (20-50 interactions): LightGBM (fast gradient boosting)
-    - Expert (50+ interactions): ContextualBandit (pure online learning with exploration)
+    - Expert (50+ interactions): ContextualBandit (online learning)
     """
     interactions = user_state.interactions
 
@@ -888,8 +820,8 @@ def get_best_model(user_state: UserState):
             # Fallback if LightGBM not installed
             return RandomForestFeedback(), "RandomForest (Fallback from LightGBM)"
     else:
-        # Expert user: pure online learning with exploration (50+ interactions)
-        # ContextualBandit learns continuously with each interaction (no batch retraining needed)
+        # Expert user: online learning with exploration (50+ interactions)
+        # ContextualBandit learns continuously with each interaction
         return ContextualBanditFeedback(
             dim=PRODUCT_VECTORS.shape[1]
         ), "ContextualBandit (Online Learning - Expert)"
@@ -1001,7 +933,6 @@ def submit_onboarding(
 ) -> OnboardingResponse:
     user_id = _generate_user_id()
     USER_PROFILES[user_id] = payload
-    _touch_user_cache(user_id)
 
     try:
         _ensure_user_exists(db, user_id)
@@ -1229,7 +1160,6 @@ def submit_feedback(
     payload: FeedbackRequest,
     db: Session = Depends(get_db),
 ) -> FeedbackResponse:
-    _touch_user_cache(payload.user_id)
     if payload.user_id not in USER_PROFILES:
         db_profile = _load_profile_from_db(db, payload.user_id)
         if db_profile is None:
@@ -1417,7 +1347,6 @@ def get_product_score(
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(request: ChatRequest) -> ChatResponse:
     try:
-        handle_chat = _get_chat_handler()
         response_text, _ = handle_chat(
             request.message, profile=request.profile
         )  # ← unpack tuple

@@ -10,17 +10,19 @@ Validates the new model progression:
 """
 
 import sys
+
 sys.path.insert(0, "/Users/geethika/projects/SkinCares/SkinCares")
 
 import numpy as np
+
+from deployment.api.app import PRODUCT_VECTORS, get_best_model
 from skincarelib.ml_system.ml_feedback_model import (
-    UserState,
+    ContextualBanditFeedback,
+    LightGBMFeedback,
     LogisticRegressionFeedback,
     RandomForestFeedback,
-    LightGBMFeedback,
-    ContextualBanditFeedback,
+    UserState,
 )
-from deployment.api.app import get_best_model, PRODUCT_VECTORS
 
 
 def test_model_progression():

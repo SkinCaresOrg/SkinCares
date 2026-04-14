@@ -1,12 +1,13 @@
 from typing import Optional
 
 from sqlalchemy.orm import Session
+
 from .models import User
 from .security import hash_password, verify_password
 
 
 def create_user(db: Session, email: str, password: str) -> User:
-    """creates a new user in the database after validating the email and hashing the password"""
+    """Create a new user with validated email and hashed password"""
     email = email.lower().strip()
     existing_user = db.query(User).filter(User.email == email).first()
     if existing_user:
@@ -15,7 +16,7 @@ def create_user(db: Session, email: str, password: str) -> User:
     hashed = hash_password(password)
     user = User(email=email, hashed_password=hashed)
 
-    # we wrap this in a try-except block to catch any database errors and rollback if something goes wrong
+    # Wrap in try-except to catch database errors and rollback on failure
     try:
         db.add(user)
         db.commit()
@@ -27,7 +28,7 @@ def create_user(db: Session, email: str, password: str) -> User:
 
 
 def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
-    """authenticates a user by checking if the email exists and the password matches the hashed password in the db"""
+    """Authenticate user by email and password verification"""
     email = email.lower().strip()
     user = db.query(User).filter(User.email == email).first()
     if not user:
@@ -38,5 +39,5 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
 
 
 def get_user_by_id(db: Session, user_id: str) -> Optional[User]:
-    """querie db with user id and returns the user object if found, otherwise returns None"""
+    """Get user by ID, returns None if not found"""
     return db.query(User).filter(User.id == user_id).first()

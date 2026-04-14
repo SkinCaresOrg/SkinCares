@@ -1,8 +1,9 @@
 import re
 import unicodedata
+from typing import List, Optional, Pattern, Tuple
+
 import pandas as pd
-from typing import Optional, List, Tuple, Pattern
-from rapidfuzz import process, fuzz
+from rapidfuzz import fuzz, process
 
 
 def load_csv(path: str) -> pd.DataFrame:
@@ -21,7 +22,7 @@ def add_price_column(
         prices,
         on=["brand", "product_name"],
         how="left",
-        validate="many_to_one",  # there may be duplicates in products, but only one price per product
+        validate="many_to_one",  # duplicates in products, one price per
     )
 
     return merged

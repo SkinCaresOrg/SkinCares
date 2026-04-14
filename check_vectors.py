@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import json
-import numpy as np
 import os
+
+import numpy as np
 
 # Check product index
 with open('artifacts/product_index.json', 'r') as f:

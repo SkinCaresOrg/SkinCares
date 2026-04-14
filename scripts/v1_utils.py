@@ -1,7 +1,8 @@
-import pandas as pd
-import re
-from typing import List, Tuple, Pattern, Callable, Optional
 import json
+import re
+from typing import Callable, List, Optional, Pattern, Tuple
+
+import pandas as pd
 
 
 def load_df(path):
@@ -77,12 +78,11 @@ def validate_data(df):
 
 def standardize_data(df: pd.DataFrame) -> pd.DataFrame:
     """
-    To standardize the dataset by cleaning up the Ingredients column, standardizing Brand names,
-    and ensuring consistent formatting for name and label
+    Standardize dataset: clean ingredients, standardize brands, format names.
     """
     df = df.copy()
 
-    # Standizing ingredients: lowercase, remove extra spaces, ensure consistent comma separation
+    # Clean ingredients: lowercase, remove spaces, standardize commas
     def clean_ingredients(ing):
         if not isinstance(ing, str):
             return ing
@@ -116,7 +116,7 @@ def standardize_data(df: pd.DataFrame) -> pd.DataFrame:
 
 def flag_non_ingredients(df, min_length=15):
     """
-    To flag rows where the Ingredients column seems suspicious (e.g., too short, missing commas, contains non-ingredient phrases).
+    Flag suspicious ingredient entries (null, short, or missing commas).
     """
     flagged = df[
         df["Ingredients"].isna()  # ingredients is null
@@ -172,12 +172,7 @@ def apply_review_actions(df, review_path):
 
 def clean_ingredients(ing: Optional[str]) -> str:
     """
-    Clean a raw INCI ingredient string.
-
-    Keeps meaningful parenthetical content (e.g., "(ci 77891)"),
-    while removing common wrappers/prefixes (e.g., "+/-", "may contain", bullets, stray stars),
-    normalizing whitespace/dashes, and dropping obvious marketing/non-ingredient fragments.
-
+    Clean ingredient string: keep INCI codes, remove wrappers, normalize.
     """
     if not isinstance(ing, str) or not ing.strip():
         return ""
@@ -309,7 +304,7 @@ def ingredient_tokens(ing: Optional[str]) -> List[str]:
 
 
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 
 
 def apply_synonyms_to_tokens(

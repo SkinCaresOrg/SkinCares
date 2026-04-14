@@ -17,14 +17,14 @@ import sys
 import time
 from pathlib import Path
 
-from dotenv import load_dotenv
-from supabase import create_client
-
 # Make sure skincarelib is importable
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from skincarelib.models.dupe_finder import find_dupes, PRODUCT_INDEX
+from dotenv import load_dotenv  # noqa: E402
+from supabase import create_client  # noqa: E402
+
+from skincarelib.models.dupe_finder import PRODUCT_INDEX, find_dupes  # noqa: E402
 
 load_dotenv()
 
@@ -82,7 +82,9 @@ def run():
             batch = []
 
         if (i + 1) % LOG_EVERY == 0:
-            print(f"  [{i+1}/{total}] inserted={inserted} skipped={skipped} errors={errors}")
+            progress = f"[{i+1}/{total}] inserted={inserted} "
+            progress += f"skipped={skipped} errors={errors}"
+            print(f"  {progress}")
 
     # flush remaining
     if batch:

@@ -1,8 +1,8 @@
-from fastapi.testclient import TestClient
 import importlib
 
-from deployment.api import app
+from fastapi.testclient import TestClient
 
+from deployment.api import app
 
 api_module = importlib.import_module("deployment.api.app")
 

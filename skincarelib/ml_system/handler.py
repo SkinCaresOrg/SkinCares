@@ -1,6 +1,7 @@
 import os
+from typing import Any, Dict, Optional
+
 import requests
-from typing import Optional, Dict, Any
 
 from skincarelib.ml_system.intent import detect_intent
 from skincarelib.models.dupe_finder import find_dupes, get_artifacts

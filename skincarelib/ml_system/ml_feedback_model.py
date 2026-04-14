@@ -51,22 +51,41 @@ logger = logging.getLogger(__name__)
 
 
 class UserState:
-    """Enhanced UserState tracking for ML models."""
+    """Enhanced UserState tracking for ML models with reason tags."""
+
+    # Common reason tags from feedback questionnaire - used as features
+    REASON_TAGS_VOCAB = {
+        "hydrated_well": 0,
+        "absorbed_quickly": 1,
+        "non_irritating": 2,
+        "affordable": 3,
+        "good_value": 4,
+        "broke_me_out": 5,
+        "irritating": 6,
+        "too_expensive": 7,
+        "strong_scent": 8,
+        "greasy_feeling": 9,
+    }
 
     def __init__(self, dim: int):
         self.dim = dim
 
-        # Raw interactions
+        # Raw interactions with per-interaction reason tags
         self.liked_vectors: List[np.ndarray] = []
         self.disliked_vectors: List[np.ndarray] = []
         self.irritation_vectors: List[np.ndarray] = []
+
+        # Reason tags per interaction (parallel to vectors)
+        self.liked_reasons_per_interaction: List[List[str]] = []
+        self.disliked_reasons_per_interaction: List[List[str]] = []
+        self.irritation_reasons_per_interaction: List[List[str]] = []
 
         # Timestamps for temporal decay
         self.liked_timestamps: List[datetime] = []
         self.disliked_timestamps: List[datetime] = []
         self.irritation_timestamps: List[datetime] = []
 
-        # Metadata for explanations
+        # Metadata for explanations (aggregated)
         self.liked_reasons: List[str] = []
         self.disliked_reasons: List[str] = []
         self.irritation_reasons: List[str] = []
@@ -87,6 +106,9 @@ class UserState:
         self.liked_timestamps.append(timestamp or datetime.now(timezone.utc))
         if reasons:
             self.liked_reasons.extend(reasons)
+            self.liked_reasons_per_interaction.append(reasons)
+        else:
+            self.liked_reasons_per_interaction.append([])
         self.interactions += 1
         self.liked_count += 1
 
@@ -100,6 +122,9 @@ class UserState:
         self.disliked_timestamps.append(timestamp or datetime.now(timezone.utc))
         if reasons:
             self.disliked_reasons.extend(reasons)
+            self.disliked_reasons_per_interaction.append(reasons)
+        else:
+            self.disliked_reasons_per_interaction.append([])
         self.interactions += 1
         self.disliked_count += 1
 
@@ -113,16 +138,41 @@ class UserState:
         self.irritation_timestamps.append(timestamp or datetime.now(timezone.utc))
         if reasons:
             self.irritation_reasons.extend(reasons)
+            self.irritation_reasons_per_interaction.append(reasons)
+        else:
+            self.irritation_reasons_per_interaction.append([])
         self.interactions += 1
         self.irritation_count += 1
 
-    def get_training_data(self) -> Tuple[np.ndarray, np.ndarray] | None:
+    def _encode_reason_tags(self, tags: List[str]) -> np.ndarray:
         """
-        Prepare training data for ML models.
+        Encode reason tags as binary feature vector.
+
+        Args:
+            tags: List of reason tag strings
 
         Returns:
-            (X, y) where X is feature matrix and y is binary preference labels
-            None if insufficient data
+            Binary feature vector (1 if tag present, 0 otherwise)
+        """
+        features = np.zeros(len(self.REASON_TAGS_VOCAB), dtype=np.float32)
+        for tag in tags:
+            # Normalize tag (handle underscores, case)
+            normalized_tag = tag.lower().replace(" ", "_")
+            if normalized_tag in self.REASON_TAGS_VOCAB:
+                idx = self.REASON_TAGS_VOCAB[normalized_tag]
+                features[idx] = 1.0
+        return features
+
+    def get_training_data(self) -> Tuple[np.ndarray, np.ndarray] | None:
+        """
+        Prepare augmented training data with reason tags.
+
+        Returns:
+            (X, y) where X is augmented feature matrix (product_vector + reason_tags)
+            and y is binary preference labels. None if insufficient data.
+
+        Feature vector structure:
+            [product_vector_256_dims | reason_tag_features_10_dims]
         """
         if (
             not self.liked_vectors
@@ -134,19 +184,31 @@ class UserState:
         X_list = []
         y_list = []
 
-        # Liked samples (label=1)
-        for vec in self.liked_vectors:
-            X_list.append(vec)
+        # Liked samples (label=1) - augment with reason tags
+        for vec, reasons in zip(
+            self.liked_vectors, self.liked_reasons_per_interaction
+        ):
+            reason_features = self._encode_reason_tags(reasons)
+            augmented_vec = np.concatenate([vec, reason_features])
+            X_list.append(augmented_vec)
             y_list.append(1)
 
-        # Disliked samples (label=0)
-        for vec in self.disliked_vectors:
-            X_list.append(vec)
+        # Disliked samples (label=0) - augment with reason tags
+        for vec, reasons in zip(
+            self.disliked_vectors, self.disliked_reasons_per_interaction
+        ):
+            reason_features = self._encode_reason_tags(reasons)
+            augmented_vec = np.concatenate([vec, reason_features])
+            X_list.append(augmented_vec)
             y_list.append(0)
 
-        # Irritation samples are also treated as disliked (label=0)
-        for vec in self.irritation_vectors:
-            X_list.append(vec)
+        # Irritation samples (label=0) - augment with reason tags
+        for vec, reasons in zip(
+            self.irritation_vectors, self.irritation_reasons_per_interaction
+        ):
+            reason_features = self._encode_reason_tags(reasons)
+            augmented_vec = np.concatenate([vec, reason_features])
+            X_list.append(augmented_vec)
             y_list.append(0)
 
         X = np.array(X_list, dtype=np.float32)

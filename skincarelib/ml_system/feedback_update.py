@@ -1,16 +1,16 @@
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 
 from skincarelib.ml_system.feedback_lr_model import FeedbackLogisticRegression
 from skincarelib.ml_system.ml_feedback_model import (
+    ContextualBanditFeedback,
+    GradientBoostingFeedback,
     LogisticRegressionFeedback,
     RandomForestFeedback,
-    GradientBoostingFeedback,
-    ContextualBanditFeedback,
 )
 
 

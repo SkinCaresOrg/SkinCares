@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect } from "react";
+import { useUserState } from "@/hooks/useUserState";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
@@ -76,30 +77,40 @@ const AppContent = () => {
     </>
   );
 };
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Suspense fallback={null}>
-          <FloatingChat />
-          <Routes>
-            <Route path="/" element={<PublicOnly><Index /></PublicOnly>} />
-            <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
-            <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
-            <Route path="/onboarding" element={<RequireOnboarding><Onboarding /></RequireOnboarding>} />
-            <Route path="/catalog" element={<RequireAuth><Catalog /></RequireAuth>} />
-            <Route path="/recommendations" element={<RequireAuth><Recommendations /></RequireAuth>} />
-            <Route path="/swiping" element={<RequireAuth><Swiping /></RequireAuth>} />
-            <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Suspense>
-      </BrowserRouter>
 
-    </TooltipProvider>
-  </QueryClientProvider>
-);
+const App = () => {
+  const { hydrateUserState, logout, loading } = useUserState();
+
+  // Hydrate user state on mount (and on login changes inside the hook)
+  useEffect(() => {
+    hydrateUserState();
+    // eslint-disable-next-line
+  }, []);
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Suspense fallback={null}>
+            <FloatingChat />
+            <Routes>
+              <Route path="/" element={<PublicOnly><Index /></PublicOnly>} />
+              <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
+              <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
+              <Route path="/onboarding" element={<RequireOnboarding><Onboarding /></RequireOnboarding>} />
+              <Route path="/catalog" element={<RequireAuth><Catalog /></RequireAuth>} />
+              <Route path="/recommendations" element={<RequireAuth><Recommendations /></RequireAuth>} />
+              <Route path="/swiping" element={<RequireAuth><Swiping /></RequireAuth>} />
+              <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+};
 
 export default App;

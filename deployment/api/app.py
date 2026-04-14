@@ -10,11 +10,13 @@ from uuid import UUID as UUIDValue, uuid4
 
 import numpy as np
 import pandas as pd
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+import requests
 
 from deployment.api.auth.models import User
 from deployment.api.auth.security import hash_password
@@ -38,7 +40,6 @@ from skincarelib.ml_system.ml_feedback_model import (
     ContextualBanditFeedback,
     UserState,
 )
-from skincarelib.ml_system.feedback_update import compute_user_vector_with_decay
 from skincarelib.ml_system.swipe_session import SwipeSession
 from skincarelib.ml_system.handler import handle_chat
 
@@ -56,6 +57,11 @@ USE_LOCAL_CSV_PRODUCTS = _is_truthy(
         "false" if REMOTE_ASSET_MODE else "true",
     )
 )
+
+load_dotenv()
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY")
+SUPABASE_KEY = SUPABASE_SERVICE_ROLE_KEY
 
 Category = Literal[
     "cleanser",
@@ -175,6 +181,7 @@ class RecommendationsResponse(BaseModel):
 class DupesResponse(BaseModel):
     source_product_id: int
     dupes: List[DupeProduct]
+    message: str = ""
 
 
 class FeedbackRequest(BaseModel):
@@ -222,8 +229,11 @@ class WishlistResponse(BaseModel):
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global PRODUCTS
-    init_db()
+    try:
+        init_db()
+    except SQLAlchemyError as exc:
+        logger.warning("Could not initialize database at startup: %s", exc)
+
     try:
         with SessionLocal() as db:
             if USE_LOCAL_CSV_PRODUCTS:
@@ -683,11 +693,19 @@ def _load_dupes_from_db(db: Session, source_product_id: int) -> List[DupeProduct
         .limit(24)
         .all()
     )
+
+    logger.debug("source_product_id=%s rows_found=%s", source_product_id, len(rows))
+
     dupes: List[DupeProduct] = []
     for row in rows:
         product = PRODUCTS.get(row.dupe_product_id)
         if product is None:
+            logger.debug(
+                "Missing product in PRODUCTS for dupe_product_id=%s",
+                row.dupe_product_id,
+            )
             continue
+
         dupes.append(
             DupeProduct(
                 **_product_to_card(product).model_dump(),
@@ -695,6 +713,85 @@ def _load_dupes_from_db(db: Session, source_product_id: int) -> List[DupeProduct
                 explanation=row.explanation or "",
             )
         )
+    return dupes
+
+
+def _resolve_api_dupe_product_id(raw_id: object) -> Optional[int]:
+    try:
+        candidate = int(raw_id)
+    except (TypeError, ValueError):
+        return None
+
+    if candidate in PRODUCTS:
+        return candidate
+    if candidate + 1 in PRODUCTS:
+        return candidate + 1
+    return None
+
+
+def _load_dupes_from_supabase(source_product_id: int) -> List[DupeProduct]:
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return []
+
+    url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/product_dupes"
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Accept": "application/json",
+    }
+
+    def query_rows(product_id: int) -> list:
+        params = {
+            "select": "*",
+            "source_product_id": f"eq.{product_id}",
+            "order": "dupe_score.desc",
+            "limit": "24",
+        }
+        response = requests.get(url, headers=headers, params=params, timeout=10)
+        response.raise_for_status()
+        rows = response.json()
+        return rows if isinstance(rows, list) else []
+
+    try:
+        rows = query_rows(source_product_id)
+        if not rows and source_product_id >= 1:
+            logger.debug(
+                "Retrying Supabase dupe query using legacy artifact source_product_id=%s for API product_id=%s",
+                source_product_id - 1,
+                source_product_id,
+            )
+            rows = query_rows(source_product_id - 1)
+    except Exception as exc:
+        logger.warning(
+            "Supabase dupe query failed for source_product_id=%s: %s",
+            source_product_id,
+            exc,
+        )
+        return []
+
+    if not isinstance(rows, list) or not rows:
+        return []
+
+    dupes: List[DupeProduct] = []
+    for row in rows:
+        raw_dupe_id = row.get("dupe_product_id", -1)
+        dupe_id = _resolve_api_dupe_product_id(raw_dupe_id)
+        if dupe_id is None:
+            logger.debug(
+                "Missing product in PRODUCTS for dupe_product_id=%s",
+                raw_dupe_id,
+            )
+            continue
+
+        product = PRODUCTS[dupe_id]
+        dupes.append(
+            DupeProduct(
+                **_product_to_card(product).model_dump(),
+                dupe_score=float(row.get("dupe_score", 0.0)),
+                explanation=str(row.get("explanation", "")) if row.get("explanation") is not None else "",
+            )
+        )
+
     return dupes
 
 
@@ -771,19 +868,12 @@ def _load_user_state_from_db(db: Session, user_id: str) -> UserState:
         if feedback.free_text:
             reasons.append(feedback.free_text)
 
-        ts = feedback.created_at
         if feedback.reaction == "like":
-            user_state.add_liked(
-                vec, reasons=reasons if reasons else None, timestamp=ts
-            )
+            user_state.add_liked(vec, reasons=reasons if reasons else None)
         elif feedback.reaction == "dislike":
-            user_state.add_disliked(
-                vec, reasons=reasons if reasons else None, timestamp=ts
-            )
+            user_state.add_disliked(vec, reasons=reasons if reasons else None)
         elif feedback.reaction == "irritation":
-            user_state.add_irritation(
-                vec, reasons=reasons if reasons else None, timestamp=ts
-            )
+            user_state.add_irritation(vec, reasons=reasons if reasons else None)
 
     USER_STATES[user_id] = user_state
     return user_state
@@ -916,12 +1006,17 @@ def _seed_user_model_from_onboarding(
     )
 
 
+
+# Secure onboarding: require authentication, use authenticated user
+from deployment.api.auth.dependencies import get_current_user
+
 @app.post("/api/onboarding", response_model=OnboardingResponse)
 def submit_onboarding(
     payload: OnboardingRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> OnboardingResponse:
-    user_id = _generate_user_id()
+    user_id = str(current_user.id)
     USER_PROFILES[user_id] = payload
 
     try:
@@ -1031,37 +1126,11 @@ def get_recommendations(
         try:
             training_data = user_state.get_training_data()
             if training_data is None:
-                # Not enough data for ML — use Rocchio with temporal decay
-                user_vec = compute_user_vector_with_decay(user_state)
-                product_index = {
-                    p.product_id: i for i, p in enumerate(PRODUCTS.values())
-                }
-                for product in candidates:
-                    vec = get_product_vector_safe(product.product_id, product_index)
-                    if vec is not None:
-                        score = float(
-                            np.dot(user_vec, vec) / (np.linalg.norm(vec) + 1e-9)
-                        )
-                        scores.append(max(0.0, score))
-                    else:
-                        scores.append(0.5)
+                scores = [0.5] * len(candidates)
             else:
                 _, y = training_data
                 if len(np.unique(y)) < 2:
-                    # Only one class — decay-based Rocchio is more informative than 0.5
-                    user_vec = compute_user_vector_with_decay(user_state)
-                    product_index = {
-                        p.product_id: i for i, p in enumerate(PRODUCTS.values())
-                    }
-                    for product in candidates:
-                        vec = get_product_vector_safe(product.product_id, product_index)
-                        if vec is not None:
-                            score = float(
-                                np.dot(user_vec, vec) / (np.linalg.norm(vec) + 1e-9)
-                            )
-                            scores.append(max(0.0, score))
-                        else:
-                            scores.append(0.5)
+                    scores = [0.5] * len(candidates)
                 else:
                     # Select best model based on learning stage
                     model, model_name = get_best_model(user_state)
@@ -1123,26 +1192,24 @@ def get_dupes(product_id: int, db: Session = Depends(get_db)) -> DupesResponse:
     if source is None:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    db_dupes = _load_dupes_from_db(db, product_id)
+    if SUPABASE_URL and SUPABASE_KEY:
+        db_dupes = _load_dupes_from_supabase(product_id)
+    else:
+        db_dupes = _load_dupes_from_db(db, product_id)
+
     if db_dupes:
         return DupesResponse(source_product_id=product_id, dupes=db_dupes)
 
-    alternatives = [
-        product
-        for product in PRODUCTS.values()
-        if product.product_id != product_id and product.category == source.category
-    ]
+    logger.warning(
+        "No precomputed dupes found for product_id=%s; returning an empty dupe list",
+        product_id,
+    )
 
-    dupes = [
-        DupeProduct(
-            **_product_to_card(product).model_dump(),
-            dupe_score=max(0.1, 0.92 - (index * 0.07)),
-            explanation="Similar texture and use case at a comparable/lower price",
-        )
-        for index, product in enumerate(alternatives)
-    ]
-
-    return DupesResponse(source_product_id=product_id, dupes=dupes)
+    return DupesResponse(
+        source_product_id=product_id,
+        dupes=[],
+        message="No dupes found for this product.",
+    )
 
 
 @app.post("/api/feedback", response_model=FeedbackResponse)
@@ -1212,9 +1279,16 @@ def submit_feedback(
     return FeedbackResponse(success=True, message="Feedback recorded & model updated")
 
 
-@app.get("/api/wishlist/{user_id}", response_model=WishlistResponse)
-def get_wishlist(user_id: str, db: Session = Depends(get_db)) -> WishlistResponse:
-    rows = db.query(UserWishlist).filter(UserWishlist.user_id == user_id).all()
+
+# Secure wishlist endpoint: require authentication, use authenticated user
+from deployment.api.auth.dependencies import get_current_user
+
+@app.get("/api/wishlist", response_model=WishlistResponse)
+def get_wishlist(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WishlistResponse:
+    rows = db.query(UserWishlist).filter(UserWishlist.user_id == str(current_user.id)).all()
     products = []
     for row in rows:
         product = PRODUCTS.get(row.product_id)

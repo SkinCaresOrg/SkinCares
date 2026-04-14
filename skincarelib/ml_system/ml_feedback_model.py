@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import pickle
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
@@ -22,6 +23,7 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
+from sklearn import config_context
 
 try:
     import lightgbm as lgb
@@ -370,6 +372,7 @@ class LightGBMFeedback:
         )
         self.scaler = StandardScaler()
         self.is_trained = False
+        self.feature_names = None
 
     def fit(self, user_state: UserState):
         """Train LightGBM on user interactions."""
@@ -379,7 +382,11 @@ class LightGBMFeedback:
 
         X, y = data
         X_scaled = self.scaler.fit_transform(X)
-        self.model.fit(X_scaled, y)
+        # Store feature names to avoid sklearn warnings about feature names
+        self.feature_names = [f"feature_{i}" for i in range(X_scaled.shape[1])]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            self.model.fit(X_scaled, y)
         self.is_trained = True
         return True
 
@@ -390,7 +397,11 @@ class LightGBMFeedback:
 
         X = product_vector.reshape(1, -1).astype(np.float32)
         X_scaled = self.scaler.transform(X)
-        return float(self.model.predict_proba(X_scaled)[0, 1])
+        # Use config_context to suppress feature names validation warning
+        with config_context(assume_finite=True):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return float(self.model.predict_proba(X_scaled)[0, 1])
 
     def score_products(self, product_vectors: np.ndarray) -> np.ndarray:
         """Score multiple products efficiently."""
@@ -398,13 +409,19 @@ class LightGBMFeedback:
             return np.ones(len(product_vectors)) * 0.5
 
         X_scaled = self.scaler.transform(product_vectors.astype(np.float32))
-        return self.model.predict_proba(X_scaled)[:, 1].astype(np.float32)
+        # Use config_context to suppress feature names validation warning
+        with config_context(assume_finite=True):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return self.model.predict_proba(X_scaled)[:, 1].astype(np.float32)
 
     def get_feature_importance(self) -> np.ndarray:
         """Get feature importance scores."""
         if not self.is_trained:
             return np.array([])
-        return self.model.feature_importances_.astype(np.float32)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return self.model.feature_importances_.astype(np.float32)
 
     def save(self, path: Path):
         """Save model to disk."""

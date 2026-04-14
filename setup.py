@@ -48,6 +48,8 @@ extras_require = {
         "faiss-cpu>=1.7,<2",
     ],
     "ml-heavy": [
+        "lightgbm>=4.0,<5",
+        "xlearn>=0.5,<1",
         "vowpalwabbit>=9.0,<10",
         "faiss-cpu>=1.7,<2",
     ],

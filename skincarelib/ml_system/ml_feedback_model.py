@@ -2,23 +2,42 @@
 ML-based feedback models for user preference learning.
 
 Replaces simple weighted average with proper machine learning:
-- Logistic Regression
-- Random Forest Classifier
-- Gradient Boosting Classifier
+- Logistic Regression (early stage)
+- Random Forest Classifier (mid stage)
+- Gradient Boosting Classifier (advanced)
+- LightGBM (fast gradient boosting)
+- XLearn (linear + field-aware factorization)
 - Contextual Bandit (online learning)
 """
 
 from __future__ import annotations
 
+import logging
 import pickle
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn import config_context
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
+
+try:
+    import lightgbm as lgb
+
+    LIGHTGBM_AVAILABLE = True
+except ImportError:
+    LIGHTGBM_AVAILABLE = False
+
+try:
+    import xlearn as xl
+
+    XLEARN_AVAILABLE = True
+except ImportError:
+    XLEARN_AVAILABLE = False
 
 try:
     import vowpalwabbit as vw
@@ -26,6 +45,9 @@ try:
     VW_AVAILABLE = True
 except ImportError:
     VW_AVAILABLE = False
+
+
+logger = logging.getLogger(__name__)
 
 
 class UserState:
@@ -421,6 +443,233 @@ class GradientBoostingFeedback:
             self.model = data["model"]
             self.scaler = data["scaler"]
             self.is_trained = True
+
+
+class LightGBMFeedback:
+    """LightGBM model for fast and efficient user preference prediction."""
+
+    def __init__(self, n_estimators: int = 100, learning_rate: float = 0.1, max_depth: int = 7):
+        if not LIGHTGBM_AVAILABLE:
+            raise ImportError(
+                "lightgbm is required for LightGBMFeedback. Install with: pip install lightgbm"
+            )
+
+        self.model = lgb.LGBMClassifier(
+            n_estimators=n_estimators,
+            learning_rate=learning_rate,
+            max_depth=max_depth,
+            random_state=42,
+            n_jobs=-1,
+            verbose=-1,
+        )
+        self.scaler = StandardScaler()
+        self.is_trained = False
+        self.feature_names = None
+
+    def fit(self, user_state: UserState):
+        """Train LightGBM on user interactions."""
+        data = user_state.get_training_data()
+        if data is None:
+            return False
+
+        X, y = data
+        X_scaled = self.scaler.fit_transform(X)
+        # Store feature names to avoid sklearn warnings about feature names
+        self.feature_names = [f"feature_{i}" for i in range(X_scaled.shape[1])]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            self.model.fit(X_scaled, y)
+        self.is_trained = True
+        return True
+
+    def predict_preference(self, product_vector: np.ndarray) -> float:
+        """Predict preference for a product (0.0 to 1.0)."""
+        if not self.is_trained:
+            return 0.5
+
+        X = product_vector.reshape(1, -1).astype(np.float32)
+        X = _augment_product_vector(X)
+        X_scaled = self.scaler.transform(X)
+        # Use config_context to suppress feature names validation warning
+        with config_context(assume_finite=True):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return float(self.model.predict_proba(X_scaled)[0, 1])
+
+    def score_products(self, product_vectors: np.ndarray) -> np.ndarray:
+        """Score multiple products efficiently."""
+        if not self.is_trained:
+            return np.ones(len(product_vectors)) * 0.5
+
+        X = product_vectors.astype(np.float32)
+        X = _augment_product_vector(X)
+        X_scaled = self.scaler.transform(X)
+        # Use config_context to suppress feature names validation warning
+        with config_context(assume_finite=True):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return self.model.predict_proba(X_scaled)[:, 1].astype(np.float32)
+
+    def get_feature_importance(self) -> np.ndarray:
+        """Get feature importance scores."""
+        if not self.is_trained:
+            return np.array([])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return self.model.feature_importances_.astype(np.float32)
+
+    def save(self, path: Path):
+        """Save model to disk."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "wb") as f:
+            pickle.dump({"model": self.model, "scaler": self.scaler}, f)
+
+    def load(self, path: Path):
+        """Load model from disk."""
+        with open(path, "rb") as f:
+            data = pickle.load(f)
+            self.model = data["model"]
+            self.scaler = data["scaler"]
+            self.is_trained = True
+
+
+class XLearnFeedback:
+    """XLearn model for linear and field-aware factorization machine models."""
+
+    def __init__(self, model_type: str = "linear", learning_rate: float = 0.01):
+        """
+        Initialize XLearn model.
+
+        Args:
+            model_type: 'linear' for linear model, 'fm' for factorization machine
+            learning_rate: Learning rate for SGD
+        """
+        if not XLEARN_AVAILABLE:
+            raise ImportError(
+                "xlearn is required for XLearnFeedback. Install with: pip install xlearn"
+            )
+
+        self.model_type = model_type
+        self.learning_rate = learning_rate
+        self.scaler = StandardScaler()
+        self.is_trained = False
+        self._initialize_model()
+
+    def _initialize_model(self):
+        """Initialize XLearn model based on type."""
+        if self.model_type == "linear":
+            self.model = xl.LR()
+        elif self.model_type == "fm":
+            self.model = xl.FFM()
+        else:
+            self.model = xl.LR()  # Default to linear
+
+        # Configure learning rate
+        self.model.setLearningRate(self.learning_rate)
+        self.model.disableNorm()  # We handle normalization with scaler
+
+    def fit(self, user_state: UserState):
+        """Train XLearn model on user interactions."""
+        data = user_state.get_training_data()
+        if data is None:
+            return False
+
+        X, y = data
+        X_scaled = self.scaler.fit_transform(X)
+
+        # Convert to binary labels (0, 1)
+        y_binary = (y > 0).astype(np.int32) * 2 - 1  # Convert to {-1, 1} for XLearn
+
+        try:
+            # Save training data to temporary file for XLearn
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+                temp_file = f.name
+                for label, features in zip(y_binary, X_scaled):
+                    feature_str = " ".join(f"{i}:{v:.6f}" for i, v in enumerate(features) if v != 0)
+                    f.write(f"{label} {feature_str}\n")
+
+            # Train model
+            self.model.fit(temp_file, self.model_type + "_model.bin")
+            self.is_trained = True
+
+            # Clean up
+            import os
+
+            os.remove(temp_file)
+            return True
+        except Exception as e:
+            logger.warning(f"XLearn training failed: {e}. Fallback to simple averaging.")
+            return False
+
+    def predict_preference(self, product_vector: np.ndarray) -> float:
+        """Predict preference for a product (0.0 to 1.0)."""
+        if not self.is_trained:
+            return 0.5
+
+        X = product_vector.reshape(1, -1).astype(np.float32)
+        X = _augment_product_vector(X)
+        X_scaled = self.scaler.transform(X)
+
+        try:
+            # XLearn returns raw predictions; convert to probability
+            pred = self.model.predict(X_scaled)
+            # Map from [-1, 1] to [0, 1]
+            prob = (pred[0] + 1.0) / 2.0
+            return float(np.clip(prob, 0.0, 1.0))
+        except Exception:
+            return 0.5
+
+    def score_products(self, product_vectors: np.ndarray) -> np.ndarray:
+        """Score multiple products."""
+        if not self.is_trained:
+            return np.ones(len(product_vectors)) * 0.5
+
+        X = product_vectors.astype(np.float32)
+        X = _augment_product_vector(X)
+        X_scaled = self.scaler.transform(X)
+
+        try:
+            predictions = self.model.predict(X_scaled)
+            # Map from [-1, 1] to [0, 1]
+            probs = (predictions + 1.0) / 2.0
+            return np.clip(probs, 0.0, 1.0).astype(np.float32)
+        except Exception:
+            return np.ones(len(product_vectors)) * 0.5
+
+    def save(self, path: Path):
+        """Save model to disk."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # XLearn saves its binary model separately
+        model_file = path.with_suffix(".bin")
+        try:
+            import shutil
+
+            if Path(self.model_type + "_model.bin").exists():
+                shutil.copy(self.model_type + "_model.bin", model_file)
+        except Exception:
+            pass
+
+        # Save scaler
+        with open(path, "wb") as f:
+            pickle.dump(self.scaler, f)
+
+    def load(self, path: Path):
+        """Load model from disk."""
+        try:
+            # Load scaler
+            with open(path, "rb") as f:
+                self.scaler = pickle.load(f)
+
+            # Reinitialize model and load binary
+            model_file = path.with_suffix(".bin")
+            if model_file.exists():
+                self._initialize_model()
+                self.model.load(str(model_file))
+                self.is_trained = True
+        except Exception:
+            logger.warning("Failed to load XLearn model")
 
 
 class ContextualBanditFeedback:

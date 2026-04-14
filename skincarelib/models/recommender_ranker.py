@@ -11,8 +11,6 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 VECTORS_PATH = ROOT / "artifacts" / "product_vectors.npy"
 INDEX_PATH = ROOT / "artifacts" / "product_index.json"
-METADATA_PATH = ROOT / "data" / "processed" / "products_dataset_clean_tokens.csv"
-TOKENS_PATH = ROOT / "data" / "processed" / "products_dataset_clean_tokens.csv"
 SIGNALS_PATH = ROOT / "data" / "processed" / "products_with_signals.csv"
 
 _SIGNAL_COLS = [
@@ -44,9 +42,6 @@ def load_artifacts():
     with open(INDEX_PATH) as f:
         product_index = json.load(f)
 
-    metadata = pd.read_csv(METADATA_PATH, dtype={"product_id": str})
-    metadata.columns = metadata.columns.str.lower()
-    metadata["product_id"] = metadata.index.astype(str)
     metadata = pd.read_csv(SIGNALS_PATH)
 
     # Always derive product_id from row index to stay consistent with vectorizer.py,
@@ -125,14 +120,19 @@ def rank_products(
             tokens = {t.strip().lower() for t in token_string.split(",")}
             return tokens.isdisjoint(banned_set)
 
-        keep_cols = [c for c in candidates.columns]
-        merged = candidates.merge(
-            tokens_df[["product_id", "ingredient_tokens"]],
-            on="product_id",
-            how="left",
-        )
-        mask = merged["ingredient_tokens"].apply(has_no_banned)
-        candidates = merged[mask][keep_cols]
+        keep_cols = list(candidates.columns)
+        if "ingredient_tokens" in candidates.columns:
+            # tokens already present in metadata — use directly, skip merge
+            mask = candidates["ingredient_tokens"].apply(has_no_banned)
+            candidates = candidates[mask]
+        else:
+            merged = candidates.merge(
+                tokens_df[["product_id", "ingredient_tokens"]],
+                on="product_id",
+                how="left",
+            )
+            mask = merged["ingredient_tokens"].apply(has_no_banned)
+            candidates = merged[mask][keep_cols]
 
     # --- Filter 5: Exclude already-liked products ---
     liked_ids = constraints.get("liked_product_ids") or []

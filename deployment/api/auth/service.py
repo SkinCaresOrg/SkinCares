@@ -31,10 +31,9 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
     email = email.lower().strip()
     user = db.query(User).filter(User.email == email).first()
     if not user:
-        return None
+        raise ValueError("User not found")
     if not verify_password(password, user.hashed_password):
-        return None
-
+        raise ValueError("Incorrect password")
     return user
 
 

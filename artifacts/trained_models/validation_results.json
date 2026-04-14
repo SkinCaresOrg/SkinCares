@@ -1,0 +1,27 @@
+{
+  "logistic_regression": {
+    "accuracy": 78.96440129449837,
+    "total_predictions": 1545,
+    "errors": 0
+  },
+  "random_forest": {
+    "accuracy": 79.28802588996764,
+    "total_predictions": 1545,
+    "errors": 0
+  },
+  "gradient_boosting": {
+    "accuracy": 78.31715210355988,
+    "total_predictions": 1545,
+    "errors": 0
+  },
+  "lightgbm": {
+    "accuracy": 79.15857605177993,
+    "total_predictions": 1545,
+    "errors": 0
+  },
+  "contextual_bandit": {
+    "accuracy": 79.28802588996764,
+    "total_predictions": 1545,
+    "errors": 0
+  }
+}

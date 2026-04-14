@@ -1,0 +1,62 @@
+{
+  "logistic_regression_single": {
+    "probability": 0.19305386771386734,
+    "valid": true
+  },
+  "random_forest_single": {
+    "probability": 0.22250916711349092,
+    "valid": true
+  },
+  "gradient_boosting_single": {
+    "probability": 0.2838363380193198,
+    "valid": true
+  },
+  "lightgbm_single": {
+    "probability": 0.24778420376188973,
+    "valid": true
+  },
+  "logistic_regression_batch": {
+    "batch_size": 100,
+    "mean_score": 0.21806234121322632,
+    "std_score": 0.09707313776016235,
+    "valid": true
+  },
+  "random_forest_batch": {
+    "batch_size": 100,
+    "mean_score": 0.20829834043979645,
+    "std_score": 0.028235167264938354,
+    "valid": true
+  },
+  "gradient_boosting_batch": {
+    "batch_size": 100,
+    "mean_score": 0.2109537124633789,
+    "std_score": 0.08576697111129761,
+    "valid": true
+  },
+  "lightgbm_batch": {
+    "batch_size": 100,
+    "mean_score": 0.2142978459596634,
+    "std_score": 0.08457035571336746,
+    "valid": true
+  },
+  "logistic_regression_consistency": {
+    "consistent": true,
+    "value": 0.24514372857046351
+  },
+  "random_forest_consistency": {
+    "consistent": false,
+    "values": [
+      0.22645357656203294,
+      0.22645357656203294,
+      0.226453576562033
+    ]
+  },
+  "gradient_boosting_consistency": {
+    "consistent": true,
+    "value": 0.20939609589700564
+  },
+  "lightgbm_consistency": {
+    "consistent": true,
+    "value": 0.2499658874992121
+  }
+}

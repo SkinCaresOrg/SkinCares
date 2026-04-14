@@ -175,7 +175,7 @@ def handle_chat(
     ):
         if "recommend" in msg_lower or "routine" in msg_lower:
             return (
-                "You can get personalized clicking on FOR YOU at the top of your screen and filling out our quick skin quiz when you create your account to get tailored recommendations 🙂",
+                "You can get personalized products by clicking on FOR YOU at the top of your screen and filling out our quick skin quiz when you create your account to get tailored recommendations",
                 last_intent,
             )
         if "dupe" in msg_lower or "alternative" in msg_lower:
@@ -520,10 +520,10 @@ def _smart_fallback(message: str, profile: Optional[Any] = None) -> str:
     ]:
         return (
             "Hi there! 👋 I’m here to help you find dupes and product recommendations tailored to your skin.\n\n"
-            "Want a fully personalized routine?\n"
-            "👉 Take our skin quiz: [recommendation page link]\n\n"
+            "Want a personalized product recommendation?\n"
+            "👉 Take our skin quiz\n\n"
             "Looking for a cheaper alternative to a product?\n"
-            "👉 Try our dupe finder: [dupe finder link]\n\n"
+            "👉 Try our dupe finder\n\n"
             "Or just ask me directly:\n"
             "• 'Recommend a moisturizer for oily skin'\n"
             "• 'Find a dupe for CeraVe cleanser'\n"

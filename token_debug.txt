@@ -1,0 +1,300 @@
+   362  water
+   278  glycerin
+   206  phenoxyethanol
+   177  vitamin e
+   141  sodium hyaluronate
+   137  ethylhexylglycerin
+   134  butylene glycol
+   125  disodium edta
+   121  caprylyl glycol
+   106  xanthan gum
+   104  dimethicone
+    95  sodium hydroxide
+    84  carbomer
+    82  cetearyl alcohol
+    82  propanediol
+    80  citric acid
+    79  panthenol
+    76  caprylic/capric triglyceride
+    72  1, 2-hexanediol
+    71  pentylene glycol
+    70  niacinamide
+    66  glyceryl stearate
+    57  squalane
+    51  titanium dioxide
+    50  polysorbate 20
+    49  allantoin
+    48  cetyl alcohol
+    47  stearic acid
+    43  peg-100 stearate
+    42  sodium chloride
+    42  caffeine
+    41  propylene glycol
+    39  sodium citrate
+    37  arginine
+    36  silica
+    36  iron oxides
+    34  chlorphenesin
+    33  butyrospermum parkii butter
+    31  ceramide np
+    30  bht
+    30  petrolatum
+    30  potassium sorbate
+    30  salicylic acid
+    30  helianthus annuus seed oil
+    29  simmondsia chinensis seed oil
+    29  hyaluronic acid
+    28  mica
+    28  camellia sinensis leaf extract
+    28  benzyl alcohol
+    27  methylparaben
+    24  tromethamine
+    24  cyclopentasiloxane
+    24  stearyl alcohol
+    24  hexylene glycol
+    24  trehalose
+    23  palmitoyl tetrapeptide-7
+    23  lactic acid
+    22  palmitoyl tripeptide-1
+    22  betaine
+    22  cholesterol
+    22  dimethiconol
+    22  retinol
+    22  acrylates/c10-30 alkyl acrylate crosspolymer
+    22  sodium pca
+    22  cucumis sativus fruit extract
+    22  hydrolyzed hyaluronic acid
+    21  behenyl alcohol
+    21  hydrogenated lecithin
+    21  sucrose
+    21  triethanolamine
+    21  ascorbyl glucoside
+    21  isohexadecane
+    21  glycolic acid
+    21  ammonium acryloyldimethyltaurate crosspolymer
+    20  palmitic acid
+    20  ascorbic acid
+    20  polysorbate 80
+    20  yellow 5
+    19  sorbitol
+    19  hydroxyethyl acrylate/sodium acryloyldimethyl taurate copolymer
+    19  polysorbate 60
+    19  dipropylene glycol
+    19  lecithin
+    18  ethoxydiglycol
+    18  glyceryl caprylate
+    18  c12-15 alkyl benzoate
+    18  isopropyl palmitate
+    17  tetrasodium edta
+    17  acetyl glucosamine
+    17  isododecane
+    17  ceteareth-20
+    16  sorbitan isostearate
+    16  trisodium ethylenediamine disuccinate
+    16  sodium lactate
+    16  sorbitan olivate
+    16  tetrahexyldecyl ascorbate
+    16  hydroxyethylcellulose
+    16  hordeum vulgare extract
+    15  alcohol denat.
+    15  adenosine
+    15  polysilicone-11
+    15  zinc oxide
+    15  ricinus communis seed oil
+    15  glycine soja oil
+    15  sodium phytate
+    15  urea
+    15  propylene glycol dicaprate
+    14  caprylhydroxamic acid
+    14  phytosphingosine
+    14  sodium polyacrylate
+    14  serine
+    14  cetearyl glucoside
+    14  polyisobutene
+    14  steareth-20
+    14  helianthus annuus seedcake
+    14  isononyl isononanoate
+    13  magnesium sulfate
+    13  cetearyl olivate
+    13  hydrocolloid
+    13  beeswax
+    12  ethylhexyl palmitate
+    12  polyethylene
+    12  hydrolyzed sodium hyaluronate
+    12  zinc gluconate
+    12  dipotassium glycyrrhizate
+    12  ceramide ap
+    12  butyrospermum parkii oil
+    12  tetrasodium glutamate diacetate
+    12  propylparaben
+    12  decyl glucoside
+    11  caprylyl methicone
+    11  polybutene
+    11  hydrogenated polyisobutene
+    11  peg-8
+    11  coco-caprylate/caprate
+    11  dehydroacetic acid
+    11  acetyl hexapeptide-8
+    11  dimethicone/vinyl dimethicone crosspolymer
+    11  octisalate
+    11  ascorbyl palmitate
+    11  dimethyl isosorbide
+    10  triethoxycaprylylsilane
+    10  dicaprylyl carbonate
+    10  threonine
+    10  aloe barbadensis leaf extract
+    10  alanine
+    10  ceramide eop
+    10  disteardimonium hectorite
+    10  tin oxide
+    10  gluconolactone
+    10  cellulose gum
+    10  retinyl palmitate
+    10  octyldodecanol
+    10  avene thermal spring water
+    10  yellow 6
+     9  cetyl peg/ppg-10/1 dimethicone
+     9  glucose
+     9  pentaerythrityl tetra-di-t-butyl hydroxyhydrocinnamate
+     9  cetyl ethylhexanoate
+     9  limnanthes alba seed oil
+     9  sclerocarya birrea seed oil
+     9  phospholipids
+     9  sodium metabisulfite
+     9  disodium phosphate
+     9  sodium hyaluronate crosspolymer
+     9  diisopropyl sebacate
+     9  glycine
+     9  proline
+     9  sodium stearoyl glutamate
+     9  chondrus crispus extract
+     9  hydrogenated castor oil
+     9  olea europaea fruit oil
+     9  hydrogenated polydecene
+     9  disodium cocoamphodiacetate
+     9  aloe barbadensis leaf juice
+     9  synthetic fluorphlogopite
+     9  cyclohexasiloxane
+     9  sorbitan stearate
+     9  avobenzone
+     9  octocrylene
+     9  magnesium aluminum silicate
+     9  methylpropanediol
+     9  madecassoside
+     9  chrysin
+     9  n-hydroxysuccinimide
+     9  laminaria saccharina extract
+     9  bis-diglyceryl polyacyladipate-2
+     9  hydrogenated vegetable oil
+     9  mineral oil
+     9  aluminum starch octenylsuccinate
+     9  glyceryl stearate citrate
+     8  linoleic acid
+     8  dimethicone crosspolymer
+     8  pca
+     8  ceramide ng
+     8  polyhydroxystearic acid
+     8  sodium cocoyl isethionate
+     8  bis-peg-18 methyl ether dimethyl silane
+     8  zinc pca
+     8  polymethylsilsesquioxane
+     8  potassium hydroxide
+     8  myristic acid
+     8  saccharide isomerate
+     8  polymethyl methacrylate
+     8  argania spinosa kernel oil
+     8  isopropyl isostearate
+     8  dicaprylyl ether
+     8  avena sativa kernel flour
+     7  anhydroxylitol
+     7  xylitol
+     7  xylitylglucoside
+     7  oleic acid
+     7  polyacrylate crosspolymer-6
+     7  t-butyl alcohol
+     7  propylene carbonate
+     7  biotin
+     7  sodium lauroyl lactylate
+     7  edetate disodium
+     7  poloxamer 182
+     7  coco-glucoside
+     7  isopropyl lauroyl sarcosinate
+     7  peg-10 dimethicone
+     7  cocamidopropyl betaine
+     7  glycereth-26
+     7  sorbitan oleate
+     7  ammonium hydroxide
+     7  sodium phosphate
+     7  jojoba esters
+     7  potassium cetyl phosphate
+     7  sodium ascorbyl phosphate
+     7  ferulic acid
+     7  neopentyl glycol diheptanoate
+     7  acrylamide/sodium acryloyldimethyltaurate copolymer
+     7  calcium pantothenate
+     7  glutamic acid
+     7  avena sativa kernel extract
+     7  persea gratissima oil
+     7  laureth-4
+     6  resveratrol
+     6  mannitol
+     6  magnesium ascorbyl phosphate
+     6  isopropyl myristate
+     6  chlorhexidine digluconate
+     6  copper gluconate
+     6  yeast extract
+     6  glyceryl glucoside
+     6  sodium polyacryloyldimethyl taurate
+     6  bis-peg/ppg-14/14 dimethicone
+     6  cellulose
+     6  trideceth-6
+     6  glyceryl stearate se
+     6  phenyl trimethicone
+     6  beta-glucan
+     6  homosalate
+     6  dextrin
+     6  leuconostoc/radish root ferment filtrate
+     6  laureth-23
+     6  isostearic acid
+     6  dipeptide diaminobutyroyl benzylamide diacetate
+     6  euphorbia cerifera wax
+     6  c13-14 isoparaffin
+     6  laureth-7
+     6  polyacrylamide
+     6  benzoyl peroxide
+     6  acetyl tetrapeptide-5
+     6  zinc sulfate
+     6  hydroxyethyl urea
+     6  ozokerite
+     6  distearyldimonium chloride
+     5  ethylparaben
+     5  morus alba leaf extract
+     5  panax ginseng root extract
+     5  glyceryl laurate
+     5  peg-20 glyceryl triisostearate
+     5  carnosine
+     5  arachidyl alcohol
+     5  arachidyl glucoside
+     5  polyacrylate-13
+     5  peg/ppg-18/18 dimethicone
+     5  whey protein
+     5  ergothioneine
+     5  magnesium aspartate
+     5  sclerotium gum
+     5  peg-40 hydrogenated castor oil
+     5  copper tripeptide-1
+     5  sodium acetylated hyaluronate
+     5  lanolin
+     5  pentaerythrityl tetraethylhexanoate
+     5  bakuchiol
+     5  dipentaerythrityl tetrahydroxystearate/tetraisostearate
+     5  disodium stearoyl glutamate
+     5  trimethylol hexyllactone crosspolymer
+     5  silica silylate
+     5  trimethylsiloxysilicate
+     5  mandelic acid
+     5  ceratonia siliqua gum
+     5  2-hexanediol
+     5  alcohol
+     5  ammonium polyacryloyldimethyl taurate
+     5  red 33

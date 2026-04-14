@@ -19,11 +19,10 @@ import sys
 sys.path.insert(0, "/Users/geethika/projects/SkinCares/SkinCares")
 
 import os
-from datetime import datetime, timezone
 
 import numpy as np
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 from deployment.api.app import (
     PRODUCT_VECTORS,
@@ -92,18 +91,17 @@ def test_phase_1_onboarding():
     db.add(profile_row)
     db.commit()
 
-    print(f"\n✅ Onboarding profile saved to database")
+    print("\n✅ Onboarding profile saved to database")
 
     # Seed model from onboarding
-    user_state = UserState(dim=PRODUCT_VECTORS.shape[1])
     _seed_user_model_from_onboarding(
         user_id=user_id,
         skin_type=onboarding.skin_type,
         skin_concerns=onboarding.concerns,
     )
 
-    print(f"✅ Model seeded from onboarding data")
-    print(f"   - Initial interactions: 0 (will seed with pseudo-interactions)")
+    print("✅ Model seeded from onboarding data")
+    print("   - Initial interactions: 0 (will seed with pseudo-interactions)")
 
     db.close()
 
@@ -113,7 +111,6 @@ def test_phase_2_swipes():
     print_section("PHASE 2: USER SWIPES ON PRODUCTS", "▶")
 
     db = SessionLocal()
-    user_id = "test_user_comprehensive"
 
     # Simulate user swiping/browsing products
     swipe_data = [
@@ -140,7 +137,7 @@ def test_phase_2_swipes():
 
     # In production, swipes are recorded but don't require feedback
     # (feedback is optional and asked after each swipe)
-    print(f"\n✅ Swipes recorded (no explicit storage, feedback coming next)")
+    print("\n✅ Swipes recorded (no explicit storage, feedback coming next)")
 
     db.close()
 
@@ -198,10 +195,10 @@ def test_phase_3_feedback_questions():
 
     db.commit()
 
-    print(f"✅ All feedback submitted and stored in UserProductEvent table")
-    print(f"   - reason_tags stored as JSON ✅")
-    print(f"   - free_text stored as TEXT ✅")
-    print(f"   - Reaction type preserved ✅")
+    print("✅ All feedback submitted and stored in UserProductEvent table")
+    print("   - reason_tags stored as JSON ✅")
+    print("   - free_text stored as TEXT ✅")
+    print("   - Reaction type preserved ✅")
 
     db.close()
 
@@ -217,7 +214,7 @@ def test_phase_4_model_learning():
 
     # Load user state from database
     user_state_before = UserState(dim=PRODUCT_VECTORS.shape[1])
-    print(f"   Before learning:")
+    print("   Before learning:")
     print(f"     - Liked products: {len(user_state_before.liked_vectors)}")
     print(f"     - Disliked products: {len(user_state_before.disliked_vectors)}")
     print(f"     - Irritation products: {len(user_state_before.irritation_vectors)}")
@@ -226,13 +223,13 @@ def test_phase_4_model_learning():
     # Reconstruct user state from database feedback
     user_state = _load_user_state_from_db(db, user_id)
 
-    print(f"\n   After loading from database:")
+    print("\n   After loading from database:")
     print(f"     - Liked products: {len(user_state.liked_vectors)}")
     print(f"     - Disliked products: {len(user_state.disliked_vectors)}")
     print(f"     - Irritation products: {len(user_state.irritation_vectors)}")
     print(f"     - Total interactions: {user_state.interactions}")
 
-    print(f"\n✅ Reason signals preserved in learning:")
+    print("\n✅ Reason signals preserved in learning:")
     print(f"   - Liked reasons: {user_state.liked_reasons}")
     print(f"   - Disliked reasons: {user_state.disliked_reasons}")
     print(f"   - Irritation reasons: {user_state.irritation_reasons}")
@@ -241,14 +238,14 @@ def test_phase_4_model_learning():
     model, model_name = get_best_model(user_state)
     print(f"   ✅ Model selected: {model_name}")
 
-    print(f"\n📚 TRAINING MODEL with feedback vectors + reason signals:")
+    print("\n📚 TRAINING MODEL with feedback vectors + reason signals:")
     try:
         model.fit(user_state)
-        print(f"   ✅ Model trained successfully")
-        print(f"   ✅ Learned patterns from:")
-        print(f"      - Liked products: moisture absorption, hydration signals")
-        print(f"      - Disliked products: greasiness signals")
-        print(f"      - Irritation: sensitivity/irritation signals")
+        print("   ✅ Model trained successfully")
+        print("   ✅ Learned patterns from:")
+        print("      - Liked products: moisture absorption, hydration signals")
+        print("      - Disliked products: greasiness signals")
+        print("      - Irritation: sensitivity/irritation signals")
     except Exception as e:
         print(f"   ❌ Training failed: {e}")
         raise
@@ -257,7 +254,7 @@ def test_phase_4_model_learning():
     _persist_user_model_state(db, user_id, user_state)
     db.commit()
 
-    print(f"\n✅ Learned state persisted to database")
+    print("\n✅ Learned state persisted to database")
 
     db.close()
     return user_state
@@ -274,7 +271,7 @@ def test_phase_5_recommendations():
     user_state = _load_user_state_from_db(db, user_id)
 
     print("🎁 GENERATING RECOMMENDATIONS...\n")
-    print(f"   User's learning profile:")
+    print("   User's learning profile:")
     print(f"   - Interactions: {user_state.interactions}")
     print(f"   - Liked: {len(user_state.liked_vectors)} products")
     print(f"   - Disliked: {len(user_state.disliked_vectors)} products")
@@ -294,7 +291,7 @@ def test_phase_5_recommendations():
     # Get top recommendations
     top_indices = np.argsort(scores)[-5:][::-1]
 
-    print(f"\n   ✅ Top 5 Product Recommendations:")
+    print("\n   ✅ Top 5 Product Recommendations:")
     for i, idx in enumerate(top_indices, 1):
         score = scores[idx]
         product = None
@@ -310,10 +307,10 @@ def test_phase_5_recommendations():
         else:
             print(f"      {i}. Product (index {idx}) - Score: {score:.4f}")
 
-    print(f"\n✅ Recommendations reflect user's feedback:")
-    print(f"   - Favors moisturizers (user liked one)")
-    print(f"   - Avoids greasy products (user disliked)")
-    print(f"   - Prioritizes non-irritating options (feedback from irritation)")
+    print("\n✅ Recommendations reflect user's feedback:")
+    print("   - Favors moisturizers (user liked one)")
+    print("   - Avoids greasy products (user disliked)")
+    print("   - Prioritizes non-irritating options (feedback from irritation)")
 
     db.close()
 
@@ -329,7 +326,7 @@ def test_phase_6_verification():
 
     # Check UserProductEvent
     events = db.query(UserProductEvent).filter_by(user_id=user_id).all()
-    print(f"   UserProductEvent table:")
+    print("   UserProductEvent table:")
     print(f"   - Total feedback events: {len(events)}")
     for event in events:
         print(f"      • Product {event.product_id}: {event.reaction}")
@@ -339,21 +336,21 @@ def test_phase_6_verification():
     # Check UserProfileState
     profile_row = db.query(UserProfileState).filter_by(user_id=user_id).first()
     if profile_row:
-        print(f"\n   UserProfileState table:")
-        print(f"   ✅ User profile stored")
+        print("\n   UserProfileState table:")
+        print("   ✅ User profile stored")
         print(f"      Skin type: {profile_row.profile.get('skin_type')}")
         print(f"      Concerns: {profile_row.profile.get('concerns')}")
 
     # Check UserModelState
     model_state = db.query(UserModelState).filter_by(user_id=user_id).first()
     if model_state:
-        print(f"\n   UserModelState table:")
-        print(f"   ✅ Model state persisted")
+        print("\n   UserModelState table:")
+        print("   ✅ Model state persisted")
         print(f"      Interactions: {model_state.interactions}")
         print(f"      Liked count: {model_state.liked_count}")
         print(f"      Reason signals preserved: {len(model_state.liked_reasons) > 0}")
 
-    print(f"\n" + "=" * 80)
+    print("\n" + "=" * 80)
     print("VERIFICATION SUMMARY:")
     print("=" * 80)
 
@@ -390,7 +387,7 @@ def main():
         test_phase_1_onboarding()
         test_phase_2_swipes()
         test_phase_3_feedback_questions()
-        user_state = test_phase_4_model_learning()
+        test_phase_4_model_learning()
         test_phase_5_recommendations()
         test_phase_6_verification()
 

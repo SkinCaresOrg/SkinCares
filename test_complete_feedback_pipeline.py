@@ -14,8 +14,6 @@ import sys
 
 sys.path.insert(0, "/Users/geethika/projects/SkinCares/SkinCares")
 
-import json
-from datetime import datetime, timezone
 
 import numpy as np
 from sqlalchemy import create_engine
@@ -30,7 +28,6 @@ from deployment.api.app import (
 )
 from deployment.api.persistence.models import (
     Base,
-    UserModelState,
     UserProductEvent,
     UserProfileState,
 )
@@ -176,7 +173,7 @@ def test_feedback_storage_and_learning():
     print("-" * 80)
 
     user_state = _load_user_state_from_db(db, user_id)
-    print(f"\n  ✅ UserState reconstructed from database:")
+    print("\n  ✅ UserState reconstructed from database:")
     print(f"    • Total interactions: {user_state.interactions}")
     print(f"    • Likes: {user_state.liked_count}")
     print(f"    • Dislikes: {user_state.disliked_count}")
@@ -202,11 +199,11 @@ def test_feedback_storage_and_learning():
     print("-" * 80)
 
     model.fit(user_state)
-    print(f"\n  ✅ Model trained on UserState with:")
+    print("\n  ✅ Model trained on UserState with:")
     print(f"    • {len(user_state.liked_vectors)} liked product vectors")
     print(f"    • {len(user_state.disliked_vectors)} disliked product vectors")
     print(f"    • {len(user_state.irritation_vectors)} irritation product vectors")
-    print(f"    • Reason tags used for signal weighting")
+    print("    • Reason tags used for signal weighting")
 
     print("\n[STEP 6] Predictions for Recommendations")
     print("-" * 80)
@@ -219,7 +216,7 @@ def test_feedback_storage_and_learning():
         (1006, "Product 4: Unknown Product"),
     ]
 
-    print(f"\n  Scoring products based on learned preferences:")
+    print("\n  Scoring products based on learned preferences:")
     for product_id, description in test_products:
         # Use a simplified vector for demo
         dummy_vec = np.random.randn(PRODUCT_VECTORS.shape[1])

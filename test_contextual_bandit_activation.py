@@ -17,10 +17,6 @@ import numpy as np
 
 from deployment.api.app import PRODUCT_VECTORS, get_best_model
 from skincarelib.ml_system.ml_feedback_model import (
-    ContextualBanditFeedback,
-    LightGBMFeedback,
-    LogisticRegressionFeedback,
-    RandomForestFeedback,
     UserState,
 )
 

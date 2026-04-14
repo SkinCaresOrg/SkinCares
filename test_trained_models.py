@@ -10,7 +10,6 @@ This script:
 5. Tests the 5-stage model progression
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -23,11 +22,6 @@ import pickle
 import numpy as np
 
 from skincarelib.ml_system.ml_feedback_model import (
-    ContextualBanditFeedback,
-    GradientBoostingFeedback,
-    LightGBMFeedback,
-    LogisticRegressionFeedback,
-    RandomForestFeedback,
     UserState,
 )
 

@@ -72,7 +72,7 @@ def test_model_learning_from_feedback():
             print(f"  ❌ Error getting initial scores: {e}")
             continue
 
-        print(f"\n[PHASE 2] Adding User Feedback")
+        print("\n[PHASE 2] Adding User Feedback")
         print("-" * 80)
 
         # Simulate user feedback:
@@ -98,14 +98,14 @@ def test_model_learning_from_feedback():
                 user_state.add_irritation(vec, reasons=reasons)
                 print(f"  ✓ Added IRRITATION: {', '.join(reasons)}{f' - {free_text}' if free_text else ''}")
 
-        print(f"\nUserState Summary:")
+        print("\nUserState Summary:")
         print(f"  - Likes: {user_state.liked_count}")
         print(f"  - Dislikes: {user_state.disliked_count}")
         print(f"  - Irritations: {user_state.irritation_count}")
         print(f"  - Total interactions: {user_state.interactions}")
         print(f"  - Reasons collected: {len(user_state.liked_reasons + user_state.disliked_reasons + user_state.irritation_reasons)}")
 
-        print(f"\n[PHASE 3] Model Retraining & Score Changes")
+        print("\n[PHASE 3] Model Retraining & Score Changes")
         print("-" * 80)
 
         # Train model with feedback
@@ -117,7 +117,7 @@ def test_model_learning_from_feedback():
             continue
 
         # Get new scores after feedback
-        print(f"\nNew scores after learning from feedback:")
+        print("\nNew scores after learning from feedback:")
         score_changes = {}
         for pid, vec in products.items():
             try:
@@ -132,7 +132,7 @@ def test_model_learning_from_feedback():
             except Exception as e:
                 print(f"  Product {pid}: ERROR - {e}")
 
-        print(f"\n[ANALYSIS] Learning Behavior")
+        print("\n[ANALYSIS] Learning Behavior")
         print("-" * 80)
 
         # Verify learning occurred
@@ -191,14 +191,14 @@ def test_feedback_pipeline():
 
     print("\n✓ Step 3: Backend updates UserState")
     print("  • Gets product vector for product_id=1001")
-    print(f"  • Combines reason_tags + free_text:")
+    print("  • Combines reason_tags + free_text:")
     combined_reasons = feedback_data["reason_tags"] + (
         [feedback_data["free_text"]] if feedback_data.get("free_text") else []
     )
     for i, reason in enumerate(combined_reasons, 1):
         print(f"    {i}. {reason}")
     print(f"  • Calls: user_state.add_liked(vector, reasons={combined_reasons})")
-    print(f"  • Updates interaction count: interactions += 1")
+    print("  • Updates interaction count: interactions += 1")
 
     print("\n✓ Step 4: Next /api/recommendations request")
     print("  • Loads UserState with all accumulated feedback")

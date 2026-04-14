@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 # Import only database models and ML models (no app.py)
 from deployment.api.persistence.models import (
@@ -100,7 +100,7 @@ def test_phase_1_onboarding():
     db.add(profile_row)
     db.commit()
 
-    print(f"\n✅ Profile saved to UserProfileState table")
+    print("\n✅ Profile saved to UserProfileState table")
 
     db.close()
 
@@ -123,7 +123,7 @@ def test_phase_2_swipes():
     for log in swipe_log:
         print(f"   {log}")
 
-    print(f"\n✅ Swipes logged (feedback questions triggered)")
+    print("\n✅ Swipes logged (feedback questions triggered)")
 
 
 def test_phase_3_feedback_questions():
@@ -146,7 +146,7 @@ def test_phase_3_feedback_questions():
     print("   Step 4: 'Any other thoughts?'")
     print("           Response: free_text (optional comment)")
 
-    print(f"\n📝 FEEDBACK SUBMISSIONS:\n")
+    print("\n📝 FEEDBACK SUBMISSIONS:\n")
 
     # Sample feedback submissions
     feedback_data = [
@@ -200,11 +200,11 @@ def test_phase_3_feedback_questions():
 
     db.commit()
 
-    print(f"✅ All feedback stored in UserProductEvent table")
-    print(f"   - reason_tags: Stored as JSON ✅")
-    print(f"   - free_text: Stored as TEXT ✅")
-    print(f"   - Reaction: Stored as TEXT ✅")
-    print(f"   - Timestamps: Stored for ordering ✅")
+    print("✅ All feedback stored in UserProductEvent table")
+    print("   - reason_tags: Stored as JSON ✅")
+    print("   - free_text: Stored as TEXT ✅")
+    print("   - Reaction: Stored as TEXT ✅")
+    print("   - Timestamps: Stored for ordering ✅")
 
     db.close()
 
@@ -257,13 +257,13 @@ def test_phase_4_model_learning():
             print(f"   ✅ Added irritation product: {event.product_id}")
             print(f"      Reasons: {reasons}")
 
-    print(f"\n   UserState Summary:")
+    print("\n   UserState Summary:")
     print(f"   - Liked vectors: {len(user_state.liked_vectors)}")
     print(f"   - Disliked vectors: {len(user_state.disliked_vectors)}")
     print(f"   - Irritation vectors: {len(user_state.irritation_vectors)}")
     print(f"   - Total interactions: {user_state.interactions}")
 
-    print(f"\n   Reason signals preserved:")
+    print("\n   Reason signals preserved:")
     print(f"   - Liked reasons: {user_state.liked_reasons}")
     print(f"   - Disliked reasons: {user_state.disliked_reasons}")
     print(f"   - Irritation reasons: {user_state.irritation_reasons}")
@@ -286,14 +286,14 @@ def test_phase_4_model_learning():
 
     print(f"   Selected: {model_name}")
 
-    print(f"\n📚 TRAINING MODEL with feedback vectors + reason signals...")
+    print("\n📚 TRAINING MODEL with feedback vectors + reason signals...")
     try:
         model.fit(user_state)
-        print(f"   ✅ Model trained successfully!")
-        print(f"   ✅ Learned patterns from:")
-        print(f"      • Liked: Moisture, absorption, hydration signals")
-        print(f"      • Disliked: Greasiness, stickiness signals")
-        print(f"      • Irritation: Sensitivity, stinging, redness signals")
+        print("   ✅ Model trained successfully!")
+        print("   ✅ Learned patterns from:")
+        print("      • Liked: Moisture, absorption, hydration signals")
+        print("      • Disliked: Greasiness, stickiness signals")
+        print("      • Irritation: Sensitivity, stinging, redness signals")
     except Exception as e:
         print(f"   ❌ Training failed: {e}")
         db.close()
@@ -313,7 +313,7 @@ def test_phase_4_model_learning():
     db.add(model_state)
     db.commit()
 
-    print(f"\n✅ Model state persisted to UserModelState table")
+    print("\n✅ Model state persisted to UserModelState table")
 
     db.close()
     return user_state, model
@@ -324,7 +324,7 @@ def test_phase_5_recommendations(user_state, model):
     print_section("PHASE 5: GENERATE PERSONALIZED RECOMMENDATIONS", "▶")
 
     print("🎁 GENERATING RECOMMENDATIONS...\n")
-    print(f"   User's learning profile:")
+    print("   User's learning profile:")
     print(f"   - Interactions: {user_state.interactions}")
     print(f"   - Liked products: {len(user_state.liked_vectors)}")
     print(f"   - Disliked products: {len(user_state.disliked_vectors)}")
@@ -352,13 +352,13 @@ def test_phase_5_recommendations(user_state, model):
         score = scores[idx]
         print(f"      {rank}. Product {idx}")
         print(f"         Score: {score:.4f}")
-        print(f"         Reason: Matches user's preferences learned from feedback")
+        print("         Reason: Matches user's preferences learned from feedback")
         print()
 
-    print(f"✅ Recommendations reflect learned user preferences:")
-    print(f"   • Favors products similar to liked ones")
-    print(f"   • Avoids products similar to disliked ones")
-    print(f"   • Removes irritating product characteristics")
+    print("✅ Recommendations reflect learned user preferences:")
+    print("   • Favors products similar to liked ones")
+    print("   • Avoids products similar to disliked ones")
+    print("   • Removes irritating product characteristics")
 
 
 def test_phase_6_end_to_end_verification():
@@ -381,20 +381,20 @@ def test_phase_6_end_to_end_verification():
     # Verify UserProfileState
     profile = db.query(UserProfileState).filter_by(user_id=user_id).first()
     if profile:
-        print(f"\n   ✅ UserProfileState table: User profile stored")
+        print("\n   ✅ UserProfileState table: User profile stored")
         print(f"      Skin type: {profile.profile.get('skin_type')}")
         print(f"      Concerns: {profile.profile.get('concerns')}")
 
     # Verify UserModelState
     model_state = db.query(UserModelState).filter_by(user_id=user_id).first()
     if model_state:
-        print(f"\n   ✅ UserModelState table: Model state persisted")
+        print("\n   ✅ UserModelState table: Model state persisted")
         print(f"      Interactions: {model_state.interactions}")
         print(f"      Reason signals: {len(model_state.liked_reasons)} liked reasons")
 
     db.close()
 
-    print(f"\n" + "=" * 80)
+    print("\n" + "=" * 80)
     print("VERIFICATION CHECKLIST:")
     print("=" * 80)
 

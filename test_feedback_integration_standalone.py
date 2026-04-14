@@ -15,19 +15,17 @@ import sys
 
 sys.path.insert(0, "/Users/geethika/projects/SkinCares/SkinCares")
 
-import json
 import os
 from datetime import datetime, timezone
 
 import numpy as np
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 from deployment.api.persistence.models import (
     Base,
     UserModelState,
     UserProductEvent,
-    UserProfileState,
 )
 from skincarelib.ml_system.ml_feedback_model import UserState
 
@@ -239,14 +237,14 @@ def test_feedback_storage_and_learning():
             elif event.reaction == "irritation":
                 user_state.add_irritation(vec, reasons=reasons, timestamp=timestamp)
 
-        print(f"✅ Reconstructed user state from database")
+        print("✅ Reconstructed user state from database")
         print(f"   - Liked interactions: {len(user_state.liked_vectors)}")
         print(f"   - Disliked interactions: {len(user_state.disliked_vectors)}")
         print(f"   - Irritation interactions: {len(user_state.irritation_vectors)}")
         print(f"   - Total interactions: {user_state.interactions}")
 
         # Show reason tags preserved
-        print(f"\n   Reason tags preserved in learning:")
+        print("\n   Reason tags preserved in learning:")
         if user_state.liked_reasons:
             print(f"   - Liked reasons: {user_state.liked_reasons[:3]}")  # First 3
         if user_state.disliked_reasons:
@@ -275,9 +273,9 @@ def test_feedback_storage_and_learning():
         db.add(model_state)
         db.commit()
 
-        print(f"✅ Persisted user model state to database")
-        print(f"   - Model can be retrieved on next request")
-        print(f"   - Reason signals preserved for future recommendations")
+        print("✅ Persisted user model state to database")
+        print("   - Model can be retrieved on next request")
+        print("   - Reason signals preserved for future recommendations")
 
         print("\n" + "="*80)
         print("✅ Complete feedback pipeline validated!")

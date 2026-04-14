@@ -11,7 +11,6 @@ This script:
 6. Saves trained models
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -20,7 +19,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import logging
 import pickle
-from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
@@ -344,7 +342,7 @@ class ModelTrainer:
             logger.info("✅ TRAINING COMPLETE!")
             logger.info("=" * 70)
             logger.info(f"✅ Trained models: {list(self.trained_models.keys())}")
-            logger.info(f"✅ Models saved to: artifacts/trained_models/")
+            logger.info("✅ Models saved to: artifacts/trained_models/")
             logger.info("\nValidation Results Summary:")
             for model_name, results in self.validation_results.items():
                 logger.info(f"  {model_name}: {results['accuracy']:.2f}% accuracy")

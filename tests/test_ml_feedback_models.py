@@ -166,7 +166,7 @@ class TestRandomForestFeedback:
         model.fit(user_with_interactions)
 
         importance = model.get_feature_importance()
-        assert len(importance) == 60  # dim=50 + 10 reason tags
+        assert len(importance) == 50  # dim=50
         assert all(i >= 0 for i in importance)
 
     def test_score_products(self, user_with_interactions, sample_vectors):
@@ -201,7 +201,7 @@ class TestGradientBoostingFeedback:
         model.fit(user_with_interactions)
 
         importance = model.get_feature_importance()
-        assert len(importance) == 60  # dim=50 + 10 reason tags
+        assert len(importance) == 50  # dim=50
         assert all(i >= 0 for i in importance)
 
 

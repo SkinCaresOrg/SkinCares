@@ -46,7 +46,6 @@ from skincarelib.ml_system.reranker import (
     rerank_candidates,
 )
 from skincarelib.ml_system.swipe_session import SwipeSession
-from skincarelib.ml_system.handler import handle_chat
 from skincarelib.models.user_profile import build_user_vector
 
 logger = logging.getLogger(__name__)

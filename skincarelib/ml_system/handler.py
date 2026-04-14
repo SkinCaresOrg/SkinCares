@@ -1,14 +1,13 @@
 import os
 from typing import Optional, Dict, Any
 
-from groq import Groq
+import requests
 
 from skincarelib.ml_system.intent import detect_intent
 from skincarelib.models.dupe_finder import find_dupes, get_artifacts
 from skincarelib.models.recommender_ranker import recommend
 
 METADATA = None
-_groq_client = None
 
 
 def _get_metadata():
@@ -79,24 +78,13 @@ def _get_profile_field(profile, field, default):
     return getattr(profile, field, default)
 
 
-def get_groq_client():
-    global _groq_client
-
-    if _groq_client is None and os.getenv("GROQ_API_KEY"):
-        try:
-            _groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-        except Exception as e:
-            print(f"Failed to initialize Groq client: {e}")
-            return None
-
-    return _groq_client
-
-
 def query_groq(message: str, profile: Optional[Dict[str, Any]] = None) -> Optional[str]:
-    client = get_groq_client()
-    if not client:
-        print("Groq not configured: GROQ_API_KEY missing or client init failed.")
+    groq_api_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not groq_api_key:
+        print("Groq not configured: GROQ_API_KEY is missing.")
         return None
+
+    groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
 
     try:
         context = ""
@@ -109,28 +97,43 @@ def query_groq(message: str, profile: Optional[Dict[str, Any]] = None) -> Option
                     f"{', '.join(concerns)}."
                 )
 
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a helpful skincare expert assistant."
-                        f"{context} Keep responses concise (1-2 sentences)."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": message,
-                },
-            ],
-            temperature=0.7,
-            max_completion_tokens=150,
+        response = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {groq_api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": groq_model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a helpful skincare expert assistant."
+                            f"{context} Keep responses concise (1-2 sentences)."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": message,
+                    },
+                ],
+                "temperature": 0.7,
+                "max_tokens": 150,
+            },
+            timeout=30,
         )
 
-        content = response.choices[0].message.content
-        if content:
-            return content.strip()
+        if response.status_code != 200:
+            print(f"Groq HTTP error {response.status_code}: {response.text[:200]}")
+            return None
+
+        data = response.json()
+        choices = data.get("choices", [])
+        if choices:
+            content = choices[0].get("message", {}).get("content", "")
+            if content:
+                return content.strip()
 
         print("Groq returned an empty response.")
         return None
@@ -141,29 +144,13 @@ def query_groq(message: str, profile: Optional[Dict[str, Any]] = None) -> Option
 
 
 def test_groq_connection() -> bool:
-    client = get_groq_client()
-    if not client:
-        print("Groq test failed: client not initialized.")
+    content = query_groq("Reply with exactly: Groq is working")
+    if not content:
+        print("Groq test failed: no content returned.")
         return False
 
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": "You are a test assistant."},
-                {"role": "user", "content": "Reply with exactly: Groq is working"},
-            ],
-            temperature=0,
-            max_completion_tokens=20,
-        )
-
-        content = response.choices[0].message.content.strip()
-        print("Groq test response:", content)
-        return "GROQ IS WORKING" in content.upper()
-
-    except Exception as e:
-        print(f"Groq test error: {e}")
-        return False
+    print("Groq test response:", content)
+    return "GROQ IS WORKING" in content.upper()
 
 
 def handle_chat(

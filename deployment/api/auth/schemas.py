@@ -10,7 +10,7 @@ class UserCreate(BaseModel):
 
 
 class UserRead(BaseModel):
-    id: UUID
+    id: str
     email: EmailStr
 
 

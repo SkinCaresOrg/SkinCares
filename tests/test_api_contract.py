@@ -56,8 +56,13 @@ def test_api_contract_endpoints_smoke() -> None:
     }
     # Try register first (ignore if already exists)
     reg_resp = client.post("/api/auth/register", json=login_payload)
-    if reg_resp.status_code not in (200, 409):
-        assert False, f"Registration failed: {reg_resp.text}"
+    print(f"[DEBUG] Registration status: {reg_resp.status_code}, response: {reg_resp.text}")
+    if reg_resp.status_code == 200:
+        pass  # Registered successfully
+    elif reg_resp.status_code == 409:
+        pass  # User already exists, this is fine
+    else:
+        assert False, f"Registration failed: {reg_resp.status_code} {reg_resp.text}"
     login_resp = client.post("/api/auth/login", json=login_payload)
     assert login_resp.status_code == 200, login_resp.text
     token = login_resp.json()["access_token"]
@@ -160,7 +165,20 @@ def test_feedback_requires_reaction_when_has_tried_true() -> None:
         "routine_size": "basic",
         "product_interests": ["sunscreen"],
     }
-    onboarding = client.post("/api/onboarding", json=onboarding_payload)
+    # Register/login and get token
+    login_payload = {
+        "username": "apitestuser2",
+        "password": "apitestpass2",
+        "email": "apitestuser2@example.com"
+    }
+    reg_resp = client.post("/api/auth/register", json=login_payload)
+    login_resp = client.post("/api/auth/login", json=login_payload)
+    assert login_resp.status_code == 200, login_resp.text
+    token = login_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    onboarding = client.post("/api/onboarding", json=onboarding_payload, headers=headers)
+    assert onboarding.status_code == 200, onboarding.text
     user_id = onboarding.json()["user_id"]
     selected_product_id = _pick_existing_product_id()
 

@@ -39,4 +39,7 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
 
 def get_user_by_id(db: Session, user_id: str) -> Optional[User]:
     """querie db with user id and returns the user object if found, otherwise returns None"""
+    import uuid
+    if isinstance(user_id, uuid.UUID):
+        user_id = str(user_id)
     return db.query(User).filter(User.id == user_id).first()

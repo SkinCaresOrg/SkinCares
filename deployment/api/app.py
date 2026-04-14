@@ -803,8 +803,7 @@ def get_best_model(user_state: UserState):
     - Early stage (< 5 interactions): LogisticRegression (fast, lightweight)
     - Mid stage (5-20 interactions): RandomForest (captures complex patterns)
     - Advanced (20-50 interactions): LightGBM (fast gradient boosting)
-    - Experienced (50-100 interactions): XLearn (linear + factorization)
-    - Expert (100+ interactions): ContextualBandit (online learning with exploration)
+    - Expert (50+ interactions): ContextualBandit (pure online learning with exploration)
     """
     interactions = user_state.interactions
 
@@ -821,21 +820,12 @@ def get_best_model(user_state: UserState):
         except ImportError:
             # Fallback if LightGBM not installed
             return RandomForestFeedback(), "RandomForest (Fallback from LightGBM)"
-    elif interactions < 100:
-        # Experienced stage: use linear + factorization (50-100 interactions)
-        try:
-            return XLearnFeedback(model_type="linear"), "XLearn Linear (Experienced Stage)"
-        except ImportError:
-            # Fallback if XLearn not installed
-            try:
-                return LightGBMFeedback(), "LightGBM (Fallback from XLearn)"
-            except ImportError:
-                return RandomForestFeedback(), "RandomForest (Fallback from XLearn)"
     else:
-        # Expert user: use online learning with exploration (100+ interactions)
+        # Expert user: pure online learning with exploration (50+ interactions)
+        # ContextualBandit learns continuously with each interaction (no batch retraining needed)
         return ContextualBanditFeedback(
             dim=PRODUCT_VECTORS.shape[1]
-        ), "ContextualBandit (Online Learning)"
+        ), "ContextualBandit (Online Learning - Expert)"
 
 
 @app.options("/api/onboarding")

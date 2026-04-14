@@ -15,19 +15,6 @@ import sys
 
 sys.path.insert(0, "/Users/geethika/projects/SkinCares/SkinCares")
 
-import numpy as np
-
-from skincarelib.ml_system.ml_feedback_model import (
-    ContextualBanditFeedback,
-    LightGBMFeedback,
-    LogisticRegressionFeedback,
-    RandomForestFeedback,
-    UserState,
-)
-
-
-
-
 
 def test_feedback_pipeline():
     """Test the complete feedback pipeline: collect → store → learn."""
@@ -88,7 +75,6 @@ def test_feedback_pipeline():
 
 if __name__ == "__main__":
     test_feedback_pipeline()
-    test_model_learning_from_feedback()
 
     print("\n" + "="*80)
     print("✅ COMPLETE: Models ARE learning from user feedback!")

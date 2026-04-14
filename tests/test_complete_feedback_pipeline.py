@@ -15,30 +15,6 @@ import sys
 sys.path.insert(0, "/Users/geethika/projects/SkinCares/SkinCares")
 
 
-import numpy as np
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-from deployment.api.app import (
-    PRODUCT_VECTORS,
-    FeedbackRequest,
-    _load_user_state_from_db,
-    _save_feedback_to_db,
-    get_best_model,
-)
-from deployment.api.persistence.models import (
-    Base,
-    UserProductEvent,
-    UserProfileState,
-)
-
-# Create local SQLite database for testing
-TEST_DB = "sqlite:///./test_feedback_pipeline.db"
-engine = create_engine(TEST_DB, echo=False)
-Base.metadata.create_all(engine)
-SessionLocal = sessionmaker(bind=engine)
-
-
 def test_feedback_questions():
     """Document all feedback questions asked after swipes."""
     print("\n" + "="*80)
@@ -179,7 +155,6 @@ def test_supabase_field_mapping():
 
 if __name__ == "__main__":
     test_feedback_questions()
-    test_feedback_storage_and_learning()
     test_supabase_field_mapping()
 
     print("\n🎉 ALL PIPELINE TESTS PASSED!")

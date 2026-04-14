@@ -2,7 +2,6 @@
 # Uses the official CosIng INCI database as the reference list for fuzzy matching
 # instead of building known ingredients from the dataset itself.
 # Run this on products_dataset_processed.csv to generate the updated tokens.
-
 from pathlib import Path
 from v2_utils import (
     load_csv,
@@ -25,6 +24,7 @@ def main():
 
     df_processed = load_csv(processed_data_path)
     known_ingredients = load_cosing_ingredients(str(cosing_path))
+
     # print("CosIng ingredients loaded:", len(known_ingredients))
     # print("Sample:", known_ingredients[:10])
 

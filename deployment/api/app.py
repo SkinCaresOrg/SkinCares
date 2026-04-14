@@ -38,6 +38,7 @@ from skincarelib.ml_system.ml_feedback_model import (
     ContextualBanditFeedback,
     UserState,
 )
+from skincarelib.ml_system.feedback_update import compute_user_vector_with_decay
 from skincarelib.ml_system.swipe_session import SwipeSession
 from skincarelib.ml_system.handler import handle_chat
 
@@ -770,12 +771,19 @@ def _load_user_state_from_db(db: Session, user_id: str) -> UserState:
         if feedback.free_text:
             reasons.append(feedback.free_text)
 
+        ts = feedback.created_at
         if feedback.reaction == "like":
-            user_state.add_liked(vec, reasons=reasons if reasons else None)
+            user_state.add_liked(
+                vec, reasons=reasons if reasons else None, timestamp=ts
+            )
         elif feedback.reaction == "dislike":
-            user_state.add_disliked(vec, reasons=reasons if reasons else None)
+            user_state.add_disliked(
+                vec, reasons=reasons if reasons else None, timestamp=ts
+            )
         elif feedback.reaction == "irritation":
-            user_state.add_irritation(vec, reasons=reasons if reasons else None)
+            user_state.add_irritation(
+                vec, reasons=reasons if reasons else None, timestamp=ts
+            )
 
     USER_STATES[user_id] = user_state
     return user_state
@@ -1023,11 +1031,37 @@ def get_recommendations(
         try:
             training_data = user_state.get_training_data()
             if training_data is None:
-                scores = [0.5] * len(candidates)
+                # Not enough data for ML — use Rocchio with temporal decay
+                user_vec = compute_user_vector_with_decay(user_state)
+                product_index = {
+                    p.product_id: i for i, p in enumerate(PRODUCTS.values())
+                }
+                for product in candidates:
+                    vec = get_product_vector_safe(product.product_id, product_index)
+                    if vec is not None:
+                        score = float(
+                            np.dot(user_vec, vec) / (np.linalg.norm(vec) + 1e-9)
+                        )
+                        scores.append(max(0.0, score))
+                    else:
+                        scores.append(0.5)
             else:
                 _, y = training_data
                 if len(np.unique(y)) < 2:
-                    scores = [0.5] * len(candidates)
+                    # Only one class — decay-based Rocchio is more informative than 0.5
+                    user_vec = compute_user_vector_with_decay(user_state)
+                    product_index = {
+                        p.product_id: i for i, p in enumerate(PRODUCTS.values())
+                    }
+                    for product in candidates:
+                        vec = get_product_vector_safe(product.product_id, product_index)
+                        if vec is not None:
+                            score = float(
+                                np.dot(user_vec, vec) / (np.linalg.norm(vec) + 1e-9)
+                            )
+                            scores.append(max(0.0, score))
+                        else:
+                            scores.append(0.5)
                 else:
                     # Select best model based on learning stage
                     model, model_name = get_best_model(user_state)

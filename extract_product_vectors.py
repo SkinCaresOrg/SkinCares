@@ -35,7 +35,7 @@ print(f"   - File size: {os.path.getsize(output_path) / (1024*1024):.1f} MB")
 
 # Verify
 loaded = np.load(output_path, mmap_mode='r')
-print(f"\n✅ Verification:")
+print("\n✅ Verification:")
 print(f"   - Loaded shape: {loaded.shape}")
 print(f"   - Data type: {loaded.dtype}")
 print(f"   - Sample vector stats: min={loaded[0].min():.4f}, max={loaded[0].max():.4f}, mean={loaded[0].mean():.4f}")

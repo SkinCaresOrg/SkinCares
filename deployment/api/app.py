@@ -35,7 +35,6 @@ from deployment.api.persistence.models import (
 from skincarelib.ml_system.ml_feedback_model import (
     LogisticRegressionFeedback,
     RandomForestFeedback,
-    GradientBoostingFeedback,
     LightGBMFeedback,
     XLearnFeedback,
     ContextualBanditFeedback,

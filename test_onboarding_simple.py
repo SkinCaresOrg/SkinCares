@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Test onboarding integration with ML recommendations"""
 import requests
-import json
 
 BASE_URL = "http://localhost:8000"
 
@@ -43,11 +42,11 @@ print("-" * 80)
 
 # Analysis 1: Price Range
 prices = [p["price"] for p in recs]
-print(f"\n1️⃣  PRICE RANGE (Target: $20-50 for mid-range)")
+print("\n1️⃣  PRICE RANGE (Target: $20-50 for mid-range)")
 print(f"    Min: ${min(prices):.2f} | Max: ${max(prices):.2f} | Avg: ${sum(prices)/len(prices):.2f}")
 
 # Analysis 2: Ingredient Exclusions
-print(f"\n2️⃣  INGREDIENT EXCLUSIONS (No fragrance/alcohol)")
+print("\n2️⃣  INGREDIENT EXCLUSIONS (No fragrance/alcohol)")
 excluded_count = 0
 for prod in recs[:5]:
     ingredients = (prod.get("ingredients", "") or "").lower()
@@ -56,23 +55,23 @@ for prod in recs[:5]:
         print(f"    ⚠️  Product {prod['product_name'][:40]} - has excluded ingredients")
 
 if excluded_count == 0:
-    print(f"    ✅ Top 5 products: NO excluded ingredients found!")
+    print("    ✅ Top 5 products: NO excluded ingredients found!")
 
 # Analysis 3: Skin Concerns (Acne/Oiliness)
-print(f"\n3️⃣  SKIN CONCERNS (Acne & Oiliness focus)")
+print("\n3️⃣  SKIN CONCERNS (Acne & Oiliness focus)")
 acne_scores = [prod.get("acne_control_signal", 0) for prod in recs[:5]]
 avg_acne = sum(acne_scores) / len(acne_scores)
 print(f"    Avg acne-control signal in top 5: {avg_acne:.2f}/1.0")
-print(f"    ✅ Acne-focused: YES" if avg_acne > 0.3 else "    ⚠️  Limited acne focus")
+print("    ✅ Acne-focused: YES" if avg_acne > 0.3 else "    ⚠️  Limited acne focus")
 
 # Analysis 4: Diversity
 unique_brands = len(set(p.get("brand", "") for p in recs[:10]))
-print(f"\n4️⃣  PRODUCT DIVERSITY")
+print("\n4️⃣  PRODUCT DIVERSITY")
 print(f"    Brands in top 10: {unique_brands} (Target: 5+)")
 
 # Analysis 5: Adaptivity
-print(f"\n5️⃣  ADAPTIVE MODEL (Multi-class scoring based on interactions)")
-print(f"    ✅ Active - recommendations weighted by onboarding + user interactions")
+print("\n5️⃣  ADAPTIVE MODEL (Multi-class scoring based on interactions)")
+print("    ✅ Active - recommendations weighted by onboarding + user interactions")
 
 print("\n" + "=" * 80)
 print("✅ TEST COMPLETE: All onboarding factors are integrated!")

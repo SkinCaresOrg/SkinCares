@@ -59,7 +59,7 @@ try:
     print("  3. Test endpoints: curl http://localhost:8000/api/health")
     
 except Exception as e:
-    print(f"\n❌ ERROR connecting to Supabase:")
+    print("\n❌ ERROR connecting to Supabase:")
     print(f"   {str(e)}")
     print("\nTroubleshooting:")
     print("  1. Check SUPABASE_URL is correct (should be https://xxxxx.supabase.co)")

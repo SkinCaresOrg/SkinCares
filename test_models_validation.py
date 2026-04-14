@@ -26,7 +26,7 @@ if PRODUCT_VECTORS.shape[0] == 0:
 else:
     sample_products = PRODUCT_VECTORS[:100]
 
-print(f"\n📊 Test Setup:")
+print("\n📊 Test Setup:")
 print(f"   - Product vector dimension: {dim}")
 print(f"   - Sample products: {sample_products.shape[0]}")
 
@@ -37,7 +37,7 @@ for i in range(10):
     user.add_disliked(sample_products[i * 5 + 1], reasons=[f"reason_{i}"])
     user.add_irritation(sample_products[i * 5 + 2], reasons=[f"reason_{i}"])
 
-print(f"\n👤 User Feedback Summary:")
+print("\n👤 User Feedback Summary:")
 print(f"   - Total interactions: {user.interactions}")
 print(f"   - Liked products: {user.liked_count}")
 print(f"   - Disliked products: {user.disliked_count}")
@@ -57,7 +57,7 @@ except ImportError:
     print("ℹ️  XLearn not installed - skipping from test")
     print("   Install with: pip install xlearn\n")
 
-print(f"\n🤖 Model Testing:\n")
+print("\n🤖 Model Testing:\n")
 results = []
 
 for name, model in models_to_test:
@@ -72,7 +72,7 @@ for name, model in models_to_test:
         batch_preds = model.score_products(sample_products[:10])
         
         assert 0.0 <= single_pred <= 1.0, f"Single prediction out of range: {single_pred}"
-        assert len(batch_preds) == 10, f"Batch predictions length mismatch"
+        assert len(batch_preds) == 10, "Batch predictions length mismatch"
         assert all(0.0 <= p <= 1.0 for p in batch_preds), "Some batch predictions out of range"
         
         if hasattr(model, 'get_feature_importance'):

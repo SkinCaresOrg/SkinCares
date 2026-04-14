@@ -39,14 +39,14 @@ print(f"✓ Got {len(recs)} recommendations")
 
 # Check price range compliance
 prices = [p["price"] for p in recs]
-print(f"\n   Price Analysis:")
+print("\n   Price Analysis:")
 print(f"   - Min: ${min(prices):.2f}")
 print(f"   - Max: ${max(prices):.2f}")
 print(f"   - Avg: ${sum(prices)/len(prices):.2f}")
-print(f"   - Mid-range target: $20-50")
+print("   - Mid-range target: $20-50")
 
 # Check for fragrance/alcohol in first 5 recommendations
-print(f"\n   Ingredient Exclusion Check (no fragrance or alcohol):")
+print("\n   Ingredient Exclusion Check (no fragrance or alcohol):")
 for i, prod in enumerate(recs[:5], 1):
     ingredients = prod.get("ingredients", "").lower() if isinstance(prod.get("ingredients"), str) else ""
     has_fragrance = "fragrance" in ingredients
@@ -54,13 +54,13 @@ for i, prod in enumerate(recs[:5], 1):
     status = "✓" if not (has_fragrance or has_alcohol) else "✗"
     print(f"   {status} Product {i} ({prod['product_name'][:40]})")
     if has_fragrance:
-        print(f"      WARNING: Contains 'fragrance'")
+        print("      WARNING: Contains 'fragrance'")
     if has_alcohol:
-        print(f"      WARNING: Contains 'alcohol'")
+        print("      WARNING: Contains 'alcohol'")
 
 # Test 3: Send feedback and check adaptation
 print("\n3. Testing feedback and recommendation adaptation...")
-print(f"   Liking an acne-control product...")
+print("   Liking an acne-control product...")
 
 # Find a product to like
 like_product_id = recs[0]["product_id"]
@@ -77,7 +77,7 @@ response = requests.post(f"{BASE_URL}/api/feedback", json=feedback_data)
 print(f"   ✓ Feedback sent for product {like_product_id}")
 
 # Get updated recommendations
-print(f"\n   Getting recommendations after feedback...")
+print("\n   Getting recommendations after feedback...")
 response = requests.get(f"{BASE_URL}/api/recommendations/{user_id}?limit=10")
 updated_recs = response.json()["products"]
 print(f"   ✓ Got {len(updated_recs)} updated recommendations")
@@ -85,7 +85,7 @@ print(f"   ✓ Got {len(updated_recs)} updated recommendations")
 # Check if recommendations changed
 same_products = len(set(p["product_id"] for p in recs[:5]) & set(p["product_id"] for p in updated_recs[:5]))
 print(f"   - Changed in top 5: {5 - same_products} products adjusted")
-print(f"   - Recommendation ranking evolved based on feedback ✓")
+print("   - Recommendation ranking evolved based on feedback ✓")
 
 # Test 4: Ingredient exclusion test
 print("\n4. Testing ingredient exclusion (fragrance avoidance)...")
@@ -99,13 +99,13 @@ dislike_data = {
 }
 
 response = requests.post(f"{BASE_URL}/api/feedback", json=dislike_data)
-print(f"   ✓ Dislike feedback sent with 'contains_fragrance' tag")
+print("   ✓ Dislike feedback sent with 'contains_fragrance' tag")
 
 # Check if fragrance products are now penalized
 response = requests.get(f"{BASE_URL}/api/recommendations/{user_id}?limit=10")
 final_recs = response.json()["products"]
 
-print(f"\n   Checking if fragrance products are deprioritized...")
+print("\n   Checking if fragrance products are deprioritized...")
 fragrance_positions = []
 for i, prod in enumerate(final_recs):
     ingredients = prod.get("ingredients", "").lower() if isinstance(prod.get("ingredients"), str) else ""
@@ -116,7 +116,7 @@ if len(fragrance_positions) > 0:
     print(f"   - Fragrance products appear at positions: {fragrance_positions}")
     print(f"   - Deprioritized: {'YES ✓' if fragrance_positions[-1] > 5 else 'Partially'}")
 else:
-    print(f"   - No fragrance products in top 10 ✓ (EXCLUDED)")
+    print("   - No fragrance products in top 10 ✓ (EXCLUDED)")
 
 # Test 5: Summary
 print("\n" + "=" * 80)

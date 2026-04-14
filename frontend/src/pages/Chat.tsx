@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Send, Plus } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import { sendChatMessage } from "@/lib/api";
+import ReactMarkdown from "react-markdown";
 
 interface Message {
   id: string;
@@ -111,7 +112,7 @@ export default function Chat() {
                       : "bg-muted text-foreground rounded-bl-none"
                   }`}
                 >
-                  <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
+                  <ReactMarkdown className="text-sm prose prose-sm max-w-none whitespace-pre-wrap">{msg.text}</ReactMarkdown>
                   <span className="text-xs opacity-70 mt-1 block">
                     {msg.timestamp.toLocaleTimeString([], {
                       hour: "2-digit",

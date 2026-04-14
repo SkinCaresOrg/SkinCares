@@ -1,0 +1,50 @@
+backslash                  bht, caprylyl glycol, cetyl ethylhexanoate, glycerin, glyceryl laurate, peg-12 diisostearate, peg-20
+backslash                  butylene glycol, caffeine, camellia sinensis (green tea) leaf extract, cetyl peg/ppg-10/1 dimethicon
+long_parenthetical         butylene glycol, caffeine, camellia sinensis (green tea) leaf extract, cetyl peg/ppg-10/1 dimethicon
+long_parenthetical         alcohol denat, aluminum hydroxide, aqua / water / eau, ascorbyl glucoside, bis-peg/ppg-14/14 dimethi
+long_parenthetical         alcohol, boron nitride, caprylyl glycol, chlorphenesin, cyclohexasiloxane, cyclopentasiloxane, diamo
+backslash                  acetyl glucosamine, algae extract, ammonium acryloyldimethyltaurate/vp copolymer, artemia extract, a
+long_parenthetical         barley (hordeum vulgare) seed extract, butylene glycol, carbomer, egf (barley sh-oligopeptide-1), gl
+long_parenthetical         acetyl glucosamine, barley (hordeum vulgare) seed extract, citric acid, egf (barley sh-oligopeptide-
+backslash                  acrylamide/sodium acryloyldimethyltaurate copolymer, aloe barbadensis leaf water, behenyl alcohol, b
+long_parenthetical         acrylates/c10-30 alkyl acrylate crosspolymer, beta-sitosterol, butylene glycol, butyrospermum parkii
+long_parenthetical         butylene glycol, cetyl peg/ppg-10/1 dimethicone, cyclopentasiloxane, dimethicone/vinyl dimethicone c
+long_parenthetical         alcohol, boron nitride, caprylyl glycol, chlorphenesin, cyclohexasiloxane, cyclopentasiloxane, diamo
+long_parenthetical         alcohol denat, aluminum hydroxide, aqua / water / eau, ascorbyl glucoside, bis-peg/ppg-14/14 dimethi
+long_parenthetical         hydrocolloid (cellulose gum, polyisoprene, polyisobutene)
+backslash                  bht, caprylyl glycol, cetyl ethylhexanoate, glycerin, glyceryl laurate, peg-12 diisostearate, peg-20
+backslash                  bis-peg-18 methyl ether dimethyl silane, butylene glycol, caffeine, caprylyl glycol, carbomer, citri
+backslash                  acrylamide/sodium acryloyldimethyltaurate copolymer, aloe barbadensis leaf water, behenyl alcohol, b
+long_parenthetical         coco glucoside (coconut and sunflower oil), decyl glucoside (plant-derived), disodium coco-glucoside
+backslash                  butylene glycol, disodium edta, methylparaben, saccharomycopsis ferment filtrate, sodium salicylate,
+backslash                  butylene glycol, caffeine, camellia sinensis (green tea) leaf extract, cetyl peg/ppg-10/1 dimethicon
+long_parenthetical         boron nitride, c12-15 alkyl benzoate, cyclopentasiloxane, dipotassium glycyrrhizate, disiloxane, dis
+long_parenthetical         alcohol, aqua (water/eau), caprylic/capric triglyceride, carbomer, cetearyl alcohol, cetearyl olivat
+backslash                  ammonium acryloyldimethyltaurate/vp copolymer, bis-peg-18 methyl ether dimethyl silane, butylene gly
+backslash                  acetyl glucosamine, acetyl hexapeptide-8, acrylamide/sodium acryloyldimethyltaurate copolymer, ammon
+long_parenthetical         hydrocolloid (cellulose gum, polyisoprene, polyisobutene)
+long_parenthetical         barley (hordeum vulgare) seed extract, citric acid, egf (barley sh-oligopeptide-1), glycerin, isopen
+backslash                  beeswax\cera alba\cire d'abeille, bismuth oxychloride (ci 77163), blue 1 lake (ci 42090), butyrosper
+long_parenthetical         beeswax\cera alba\cire d'abeille, bismuth oxychloride (ci 77163), blue 1 lake (ci 42090), butyrosper
+backslash                  bis-peg-18 methyl ether dimethyl silane, butylene glycol, caffeine, caprylyl glycol, carbomer, citri
+backslash                  beeswax\cera alba\cire d'abeille, bismuth oxychloride (ci 77163), blue 1 lake (ci 42090), butyrosper
+backslash                  beeswax\cera alba\cire d'abeille, bismuth oxychloride (ci 77163), blue 1 lake (ci 42090), butyrosper
+backslash                  acrylamide/sodium acryloyldimethyltaurate copolymer, aloe barbadensis leaf water, behenyl alcohol, b
+backslash                  acetyl glucosamine, ammonium acryloyldimethyltaurate/vp copolymer, bht, blue 1 (ci 42090), butylene 
+long_parenthetical         aquaphilus dolomiae extract filtrate, arginine, avene thermal spring water (avene aqua), beeswax (ce
+long_parenthetical         1, 2-hexanediol, acetyl tetrapeptide-5, aqua (water), blue 4 (ci 42090, butylene glycol, caprylic/ca
+long_parenthetical         benzyl alcohol, caprylic/capric triglyceride, cetearyl alcohol, ci 75810 (chlorophyllin-copper compl
+backslash                  acrylamide/sodium acryloyldimethyltaurate copolymer, aloe barbadensis leaf water, behenyl alcohol, b
+backslash                  ammonium acryloyldimethyltaurate/vp copolymer, bis-peg-18 methyl ether dimethyl silane, butylene gly
+backslash                  butylene glycol, cucumis sativus (cucumber) fruit extract, glycerin, glyceryl stearate, helianthus a
+long_parenthetical         aluminum stearate, aquaphilus dolomiae ferment filtrate, arginine, avene thermal spring water (avene
+backslash                  butylene glycol, caffeine, camellia sinensis (green tea) leaf extract, cetyl peg/ppg-10/1 dimethicon
+long_parenthetical         butylene glycol, caffeine, camellia sinensis (green tea) leaf extract, cetyl peg/ppg-10/1 dimethicon
+backslash                  butylene glycol, cucumis sativus (cucumber) fruit extract, glycerin, glyceryl stearate, helianthus a
+backslash                  ammonium acryloyldimethyltaurate/vp copolymer, bis-peg-18 methyl ether dimethyl silane, butylene gly
+backslash                  1, 2-hexanediol, acrylates/c10-30 alkyl acrylate crosspolymer, aminomethyl propanol, butylene glycol
+backslash                  azelaic acid, butylene glycol, glycolic acid, hydroxyethylcellulose, phenoxyethanol, polysorbate 20,
+backslash                  alcohol denat., disodium cocoamphodiacetate, disodium edta, glycerin, hexylene glycol, poloxamer 184
+long_parenthetical         ascorbyl palmitate, citric acid, coco-glucoside, fructooligosaccharides, glyceryl oleate, hydrogenat
+backslash                  1, 2-hexanediol, acetyl glucosamine, allyl methacrylates crosspolymer, blue 1 (ci 42090), butylene g
+backslash                  blue no. 1 (ci 42090), butylene glycol, caffeine, caprylyl glycol, dimethicone, dimethiconol, disodi

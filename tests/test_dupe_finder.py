@@ -1,5 +1,7 @@
 import sys
 from pathlib import Path
+import io
+import builtins
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT / "skincarelib" / "models"))
@@ -8,7 +10,8 @@ import pytest
 import pandas as pd
 import numpy as np
 import importlib
-import faiss
+
+faiss = pytest.importorskip("faiss", reason="faiss not installed")
 
 
 @pytest.fixture
@@ -35,12 +38,39 @@ def dupe_module(monkeypatch):
     faiss.normalize_L2(normalized)
     fake_faiss_index.add(normalized)
 
+    artifact_filenames = {
+        "product_vectors.npy",
+        "product_index.json",
+        "feature_schema.json",
+        "products_with_signals.csv",
+        "faiss.index",
+    }
+
+    original_exists = Path.exists
+
+    def fake_exists(path_obj):
+        if path_obj.name in artifact_filenames:
+            return True
+        return original_exists(path_obj)
+
+    def fake_open(path, *args, **kwargs):
+        path_str = str(path)
+        if path_str.endswith("product_index.json") or path_str.endswith(
+            "feature_schema.json"
+        ):
+            stream = io.StringIO("{}")
+            stream.name = path_str
+            return stream
+        return builtins.open(path, *args, **kwargs)
+
     monkeypatch.setattr("pandas.read_csv", lambda *args, **kwargs: fake_metadata)
     monkeypatch.setattr("numpy.load", lambda *args, **kwargs: fake_vectors)
     monkeypatch.setattr(
         "json.load", lambda f: fake_index if "index" in str(f.name) else fake_schema
     )
     monkeypatch.setattr("faiss.read_index", lambda *args, **kwargs: fake_faiss_index)
+    monkeypatch.setattr(Path, "exists", fake_exists)
+    monkeypatch.setattr("builtins.open", fake_open)
 
     import skincarelib.models.dupe_finder as df
 

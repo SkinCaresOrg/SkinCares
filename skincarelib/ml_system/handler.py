@@ -3,10 +3,84 @@ import requests
 from typing import Optional, Dict, Any
 
 from skincarelib.ml_system.intent import detect_intent
-from skincarelib.models.dupe_finder import find_dupes
+from skincarelib.models.dupe_finder import find_dupes, get_artifacts
+from skincarelib.models.recommender_ranker import recommend
+
+METADATA = None
+
+
+def _get_metadata():
+    global METADATA
+    if METADATA is None:
+        _, _, _, METADATA = get_artifacts()
+        if "product_name" not in METADATA.columns and "name" in METADATA.columns:
+            METADATA["product_name"] = METADATA["name"]
+    return METADATA
+
 
 # Initialize OpenAI client lazily (only when needed)
 _client = None
+
+
+def _find_product_id(product_name: str):
+    product_name = product_name.lower().strip()
+    metadata = _get_metadata().copy()
+    name_col = "product_name" if "product_name" in metadata.columns else "name"
+
+    STOPWORDS = {
+        "cream",
+        "cleanser",
+        "moisturizer",
+        "serum",
+        "lotion",
+        "gel",
+        "face",
+        "skin",
+        "care",
+    }
+
+    query_words = [w for w in product_name.split() if w not in STOPWORDS]
+
+    def score(row):
+        text = f"{row[name_col]} {row['brand']}".lower()
+
+        matched = 0
+
+        for word in query_words:
+            if word in text:
+                matched += 1
+
+        # 🚨 HARD RULE: ALL important words must match
+        if matched == 0:
+            return -100  # reject completely
+
+        score = matched * 3
+
+        if product_name in text:
+            score += 10
+
+        return score
+
+    metadata["match_score"] = metadata.apply(score, axis=1)  # ← ADD THIS BACK
+    matches = metadata.sort_values("match_score", ascending=False)
+
+    if matches.empty:
+        return None
+
+    best = matches.iloc[0]
+
+    if best["match_score"] < 3:
+        return None
+
+    return best["product_id"]
+
+
+def _get_profile_field(profile, field, default):
+    if not profile:
+        return default
+    if isinstance(profile, dict):
+        return profile.get(field, default)
+    return getattr(profile, field, default)
 
 
 def get_openai_client():
@@ -26,11 +100,10 @@ def get_openai_client():
 def query_ollama(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
     """Query local Ollama instance running on localhost:11434"""
     try:
-        # Add profile context to the prompt if available
         context = ""
         if profile:
-            skin_type = profile.get("skin_type", "")
-            concerns = profile.get("concerns", [])
+            skin_type = _get_profile_field(profile, "skin_type", "")
+            concerns = _get_profile_field(profile, "concerns", [])
             if skin_type or concerns:
                 context = f" The user has {skin_type} skin and is concerned about {', '.join(concerns)}."
 
@@ -39,7 +112,7 @@ def query_ollama(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
         response = requests.post(
             "http://localhost:11434/api/generate",
             json={
-                "model": "mistral",  # Change to "neural-chat" or other model if available
+                "model": "mistral",
                 "prompt": prompt,
                 "stream": False,
                 "temperature": 0.7,
@@ -55,51 +128,286 @@ def query_ollama(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
         return None
 
 
-def handle_chat(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
+def handle_chat(
+    message: str,
+    profile: Optional[Dict[str, Any]] = None,
+    last_intent: Optional[str] = None,
+):
+    msg_lower = message.lower().strip()
+
+    # 1. QUICK HANDLING (safe things only)
+    if msg_lower in ["yes", "yeah", "y", "ok", "sure"]:
+        if last_intent == "recommend":
+            return (
+                "Great 🙂 What category are you interested in? (moisturizer, cleanser, serum)",
+                last_intent,
+            )
+
+    if any(greet in msg_lower for greet in ["hi", "hello", "hey"]):
+        last_intent = "greeting"
+
+        fallback = _smart_fallback(message, profile)
+
+        return (
+            fallback if fallback else "I'm not sure how to help with that yet."
+        ), last_intent
+
+    # 2. HARD RULES (only true garbage filtering)
+    if len(msg_lower) < 4 or not any(c.isalpha() for c in msg_lower):
+        return (
+            "I didn’t quite get that 😅\n\n"
+            "You can ask things like:\n"
+            "• 'What is niacinamide?'\n"
+            "• 'Find a dupe for CeraVe cleanser'\n"
+            "• 'What should I use for acne?'\n"
+        ), last_intent
+    if any(
+        q in msg_lower
+        for q in [
+            "where can i find",
+            "how do i find",
+            "how can i find",
+            "how do i get",
+            "how can i get",
+            "where do i get",
+            "how to get",
+        ]
+    ):
+        if "recommend" in msg_lower or "routine" in msg_lower:
+            return (
+                "You can get personalized clicking on FOR YOU at the top of your screen and filling out our quick skin quiz when you create your account to get tailored recommendations 🙂",
+                last_intent,
+            )
+        if "dupe" in msg_lower or "alternative" in msg_lower:
+            return (
+                "You can find product dupes by clicking on the product you want to find a dupe for, scroll and click on the ✨dupe button.",
+                last_intent,
+            )
+
     intent = detect_intent(message)
 
-    if intent == "dupe":
-        return handle_dupe(message, profile)
+    if intent == "recommend":
+        last_intent = "recommend"
+    elif intent in ["dupe", "info"]:
+        last_intent = intent
 
-    elif intent == "recommend":
-        return handle_recommend(message, profile)
+    # 4. HANDLE INTENTS FIRST (🔥 THIS FIXES YOUR BUG)
+
+    # 4. HANDLE INTENTS FIRST
+
+    if intent == "dupe":
+        return handle_dupe(message, profile), last_intent
 
     elif intent == "info":
-        return handle_info(message, profile)
+        return handle_info(message, profile), last_intent
 
-    else:
-        # Use OpenAI for general skincare questions
-        return handle_ai_fallback(message, profile)
+    elif intent == "recommend" or last_intent == "recommend":
+        SKIN_TYPES = ["oily", "dry", "sensitive", "combination", "normal"]
+        detected_skin = next((s for s in SKIN_TYPES if s in msg_lower), None)
+
+        # if user just answered skin type with no category, ask for category
+        if detected_skin and not any(
+            cat in msg_lower for cat in ["moisturizer", "cleanser", "serum"]
+        ):
+            skin_type = detected_skin
+            return (
+                "What category are you interested in? (moisturizer, cleanser, serum)",
+                last_intent,
+            )
+        if any(cat in msg_lower for cat in ["moisturizer", "cleanser", "serum"]):
+            category = next(
+                cat for cat in ["moisturizer", "cleanser", "serum"] if cat in msg_lower
+            )
+
+            category = category.lower().strip()
+
+            skin_type = _get_profile_field(profile, "skin_type", "")
+
+            # ✅ ADD THIS BLOCK HERE
+            SKIN_TYPES = ["oily", "dry", "sensitive", "combination", "normal"]
+
+            detected_skin = next((s for s in SKIN_TYPES if s in msg_lower), None)
+
+            if detected_skin:
+                skin_type = detected_skin
+
+            # 🔥 ADD THIS CHECK RIGHT AFTER
+            if not skin_type:
+                return (
+                    "What’s your skin type? (oily, dry, combination, sensitive, normal)",
+                    last_intent,
+                )
+
+            CATEGORY_MAP = {
+                "moisturizer": ["moisturizer"],
+                "cleanser": ["cleanser"],
+                "serum": ["treatment", "serum"],
+            }
+
+            mapped_categories = CATEGORY_MAP.get(category, [])
+
+            results = recommend(
+                liked_product_ids=[],
+                explicit_prefs={
+                    "skin_type": skin_type,
+                    "preferred_categories": mapped_categories,
+                    "budget": 50,
+                },
+                constraints={"budget": 50},
+                top_n=3,
+            )
+
+            if results is None or results.empty:
+                return f"I couldn't find {category} recommendations 😕", last_intent
+
+            metadata = _get_metadata()
+
+            skin_text = f"{skin_type} " if skin_type else ""
+            response = (
+                f"Here are some {category} recommendations for {skin_text}skin:\n"
+            )
+
+            for _, row in results.iterrows():
+                product_id = row["product_id"]
+
+                product_info = metadata[metadata["product_id"] == product_id]
+
+                if not product_info.empty:
+                    product_info = product_info.iloc[0]
+                    name = product_info.get("product_name", "Unknown")
+                    brand = product_info.get("brand", "Unknown")
+                    price = product_info.get("price", "?")
+                else:
+                    name, brand, price = "Unknown", "Unknown", "?"
+
+                response += f"- {name} by {brand} (${price})\n"
+
+            return response, last_intent
+
+        # 🔗 LINK HANDLING (VERY IMPORTANT FOR UX)
+
+        if any(
+            q in msg_lower
+            for q in ["how do i get", "how can i get", "where do i get", "how to get"]
+        ):
+            if "recommend" in msg_lower or "routine" in msg_lower:
+                return (
+                    "You can get personalized recommendations by filling out our quick skin quiz here:\n"
+                    "👉 [recommendation page link]"
+                ), last_intent
+
+            if "dupe" in msg_lower or "alternative" in msg_lower:
+                return (
+                    "You can find product dupes using our dupe finder here:\n"
+                    "👉 [dupe finder link]"
+                ), last_intent
+
+        # If we are still in recommendation flow → guide user
+        if last_intent == "recommend":
+            return (
+                "What category are you interested in? (moisturizer, cleanser, serum)",
+                last_intent,
+            )
+
+        else:
+            return handle_ai_fallback(message, profile), last_intent
+
+    else:  # ← THIS, at the same level as the if/elif above
+        return handle_ai_fallback(message, profile), last_intent
 
 
-def handle_dupe(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
-    """Handle product dupe finding requests."""
-    # Extract product name from message
-    product_name = message.replace("dupe", "").replace("find", "").strip().lower()
+def handle_dupe(message: str, profile=None) -> str:
+    msg = message.lower()
+
+    # 🔹 extract product name
+    product_name = (
+        msg.replace("dupe for", "")
+        .replace("dupe", "")
+        .replace("similar to", "")
+        .replace("similar", "")
+        .replace("alternative to", "")
+        .replace("alternative", "")
+        .strip()
+    )
 
     if not product_name:
-        return "I'd be happy to help find dupes! Please tell me which product you're looking for dupes for (e.g., 'Find me a dupe for Cetaphil')."
+        return "Tell me which product you want a dupe for 🙂"
 
     try:
-        results = find_dupes(product_name)
+        # 🔹 STEP 1: find product
+        product_id = _find_product_id(product_name)
+
+        # 🔥 STEP 2: fallback → suggestions
+        if not product_id:
+            metadata = (
+                _get_metadata().copy()
+            )  # copy to avoid mutating the shared singleton
+            name_col = "product_name" if "product_name" in metadata.columns else "name"
+            STOPWORDS = {"cream", "cleanser", "moisturizer", "serum", "lotion", "gel"}
+
+            # 🔹 smarter scoring
+            def loose_score(row):
+                text = f"{row[name_col]} {row['brand']}".lower()
+                return sum(
+                    word in text
+                    for word in product_name.split()
+                    if word not in STOPWORDS
+                )
+
+            metadata["loose_score"] = metadata.apply(loose_score, axis=1)
+
+            suggestions = metadata.sort_values("loose_score", ascending=False).head(3)
+
+            if suggestions.empty:
+                return f"I couldn't find '{product_name}' 😕"
+
+            # 🔹 extract meaningful keywords
+            keywords_used = [w for w in product_name.split() if w not in STOPWORDS]
+
+            keywords_str = ", ".join(keywords_used) if keywords_used else product_name
+
+            # 🔹 category hint
+            if "cream" in product_name:
+                category_hint = "creams"
+            elif "cleanser" in product_name:
+                category_hint = "cleansers"
+            elif "serum" in product_name:
+                category_hint = "serums"
+            else:
+                category_hint = "products"
+
+            # 🔹 response
+            response = f"I couldn't find '{product_name}' in our dataset 😕\n"
+            response += f"But here are similar {category_hint} based on keywords like {keywords_str}:\n"
+
+            for _, row in suggestions.iterrows():
+                response += f"- {row[name_col]} by {row['brand']} (${row['price']})\n"
+
+            return response
+
+        # 🔹 STEP 4: find dupes
+        results = find_dupes(product_id)
+
+        if "product_name" not in results.columns and "name" in results.columns:
+            results = results.rename(columns={"name": "product_name"})
 
         if results.empty:
-            return f"I couldn't find cheaper alternatives for {product_name} in our database. Try browsing our products for similar items!"
+            return "No cheaper dupes found 😢"
 
-        response = f"Great! Here are some possible dupes for {product_name}:\n"
-        for idx, row in results.head(3).iterrows():
-            response += f"- {row['name']} by {row['brand']} (${row['price']})\n"
+        # 🔹 STEP 5: build response
+        response = f"Here are dupes for {product_name}:\n"
+        for _, row in results.head(3).iterrows():
+            response += f"- {row['product_name']} by {row['brand']} (${row['price']})\n"
 
         return response
+
     except Exception:
-        return "I couldn't find dupes for that product. Please try browsing our products or asking for recommendations instead!"
+        return "Something went wrong while finding dupes"
 
 
 def handle_recommend(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
-    # Personalized recommendation response
-    skin_type = profile.get("skin_type", "your") if profile else "your"
-    concerns = profile.get("concerns", []) if profile else []
-
+    skin_type = _get_profile_field(profile, "skin_type", "your")
+    concerns = _get_profile_field(profile, "concerns", [])
     concerns_str = ", ".join(concerns) if concerns else "skin concerns"
 
     response = f"Based on your {skin_type} skin and {concerns_str}, I'd recommend checking out our personalized products. "
@@ -110,7 +418,6 @@ def handle_recommend(message: str, profile: Optional[Dict[str, Any]] = None) -> 
 
 def handle_info(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
     """Handle ingredient and skincare information requests."""
-    # Extract ingredient name from message
     ingredient = (
         message.replace("what is", "")
         .replace("tell me about", "")
@@ -122,7 +429,6 @@ def handle_info(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
 
     ingredient_lower = ingredient.lower()
 
-    # Simple ingredient database with common skincare ingredients
     ingredient_info = {
         "niacinamide": "Niacinamide (Vitamin B3) is a water-soluble vitamin that helps regulate sebum production, improves skin barrier function, and reduces redness. Great for all skin types, especially oily and combination skin.",
         "hyaluronic acid": "Hyaluronic Acid is a humectant that attracts and retains moisture from the environment into the skin. It can hold up to 1000x its weight in water, making it excellent for hydration.",
@@ -133,16 +439,13 @@ def handle_info(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
         "vitamin c": "Vitamin C (Ascorbic Acid) is an antioxidant that brightens skin, reduces hyperpigmentation, and boosts collagen production. It provides protection against environmental damage.",
     }
 
-    # Find matching ingredient
     for key, value in ingredient_info.items():
         if key in ingredient_lower:
-            # Add personalized note if user has relevant concerns/skin type
             personalized_tip = ""
             if profile:
-                skin_type = profile.get("skin_type", "")
-                concerns = profile.get("concerns", [])
+                skin_type = _get_profile_field(profile, "skin_type", "")
+                concerns = _get_profile_field(profile, "concerns", [])
 
-                # Add personalized recommendations based on ingredient and user profile
                 if key == "retinol" and "fine_lines" in concerns:
                     personalized_tip = (
                         " For your fine line concerns, retinol is an excellent choice!"
@@ -158,26 +461,32 @@ def handle_info(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
 
             return value + personalized_tip
 
-    return f"That's an interesting ingredient! I don't have specific information about {ingredient} in my database, but I'd recommend checking product labels and consulting with a dermatologist for personalized advice."
+    return (
+        f"That's an interesting ingredient! I don't have specific information about {ingredient} "
+        "in my database, but I'd recommend checking product labels and consulting with a dermatologist for personalized advice."
+    )
 
 
 def handle_ai_fallback(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
-    """Handle general skincare questions using Ollama (local) or OpenAI."""
-    # Try Ollama first (free, local, no API key needed)
+    """Handle general skincare questions using Ollama (local) or OpenAI. Last resort only."""
     ollama_response = query_ollama(message, profile)
     if ollama_response:
         return ollama_response
 
-    # Try OpenAI if Ollama is not available
     client = get_openai_client()
+
     if client:
         try:
+            context = ""
+            if profile:
+                context = f"The user has {_get_profile_field(profile, 'skin_type', '')} skin and concerns: {', '.join(_get_profile_field(profile, 'concerns', []))}."
+
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a helpful skincare expert assistant. Answer questions about skincare, ingredients, routines, and beauty tips. Keep responses concise (1-2 sentences) and friendly.",
+                        "content": f"You are a helpful skincare expert assistant. {context} Keep responses concise (1-2 sentences).",
                     },
                     {"role": "user", "content": message},
                 ],
@@ -189,17 +498,15 @@ def handle_ai_fallback(message: str, profile: Optional[Dict[str, Any]] = None) -
         except Exception as e:
             print(f"OpenAI error: {e}")
 
-    # Smart fallback using rules and templates
     return _smart_fallback(message, profile)
 
 
-def _smart_fallback(message: str, profile: Optional[Dict[str, Any]] = None) -> str:
+def _smart_fallback(message: str, profile: Optional[Any] = None) -> str:
     """Smart fallback responses based on keywords and patterns, personalized with user profile"""
     message_lower = message.lower().strip()
 
-    # Extract profile info
-    skin_type = profile.get("skin_type", "") if profile else ""
-    concerns = profile.get("concerns", []) if profile else []
+    skin_type = _get_profile_field(profile, "skin_type", "")
+    concerns = _get_profile_field(profile, "concerns", [])
 
     # Greetings
     if message_lower in [
@@ -211,22 +518,32 @@ def _smart_fallback(message: str, profile: Optional[Dict[str, Any]] = None) -> s
         "what's up",
         "whats up",
     ]:
-        return "Hello! How can I help you?"
-
+        return (
+            "Hi there! 👋 I’m here to help you find dupes and product recommendations tailored to your skin.\n\n"
+            "Want a fully personalized routine?\n"
+            "👉 Take our skin quiz: [recommendation page link]\n\n"
+            "Looking for a cheaper alternative to a product?\n"
+            "👉 Try our dupe finder: [dupe finder link]\n\n"
+            "Or just ask me directly:\n"
+            "• 'Recommend a moisturizer for oily skin'\n"
+            "• 'Find a dupe for CeraVe cleanser'\n"
+            "• 'What is niacinamide?'\n\n"
+            "I’m here to help 🙂"
+        )
     # Dry skin
-    if "dry" in message_lower:
+    if any(word in message_lower for word in ["dry", "dehydrated"]):
         if skin_type == "dry":
             return "Since you have dry skin, I especially recommend using a rich moisturizer, avoiding hot water, and adding hydrating ingredients like hyaluronic acid or glycerin. Consider a facial oil or humidifier to lock in moisture!"
         return "For dry skin, use a rich moisturizer, avoid hot water, and add hydrating ingredients like hyaluronic acid or glycerin. Consider a facial oil or humidifier to lock in moisture!"
 
     # Oily skin
-    if "oily" in message_lower:
+    if any(word in message_lower for word in ["oily", "greasy"]):
         if skin_type == "oily":
             return "For your oily skin, use a gentle cleanser, apply oil-free moisturizer, and try ingredients like niacinamide or salicylic acid. Don't skip moisturizer—it helps balance oil production!"
         return "For oily skin, use a gentle cleanser, apply oil-free moisturizer, and try ingredients like niacinamide or salicylic acid. Don't skip moisturizer—it helps balance oil production!"
 
     # Acne
-    if "acne" in message_lower or "pimple" in message_lower:
+    if any(word in message_lower for word in ["acne", "pimple", "breakout"]):
         if "acne" in concerns:
             return "To help with your acne concerns, maintain a consistent skincare routine with a gentle cleanser, non-comedogenic moisturizer, and try ingredients like salicylic acid or benzoyl peroxide. Keep your skin clean and avoid touching your face!"
         return "To prevent acne, maintain a consistent skincare routine with a gentle cleanser, non-comedogenic moisturizer, and try ingredients like salicylic acid or benzoyl peroxide. Keep your skin clean and avoid touching your face!"
@@ -240,6 +557,14 @@ def _smart_fallback(message: str, profile: Optional[Dict[str, Any]] = None) -> s
         if "fine_lines" in concerns:
             return "To help reduce your fine lines, use sunscreen daily, moisturize regularly, and consider retinol or vitamin C products. Getting enough sleep and staying hydrated also helps maintain skin elasticity!"
         return "To reduce wrinkles, use sunscreen daily, moisturize regularly, and consider retinol or vitamin C products. Getting enough sleep and staying hydrated also helps maintain skin elasticity!"
+
+    # Routine questions
+    if (
+        "routine" in message_lower
+        or "order" in message_lower
+        or "step" in message_lower
+    ):
+        return "A basic skincare routine involves: 1) Cleanser 2) Toner (optional) 3) Serums 4) Moisturizer 5) Sunscreen (AM). Apply products from thinnest to thickest consistency!"
 
     # Skincare tips/prevention/improvement
     if any(
@@ -257,20 +582,19 @@ def _smart_fallback(message: str, profile: Optional[Dict[str, Any]] = None) -> s
     ):
         return "A consistent skincare routine is key! Cleanse daily, use a moisturizer suited to your skin type, wear sunscreen, and add targeted treatments like serums or masks. Consistency matters more than complexity!"
 
-    # Routine questions
-    if (
-        "routine" in message_lower
-        or "order" in message_lower
-        or "step" in message_lower
-    ):
-        return "A basic skincare routine involves: 1) Cleanser 2) Toner (optional) 3) Serums 4) Moisturizer 5) Sunscreen (AM). Apply products from thinnest to thickest consistency!"
-
     # General skincare importance
     if any(
         word in message_lower
         for word in ["important", "necessary", "why", "need", "should"]
     ):
-        return "Skincare is important for maintaining healthy, youthful skin and preventing issues like acne, aging, and irritation. A consistent routine protects your skin barrier and keeps it hydrated!"
+        return "Skincare is important for maintaining healthy, youthful skin. A basic routine of cleansing, moisturizing, and sun protection goes a long way!"
 
-    # Default
-    return "That's a great skincare question! Try asking about specific ingredients, routines, or recommendations. For more detailed advice, consider consulting a dermatologist!"
+    # DEFAULT
+    return (
+        "I'm not sure I fully understood 😅\n\n"
+        "You can try things like:\n"
+        "• 'What is niacinamide?'\n"
+        "• 'Find a dupe for CeraVe cleanser'\n"
+        "• 'What should I use for acne?'\n\n"
+        "Tell me what you're looking for and I'll help you 👍"
+    )

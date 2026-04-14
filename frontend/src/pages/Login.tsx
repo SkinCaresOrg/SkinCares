@@ -4,6 +4,7 @@ import { ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 
 import { getCurrentUser, login } from "@/lib/auth";
+import { ApiError } from "@/lib/api";
 import {
   hasCompletedOnboardingForCurrentUser,
   hydrateOnboardingForCurrentUser,
@@ -16,9 +17,11 @@ import Navigation from "@/components/Navigation";
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
   const navigate = useNavigate();
 
   const handleLogin = async () => {
+    setErrorMsg("");
     try {
       const data = await login(email, password);
 
@@ -38,9 +41,13 @@ export default function Login() {
       } else {
         navigate("/onboarding");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login failed:", error);
-      alert("Login failed. Please check your credentials.");
+      if (error instanceof ApiError) {
+        setErrorMsg(error.detail);
+      } else {
+        setErrorMsg("Login failed. Please check your credentials.");
+      }
     }
   };
 
@@ -82,6 +89,11 @@ export default function Login() {
               className="rounded-2xl border border-border bg-card px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
+
+          {/* Error Message */}
+          {errorMsg && (
+            <p className="text-center text-sm text-red-500">{errorMsg}</p>
+          )}
 
           {/* Button */}
           <button

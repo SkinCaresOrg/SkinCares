@@ -46,6 +46,10 @@ extras_require = {
     "vw": [
         "vowpalwabbit>=9.0,<10",
     ],
+    "ml": [
+        "lightgbm>=3.3,<4",
+        "xlearn>=0.4,<1",
+    ],
     "scraping": [
         "requests>=2.31,<3",
         "beautifulsoup4>=4.12,<5",

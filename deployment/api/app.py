@@ -35,6 +35,9 @@ from deployment.api.persistence.models import (
 from skincarelib.ml_system.ml_feedback_model import (
     LogisticRegressionFeedback,
     RandomForestFeedback,
+    GradientBoostingFeedback,
+    LightGBMFeedback,
+    XLearnFeedback,
     ContextualBanditFeedback,
     UserState,
 )
@@ -800,7 +803,9 @@ def get_best_model(user_state: UserState):
     Strategy:
     - Early stage (< 5 interactions): LogisticRegression (fast, lightweight)
     - Mid stage (5-20 interactions): RandomForest (captures complex patterns)
-    - Experienced (20+ interactions): ContextualBandit (online learning, exploration)
+    - Advanced (20-50 interactions): LightGBM (fast gradient boosting)
+    - Experienced (50-100 interactions): XLearn (linear + factorization)
+    - Expert (100+ interactions): ContextualBandit (online learning with exploration)
     """
     interactions = user_state.interactions
 
@@ -810,8 +815,22 @@ def get_best_model(user_state: UserState):
     elif interactions < MID_STAGE_THRESHOLD:
         # Mid stage: more data available, can handle complexity (5-20 interactions)
         return RandomForestFeedback(), "RandomForest (Mid Stage)"
+    elif interactions < 50:
+        # Advanced stage: use fast gradient boosting (20-50 interactions)
+        try:
+            return LightGBMFeedback(), "LightGBM (Advanced Stage)"
+        except ImportError:
+            # Fallback if LightGBM not installed
+            return RandomForestFeedback(), "RandomForest (Fallback)"
+    elif interactions < 100:
+        # Experienced stage: use linear + factorization (50-100 interactions)
+        try:
+            return XLearnFeedback(model_type="linear"), "XLearn Linear (Experienced Stage)"
+        except ImportError:
+            # Fallback if XLearn not installed
+            return LightGBMFeedback() if "LightGBMFeedback" in dir() else RandomForestFeedback(), "Fallback"
     else:
-        # Experienced user: use online learning with exploration
+        # Expert user: use online learning with exploration (100+ interactions)
         return ContextualBanditFeedback(
             dim=PRODUCT_VECTORS.shape[1]
         ), "ContextualBandit (Online Learning)"

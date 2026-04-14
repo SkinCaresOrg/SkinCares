@@ -12,9 +12,9 @@ import {
   Loader2
 } from "lucide-react";
 import Navigation from "@/components/Navigation";
-import { getUserProfile, getWishlist } from "@/lib/wishlist";
-import { getProductDetail, submitOnboarding } from "@/lib/api";
-import { saveOnboardingForCurrentUser } from "@/lib/session";
+import { getUserProfile, getWishlist, setUserProfile } from "@/lib/wishlist";
+import { getProductDetail, submitOnboarding, fetchApi } from "@/lib/api";
+import { saveOnboardingForCurrentUser, getAuthToken } from "@/lib/session";
 import { 
   OnboardingProfile, 
   Product, 
@@ -42,18 +42,39 @@ import { useToast } from "@/hooks/use-toast";
 const Profile = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"preferences" | "wishlist">("preferences");
-  const [profile, setProfile] = useState<OnboardingProfile | null>(getUserProfile());
+  const [profile, setProfile] = useState<OnboardingProfile | null>(null);
   const [wishlistItems, setWishlistItems] = useState<Product[]>([]);
   const [loadingWishlist, setLoadingWishlist] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const { toast } = useToast();
 
+
+  // Always fetch profile from backend on mount
   useEffect(() => {
-    if (!profile) {
-      navigate("/onboarding");
-    }
-  }, [profile, navigate]);
+    const fetchProfile = async () => {
+      try {
+        const token = getAuthToken();
+        if (!token) {
+          navigate("/login");
+          return;
+        }
+        // Try to fetch from backend
+        const res = await fetchApi<OnboardingProfile>("/onboarding/profile");
+        setProfile(res);
+        setUserProfile(res); // hydrate localStorage for compatibility
+      } catch (err: any) {
+        if (err?.status === 404) {
+          // Profile not found, clear local and redirect to onboarding
+          setProfile(null);
+          setUserProfile(null as any);
+          navigate("/onboarding");
+        }
+      }
+    };
+    fetchProfile();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (activeTab === "wishlist") {
@@ -143,7 +164,9 @@ const Profile = () => {
     }
   };
 
+
   if (!profile) {
+    // Show loading spinner while fetching, but don't flash if redirecting
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

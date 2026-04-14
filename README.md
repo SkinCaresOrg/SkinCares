@@ -10,6 +10,14 @@ It includes local experimentation tooling, artifact generation for retrieval/ran
 
 ## Repository Structure
 
+## Key Markdown Documentation Files
+
+- `QUICK_START.md`: Fast instructions for getting up and running with ML feedback and core features.
+- `IMPLEMENTATION_SUMMARY.md`: High-level summary of the system’s implementation and main design choices.
+- `ADAPTIVE_MODEL_SELECTION.md`: Details on adaptive model selection strategies used in the ML system.
+- `COMPLETION_REPORT.md`: Report on project completion status, deliverables, and evaluation.
+
+
 ```text
 SkinCares/
 ├── skincarelib/            # Core recommendation and ML modules
@@ -32,7 +40,7 @@ SkinCares/
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-pip install -e .[dev]
+pip install -e '.[dev]'
 ```
 
 ### 2) Run backend API

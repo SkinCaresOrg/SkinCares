@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 VECTORS_PATH = ROOT / "artifacts" / "product_vectors.npy"
 INDEX_PATH = ROOT / "artifacts" / "product_index.json"
+# METADATA_PATH = ROOT / "data" / "processed" / "products_with_signals.csv"
+# TOKENS_PATH = ROOT / "data" / "processed" / "products_dataset_clean_tokens.csv"
 SIGNALS_PATH = ROOT / "data" / "processed" / "products_with_signals.csv"
 
 _SIGNAL_COLS = [

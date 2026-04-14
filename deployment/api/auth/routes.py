@@ -33,7 +33,7 @@ def login_user(payload: schemas.UserLogin, db: Session = Depends(get_db)):
         logger.warning(f"Login failed for {payload.email}: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
+            detail=str(e),
         )
 
     token = security.create_access_token({"sub": str(user.id)})

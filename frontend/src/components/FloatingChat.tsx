@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { MessageCircle, X, Send } from "lucide-react";
 import { sendChatMessage } from "@/lib/api";
+import ReactMarkdown from "react-markdown";
 
 interface Message {
   id: string;
@@ -14,7 +15,20 @@ export default function FloatingChat() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
-      text: "Hi! 👋 I can help you find dupes, learn about ingredients, or get product recommendations. What would you like to know?",
+      text: `Hi there! 👋 I’m here to help you find dupes and product recommendations tailored to your skin.
+
+Want a personalized product?
+👉 You can get personalized products by clicking on FOR YOU at the top of your screen and filling out our quick skin quiz when you create your account to get tailored recommendations
+
+Looking for a cheaper alternative to a product?
+👉 Clicking on the product you want to find a dupe for, scroll and click on the ✨dupe button.
+
+Or just ask me directly:
+• 'Recommend a moisturizer for oily skin'
+• 'Find a dupe for CeraVe cleanser'
+• 'What is niacinamide?'
+
+I’m here to help 🙂`,
       sender: "bot",
       timestamp: new Date(),
     },
@@ -117,7 +131,9 @@ export default function FloatingChat() {
                       : "bg-muted text-foreground rounded-bl-none"
                   }`}
                 >
-                  <p className="text-sm">{msg.text}</p>
+                  <ReactMarkdown className="text-sm prose prose-sm max-w-none whitespace-pre-wrap">
+                    {msg.text}
+                  </ReactMarkdown>
                 </div>
               </div>
             ))}

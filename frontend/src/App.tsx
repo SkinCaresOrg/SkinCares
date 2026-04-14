@@ -56,6 +56,7 @@ import { useLocation } from "react-router-dom";
 
 const AppContent = () => {
   const location = useLocation();
+  const hideChat = ["/", "/login", "/register"].includes(location.pathname);
 
   return (
     <>
@@ -72,7 +73,7 @@ const AppContent = () => {
       </Routes>
 
       {/* ✅ THIS is the only logic you need */}
-      {!["/", "/login", "/register"].includes(location.pathname) && <FloatingChat />}
+      {!hideChat && <FloatingChat />}
     </>
   );
 };
@@ -83,21 +84,9 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Suspense fallback={null}>
-          <FloatingChat />
-          <Routes>
-            <Route path="/" element={<PublicOnly><Index /></PublicOnly>} />
-            <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
-            <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
-            <Route path="/onboarding" element={<RequireOnboarding><Onboarding /></RequireOnboarding>} />
-            <Route path="/catalog" element={<RequireAuth><Catalog /></RequireAuth>} />
-            <Route path="/recommendations" element={<RequireAuth><Recommendations /></RequireAuth>} />
-            <Route path="/swiping" element={<RequireAuth><Swiping /></RequireAuth>} />
-            <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <AppContent />
         </Suspense>
       </BrowserRouter>
-
     </TooltipProvider>
   </QueryClientProvider>
 );

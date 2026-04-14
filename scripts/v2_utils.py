@@ -81,8 +81,19 @@ def smart_split_ingredients(ingredients: Optional[str]) -> List[str]:
 
     text = ingredients.strip().lower()
 
-    # protect numeric ingredient names like "1, 2-hexanediol"
+    # 1. handle backslash multilingual names — take first part only
+    text = re.sub(r"\\[^,]+", "", text)
+
+    # 2. protect numeric ingredient names like "1, 2-hexanediol" BEFORE touching commas
     text = re.sub(r"(\d)\s*,\s*(\d-\w)", r"\1@@\2", text)
+
+    # 3. strip parentheticals — remove (content) but keep the words around it
+    #    e.g. "helianthus annuus (sunflower) seed oil" → "helianthus annuus seed oil"
+    #    e.g. "iron oxides (ci 77491)" → "iron oxides"
+    text = re.sub(r"\([^)]+\)", "", text)
+
+    # clean up any double spaces left behind
+    text = re.sub(r"\s+", " ", text)
 
     parts = [p.strip() for p in text.split(",") if p.strip()]
 
@@ -216,6 +227,27 @@ CANON_RULES_SMALL = [
         ],
     ),
     (
+        "propylene glycol",
+        [
+            r"^\s*propylene\s+glycol\s*$",
+            r"^\s*1,\s*2-propanediol\s*$",
+        ],
+    ),
+    (
+        "yellow 5",
+        [
+            r"yellow\s*5",
+            r"ci\s*19140",
+        ],
+    ),
+    (
+        "yellow 6",
+        [
+            r"yellow\s*6",
+            r"ci\s*15985",
+        ],
+    ),
+    (
         "vitamin e",
         [
             r"\btocopherol\b",
@@ -274,15 +306,6 @@ CANON_RULES_SMALL = [
 def apply_canon_to_tokens(
     tokens: List[str], canon_rules_compiled: List[Tuple[str, List[Pattern]]]
 ) -> List[str]:
-    """
-    Apply canonical ingredient mapping to a list of tokens.
-
-    Each token is checked against compiled regex rule groups.
-    If a token matches one of the canonical groups, it is replaced
-    by the canonical token name.
-
-    Deduplicates while preserving original order.
-    """
     if not isinstance(tokens, list):
         return []
 
@@ -294,6 +317,11 @@ def apply_canon_to_tokens(
             continue
 
         t = tok.strip()
+        if not t:
+            continue
+
+        # ← ADD THIS: strip parenthetical synonyms before matching
+        t = re.sub(r"\s*\(.*?\)", "", t).strip()
         if not t:
             continue
 

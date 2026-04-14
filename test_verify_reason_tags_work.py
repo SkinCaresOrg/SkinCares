@@ -27,7 +27,7 @@ user.add_liked(vec2, reasons=["non_irritating", "affordable"])
 vec3 = np.random.randn(256).astype(np.float32)
 user.add_disliked(vec3, reasons=["irritating"])
 
-print(f"✅ Added 3 interactions with different reason tags")
+print("✅ Added 3 interactions with different reason tags")
 print(f"   - Liked #1: {user.liked_reasons_per_interaction[0]}")
 print(f"   - Liked #2: {user.liked_reasons_per_interaction[1]}")
 print(f"   - Disliked #1: {user.disliked_reasons_per_interaction[0]}")
@@ -42,12 +42,12 @@ print(f"   - Feature dimension: {X.shape[1]} (256 product + 10 reason tags)")
 print(f"   - Samples: {X.shape[0]}")
 
 # Check that reason tags are actually encoded
-print(f"\n✅ Feature vector breakdown for sample 0 (liked with 2 tags):")
+print("\n✅ Feature vector breakdown for sample 0 (liked with 2 tags):")
 prod_vec = X[0, :256]
 reason_vec = X[0, 256:]
 print(f"   - Product vector first 5 dims: {prod_vec[:5]}")
 print(f"   - Reason tag features: {reason_vec}")
-print(f"      (Should have 1s for hydrated_well[0] and absorbed_quickly[1])")
+print("      (Should have 1s for hydrated_well[0] and absorbed_quickly[1])")
 
 print("\n" + "="*80)
 print("TEST 3: Models Train with Augmented Features")
@@ -121,13 +121,13 @@ for i in range(5):
 X_with, _ = user_with_tags.get_training_data()
 X_no, _ = user_no_tags.get_training_data()
 
-print(f"✅ User WITH reason tags:")
+print("✅ User WITH reason tags:")
 print(f"   - Feature dimension: {X_with.shape[1]} (266 dims)")
 print(f"   - Sample 0 reason tags: {X_with[0, 256:]} (sum={X_with[0, 256:].sum()})")
 
-print(f"\n✅ User WITHOUT reason tags:")
+print("\n✅ User WITHOUT reason tags:")
 print(f"   - Feature dimension: {X_no.shape[1]} (256 dims)")
-print(f"   - Only product vectors (no reason tags)")
+print("   - Only product vectors (no reason tags)")
 
 print("\n" + "="*80)
 print("✅✅✅ ALL TESTS PASSED! ✅✅✅")

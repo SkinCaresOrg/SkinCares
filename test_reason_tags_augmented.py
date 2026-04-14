@@ -41,14 +41,14 @@ def test_reason_tags_augmented_features():
     print("REASON TAGS NOW USED IN MODEL TRAINING!")
     print("=" * 80)
     print(f"\n✅ Augmented feature dimension: {X.shape[1]} dims")
-    print(f"   - Product vectors: 256 dims")
-    print(f"   - Reason tags: 10 dims")
-    print(f"   - Total: 266 dims")
+    print("   - Product vectors: 256 dims")
+    print("   - Reason tags: 10 dims")
+    print("   - Total: 266 dims")
     print(f"\n✅ Training samples: {X.shape[0]}")
     print(f"   - Liked (reason tags): {tags_like}")
     print(f"   - Disliked (reason tags): {tags_dislike}")
     print(f"   - Irritation (reason tags): {tags_irritation}")
-    print(f"\n✅ Reason tags vocabulary:")
+    print("\n✅ Reason tags vocabulary:")
     for tag, idx in UserState.REASON_TAGS_VOCAB.items():
         print(f"   - [{idx}] {tag}")
 

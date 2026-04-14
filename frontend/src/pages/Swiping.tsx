@@ -225,12 +225,6 @@ useEffect(() => {
     <div className="min-h-screen bg-background">
       <Navigation />
       <div className="container max-w-md py-6">
-        {/* Progress */}
-        <div className="mb-4 flex items-center justify-center">
-        <p className="text-xs font-medium text-muted-foreground">
-          {currentIndex + 1} reviewed
-        </p>
-      </div>
 
         {/* Card area */}
         <div className="relative flex items-center justify-center" style={{ minHeight: 420 }}>

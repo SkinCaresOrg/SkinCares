@@ -151,3 +151,5 @@ supabase_upload/
 
 
 node_modules/
+echo "node_modules/" >> .gitignore
+/node_modules

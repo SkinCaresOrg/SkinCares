@@ -220,6 +220,27 @@ class UserState:
         return X, y
 
 
+def _augment_product_vector(product_vec: np.ndarray) -> np.ndarray:
+    """
+    Augment product vector with empty reason tags for prediction.
+    
+    Args:
+        product_vec: Product vector (256 dims or Nx256)
+        
+    Returns:
+        Augmented vector with zeros for reason tags (266 dims or Nx266)
+    """
+    if product_vec.ndim == 1:
+        # Single vector: (256,) -> (266,)
+        reason_tags = np.zeros(10, dtype=np.float32)
+        return np.concatenate([product_vec, reason_tags])
+    else:
+        # Multiple vectors: (N, 256) -> (N, 266)
+        n_samples = product_vec.shape[0]
+        reason_tags = np.zeros((n_samples, 10), dtype=np.float32)
+        return np.concatenate([product_vec, reason_tags], axis=1)
+
+
 class LogisticRegressionFeedback:
     """Logistic Regression model for user preference prediction."""
 
@@ -256,6 +277,7 @@ class LogisticRegressionFeedback:
             return 0.5
 
         X = product_vector.reshape(1, -1).astype(np.float32)
+        X = _augment_product_vector(X)
         X_scaled = self.scaler.transform(X)
         return float(self.model.predict_proba(X_scaled)[0, 1])
 
@@ -272,7 +294,9 @@ class LogisticRegressionFeedback:
         if not self.is_trained:
             return np.ones(len(product_vectors)) * 0.5
 
-        X_scaled = self.scaler.transform(product_vectors.astype(np.float32))
+        X = product_vectors.astype(np.float32)
+        X = _augment_product_vector(X)
+        X_scaled = self.scaler.transform(X)
         return self.model.predict_proba(X_scaled)[:, 1].astype(np.float32)
 
     def save(self, path: Path):
@@ -318,6 +342,7 @@ class RandomForestFeedback:
             return 0.5
 
         X = product_vector.reshape(1, -1).astype(np.float32)
+        X = _augment_product_vector(X)
         X_scaled = self.scaler.transform(X)
         return float(self.model.predict_proba(X_scaled)[0, 1])
 
@@ -326,7 +351,9 @@ class RandomForestFeedback:
         if not self.is_trained:
             return np.ones(len(product_vectors)) * 0.5
 
-        X_scaled = self.scaler.transform(product_vectors.astype(np.float32))
+        X = product_vectors.astype(np.float32)
+        X = _augment_product_vector(X)
+        X_scaled = self.scaler.transform(X)
         return self.model.predict_proba(X_scaled)[:, 1].astype(np.float32)
 
     def get_feature_importance(self) -> np.ndarray:
@@ -383,6 +410,7 @@ class GradientBoostingFeedback:
             return 0.5
 
         X = product_vector.reshape(1, -1).astype(np.float32)
+        X = _augment_product_vector(X)
         X_scaled = self.scaler.transform(X)
         return float(self.model.predict_proba(X_scaled)[0, 1])
 
@@ -391,7 +419,9 @@ class GradientBoostingFeedback:
         if not self.is_trained:
             return np.ones(len(product_vectors)) * 0.5
 
-        X_scaled = self.scaler.transform(product_vectors.astype(np.float32))
+        X = product_vectors.astype(np.float32)
+        X = _augment_product_vector(X)
+        X_scaled = self.scaler.transform(X)
         return self.model.predict_proba(X_scaled)[:, 1].astype(np.float32)
 
     def get_feature_importance(self) -> np.ndarray:
@@ -458,6 +488,7 @@ class LightGBMFeedback:
             return 0.5
 
         X = product_vector.reshape(1, -1).astype(np.float32)
+        X = _augment_product_vector(X)
         X_scaled = self.scaler.transform(X)
         # Use config_context to suppress feature names validation warning
         with config_context(assume_finite=True):
@@ -470,7 +501,9 @@ class LightGBMFeedback:
         if not self.is_trained:
             return np.ones(len(product_vectors)) * 0.5
 
-        X_scaled = self.scaler.transform(product_vectors.astype(np.float32))
+        X = product_vectors.astype(np.float32)
+        X = _augment_product_vector(X)
+        X_scaled = self.scaler.transform(X)
         # Use config_context to suppress feature names validation warning
         with config_context(assume_finite=True):
             with warnings.catch_warnings():
@@ -576,6 +609,7 @@ class XLearnFeedback:
             return 0.5
 
         X = product_vector.reshape(1, -1).astype(np.float32)
+        X = _augment_product_vector(X)
         X_scaled = self.scaler.transform(X)
 
         try:
@@ -592,7 +626,9 @@ class XLearnFeedback:
         if not self.is_trained:
             return np.ones(len(product_vectors)) * 0.5
 
-        X_scaled = self.scaler.transform(product_vectors.astype(np.float32))
+        X = product_vectors.astype(np.float32)
+        X = _augment_product_vector(X)
+        X_scaled = self.scaler.transform(X)
 
         try:
             predictions = self.model.predict(X_scaled)
@@ -673,8 +709,9 @@ class ContextualBanditFeedback:
 
     def predict_preference(self, product_vector: np.ndarray) -> float:
         """Predict preference probability using VW."""
+        vec = _augment_product_vector(product_vector)
         example = " | " + " ".join(
-            f"{i}:{v}" for i, v in enumerate(product_vector) if v != 0
+            f"{i}:{v}" for i, v in enumerate(vec) if v != 0
         )
         return self.vw.predict(example)
 
@@ -682,6 +719,7 @@ class ContextualBanditFeedback:
         """Score multiple products using VW, with optional exploration noise."""
         scores = []
         for vec in product_vectors:
+            vec = _augment_product_vector(vec.reshape(1, -1))[0]  # Augment single vector
             example = " | " + " ".join(f"{i}:{v}" for i, v in enumerate(vec) if v != 0)
             score = self.vw.predict(example)
             scores.append(score)

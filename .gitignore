@@ -148,3 +148,7 @@ artifacts/product_vectors.npy
 
 # Local staging for external object storage uploads (do not commit)
 supabase_upload/
+
+# Node dependencies (never commit)
+node_modules/
+**/node_modules/

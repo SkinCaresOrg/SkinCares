@@ -30,7 +30,8 @@ Successfully integrated complete onboarding learning system into SkinCares ML re
 **Key Achievement:** Transformed cold-start problem into warm-start recommendations through intelligent onboarding data utilization.
 
 **Metrics:**
-- ✅ 7 adaptive ML models operational (LogisticRegression → ContextualBandit)
+- ✅ 4 core ML models + online learning (LogisticRegression → ContextualBandit)
+- ✅ Simplified progression: removed XLearn, ContextualBandit activates at 50 swipes
 - ✅ 50,305 products with 256-dim vector embeddings
 - ✅ 4 pre-trained models validated & tested
 - ✅ 100% feature coverage for price_range, skin_type, product_interests
@@ -74,16 +75,21 @@ Daily Flow:
 
 ### 2. **Adaptive Model Selection** ✅
 
-Models automatically upgrade based on interaction count:
+Models automatically upgrade based on interaction count **[UPDATED v1.1]**:
 
 | Interactions | Model | Rationale |
 |---|---|---|
 | 0-5 | LogisticRegression | Quick learning, simple baseline |
 | 5-20 | RandomForest | Captures non-linear patterns |
-| 20-100 | GradientBoosting | Better accuracy, still fast |
-| 100+ | LightGBM | Production-grade, highly accurate |
-| 500+ | XLearn | Advanced factorization, online learning |
-| Continuous | ContextualBandit | Pure online learning, no refit |
+| 20-50 | LightGBM | Fast gradient boosting, improved accuracy |
+| **50+** | **ContextualBandit** | **Pure online learning, best for power users** |
+
+**v1.1 Optimization (April 14, 2026):**
+- ✅ Removed XLearn (not installed, CMake dependency)
+- ✅ Moved ContextualBandit from 100+ to 50+ interactions
+- ✅ Simplified codebase (7 models → 4 core + online)
+- ✅ Better online learning earlier for engaged users
+- ✅ All tests passing: model progression validated at each threshold
 
 ### 3. **Price Range Filtering** ✅
 
@@ -717,7 +723,7 @@ def get_recommendations(user_id: str, category: str = None) → RecommendationRe
 ## Conclusion
 
 The ML Fixes implementation successfully transformed SkinCares' cold-start recommendation problem into a warm-start system through intelligent onboarding data utilization. The system is production-ready, well-tested, and provides immediate value to users through personalized Day 1 recommendations.
-
+**v1.1 Enhancement:** Streamlined model progression to use ContextualBandit's pure online learning from 50 swipes onward, removing XLearn dependency while improving code simplicity and maintainability.
 **Status:** ✅ **COMPLETE & PRODUCTION-READY**
 
 **Next Steps for Team:**
@@ -736,4 +742,4 @@ The ML Fixes implementation successfully transformed SkinCares' cold-start recom
 - Check `skincarelib/ml_system/ml_feedback_model.py` for model definitions
 
 **Last Updated:** April 14, 2026  
-**Version:** 1.0 - Production Ready
+**Version:** 1.1 - Production Ready with ContextualBandit Optimization

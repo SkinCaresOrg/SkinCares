@@ -229,7 +229,7 @@ def test_feedback_storage_and_learning():
                 reasons.append(event.free_text)
 
             # Add to user state based on reaction
-            timestamp = event.created_at.timestamp() if event.created_at else None
+            timestamp = event.created_at if event.created_at else None
             if event.reaction == "like":
                 user_state.add_liked(vec, reasons=reasons, timestamp=timestamp)
             elif event.reaction == "dislike":

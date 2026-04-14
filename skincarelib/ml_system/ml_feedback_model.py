@@ -106,7 +106,7 @@ class UserState:
         self.liked_timestamps.append(timestamp or datetime.now(timezone.utc))
         if reasons:
             self.liked_reasons.extend(reasons)
-            self.liked_reasons_per_interaction.append(reasons)
+            self.liked_reasons_per_interaction.append(list(reasons))
         else:
             self.liked_reasons_per_interaction.append([])
         self.interactions += 1
@@ -122,7 +122,7 @@ class UserState:
         self.disliked_timestamps.append(timestamp or datetime.now(timezone.utc))
         if reasons:
             self.disliked_reasons.extend(reasons)
-            self.disliked_reasons_per_interaction.append(reasons)
+            self.disliked_reasons_per_interaction.append(list(reasons))
         else:
             self.disliked_reasons_per_interaction.append([])
         self.interactions += 1
@@ -168,11 +168,13 @@ class UserState:
         Prepare augmented training data with reason tags.
 
         Returns:
-            (X, y) where X is augmented feature matrix (product_vector + reason_tags)
-            and y is binary preference labels. None if insufficient data.
+            (X, y) where X is an augmented feature matrix
+            ``[product_vector | reason_tag_features]`` and y is binary
+            preference labels. None if insufficient data.
 
         Feature vector structure:
-            [product_vector_256_dims | reason_tag_features_10_dims]
+            [product_vector_{self.dim}_dims |
+             reason_tag_features_{len(self.REASON_TAGS_VOCAB)}_dims]
         """
         if (
             not self.liked_vectors

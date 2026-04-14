@@ -29,22 +29,41 @@ except ImportError:
 
 
 class UserState:
-    """Enhanced UserState tracking for ML models."""
+    """Enhanced UserState tracking for ML models with reason tags."""
+
+    # Common reason tags from feedback questionnaire - used as features
+    REASON_TAGS_VOCAB = {
+        "hydrated_well": 0,
+        "absorbed_quickly": 1,
+        "non_irritating": 2,
+        "affordable": 3,
+        "good_value": 4,
+        "broke_me_out": 5,
+        "irritating": 6,
+        "too_expensive": 7,
+        "strong_scent": 8,
+        "greasy_feeling": 9,
+    }
 
     def __init__(self, dim: int):
         self.dim = dim
 
-        # Raw interactions
+        # Raw interactions with per-interaction reason tags
         self.liked_vectors: List[np.ndarray] = []
         self.disliked_vectors: List[np.ndarray] = []
         self.irritation_vectors: List[np.ndarray] = []
+
+        # Reason tags per interaction (parallel to vectors)
+        self.liked_reasons_per_interaction: List[List[str]] = []
+        self.disliked_reasons_per_interaction: List[List[str]] = []
+        self.irritation_reasons_per_interaction: List[List[str]] = []
 
         # Timestamps for temporal decay
         self.liked_timestamps: List[datetime] = []
         self.disliked_timestamps: List[datetime] = []
         self.irritation_timestamps: List[datetime] = []
 
-        # Metadata for explanations
+        # Metadata for explanations (aggregated)
         self.liked_reasons: List[str] = []
         self.disliked_reasons: List[str] = []
         self.irritation_reasons: List[str] = []
@@ -65,6 +84,9 @@ class UserState:
         self.liked_timestamps.append(timestamp or datetime.now(timezone.utc))
         if reasons:
             self.liked_reasons.extend(reasons)
+            self.liked_reasons_per_interaction.append(reasons)
+        else:
+            self.liked_reasons_per_interaction.append([])
         self.interactions += 1
         self.liked_count += 1
 
@@ -78,6 +100,9 @@ class UserState:
         self.disliked_timestamps.append(timestamp or datetime.now(timezone.utc))
         if reasons:
             self.disliked_reasons.extend(reasons)
+            self.disliked_reasons_per_interaction.append(reasons)
+        else:
+            self.disliked_reasons_per_interaction.append([])
         self.interactions += 1
         self.disliked_count += 1
 
@@ -91,16 +116,41 @@ class UserState:
         self.irritation_timestamps.append(timestamp or datetime.now(timezone.utc))
         if reasons:
             self.irritation_reasons.extend(reasons)
+            self.irritation_reasons_per_interaction.append(reasons)
+        else:
+            self.irritation_reasons_per_interaction.append([])
         self.interactions += 1
         self.irritation_count += 1
 
-    def get_training_data(self) -> Tuple[np.ndarray, np.ndarray] | None:
+    def _encode_reason_tags(self, tags: List[str]) -> np.ndarray:
         """
-        Prepare training data for ML models.
+        Encode reason tags as binary feature vector.
+
+        Args:
+            tags: List of reason tag strings
 
         Returns:
-            (X, y) where X is feature matrix and y is binary preference labels
-            None if insufficient data
+            Binary feature vector (1 if tag present, 0 otherwise)
+        """
+        features = np.zeros(len(self.REASON_TAGS_VOCAB), dtype=np.float32)
+        for tag in tags:
+            # Normalize tag (handle underscores, case)
+            normalized_tag = tag.lower().replace(" ", "_")
+            if normalized_tag in self.REASON_TAGS_VOCAB:
+                idx = self.REASON_TAGS_VOCAB[normalized_tag]
+                features[idx] = 1.0
+        return features
+
+    def get_training_data(self) -> Tuple[np.ndarray, np.ndarray] | None:
+        """
+        Prepare augmented training data with reason tags.
+
+        Returns:
+            (X, y) where X is augmented feature matrix (product_vector + reason_tags)
+            and y is binary preference labels. None if insufficient data.
+
+        Feature vector structure:
+            [product_vector_256_dims | reason_tag_features_10_dims]
         """
         if (
             not self.liked_vectors
@@ -112,19 +162,31 @@ class UserState:
         X_list = []
         y_list = []
 
-        # Liked samples (label=1)
-        for vec in self.liked_vectors:
-            X_list.append(vec)
+        # Liked samples (label=1) - augment with reason tags
+        for vec, reasons in zip(
+            self.liked_vectors, self.liked_reasons_per_interaction
+        ):
+            reason_features = self._encode_reason_tags(reasons)
+            augmented_vec = np.concatenate([vec, reason_features])
+            X_list.append(augmented_vec)
             y_list.append(1)
 
-        # Disliked samples (label=0)
-        for vec in self.disliked_vectors:
-            X_list.append(vec)
+        # Disliked samples (label=0) - augment with reason tags
+        for vec, reasons in zip(
+            self.disliked_vectors, self.disliked_reasons_per_interaction
+        ):
+            reason_features = self._encode_reason_tags(reasons)
+            augmented_vec = np.concatenate([vec, reason_features])
+            X_list.append(augmented_vec)
             y_list.append(0)
 
-        # Irritation samples are also treated as disliked (label=0)
-        for vec in self.irritation_vectors:
-            X_list.append(vec)
+        # Irritation samples (label=0) - augment with reason tags
+        for vec, reasons in zip(
+            self.irritation_vectors, self.irritation_reasons_per_interaction
+        ):
+            reason_features = self._encode_reason_tags(reasons)
+            augmented_vec = np.concatenate([vec, reason_features])
+            X_list.append(augmented_vec)
             y_list.append(0)
 
         X = np.array(X_list, dtype=np.float32)
@@ -134,6 +196,27 @@ class UserState:
             return None
 
         return X, y
+
+
+def _augment_product_vector(product_vec: np.ndarray) -> np.ndarray:
+    """
+    Augment product vector with empty reason tags for prediction.
+    
+    Args:
+        product_vec: Product vector (256 dims or Nx256)
+        
+    Returns:
+        Augmented vector with zeros for reason tags (266 dims or Nx266)
+    """
+    if product_vec.ndim == 1:
+        # Single vector: (256,) -> (266,)
+        reason_tags = np.zeros(10, dtype=np.float32)
+        return np.concatenate([product_vec, reason_tags])
+    else:
+        # Multiple vectors: (N, 256) -> (N, 266)
+        n_samples = product_vec.shape[0]
+        reason_tags = np.zeros((n_samples, 10), dtype=np.float32)
+        return np.concatenate([product_vec, reason_tags], axis=1)
 
 
 class LogisticRegressionFeedback:
@@ -172,6 +255,7 @@ class LogisticRegressionFeedback:
             return 0.5
 
         X = product_vector.reshape(1, -1).astype(np.float32)
+        X = _augment_product_vector(X)
         X_scaled = self.scaler.transform(X)
         return float(self.model.predict_proba(X_scaled)[0, 1])
 
@@ -188,7 +272,9 @@ class LogisticRegressionFeedback:
         if not self.is_trained:
             return np.ones(len(product_vectors)) * 0.5
 
-        X_scaled = self.scaler.transform(product_vectors.astype(np.float32))
+        X = product_vectors.astype(np.float32)
+        X = _augment_product_vector(X)
+        X_scaled = self.scaler.transform(X)
         return self.model.predict_proba(X_scaled)[:, 1].astype(np.float32)
 
     def save(self, path: Path):
@@ -234,6 +320,7 @@ class RandomForestFeedback:
             return 0.5
 
         X = product_vector.reshape(1, -1).astype(np.float32)
+        X = _augment_product_vector(X)
         X_scaled = self.scaler.transform(X)
         return float(self.model.predict_proba(X_scaled)[0, 1])
 
@@ -242,7 +329,9 @@ class RandomForestFeedback:
         if not self.is_trained:
             return np.ones(len(product_vectors)) * 0.5
 
-        X_scaled = self.scaler.transform(product_vectors.astype(np.float32))
+        X = product_vectors.astype(np.float32)
+        X = _augment_product_vector(X)
+        X_scaled = self.scaler.transform(X)
         return self.model.predict_proba(X_scaled)[:, 1].astype(np.float32)
 
     def get_feature_importance(self) -> np.ndarray:
@@ -299,6 +388,7 @@ class GradientBoostingFeedback:
             return 0.5
 
         X = product_vector.reshape(1, -1).astype(np.float32)
+        X = _augment_product_vector(X)
         X_scaled = self.scaler.transform(X)
         return float(self.model.predict_proba(X_scaled)[0, 1])
 
@@ -307,7 +397,9 @@ class GradientBoostingFeedback:
         if not self.is_trained:
             return np.ones(len(product_vectors)) * 0.5
 
-        X_scaled = self.scaler.transform(product_vectors.astype(np.float32))
+        X = product_vectors.astype(np.float32)
+        X = _augment_product_vector(X)
+        X_scaled = self.scaler.transform(X)
         return self.model.predict_proba(X_scaled)[:, 1].astype(np.float32)
 
     def get_feature_importance(self) -> np.ndarray:
@@ -368,8 +460,9 @@ class ContextualBanditFeedback:
 
     def predict_preference(self, product_vector: np.ndarray) -> float:
         """Predict preference probability using VW."""
+        vec = _augment_product_vector(product_vector)
         example = " | " + " ".join(
-            f"{i}:{v}" for i, v in enumerate(product_vector) if v != 0
+            f"{i}:{v}" for i, v in enumerate(vec) if v != 0
         )
         return self.vw.predict(example)
 
@@ -377,6 +470,7 @@ class ContextualBanditFeedback:
         """Score multiple products using VW, with optional exploration noise."""
         scores = []
         for vec in product_vectors:
+            vec = _augment_product_vector(vec.reshape(1, -1))[0]  # Augment single vector
             example = " | " + " ".join(f"{i}:{v}" for i, v in enumerate(vec) if v != 0)
             score = self.vw.predict(example)
             scores.append(score)

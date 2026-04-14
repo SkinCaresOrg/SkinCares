@@ -24,10 +24,12 @@ from deployment.api.auth.routes import router as auth_router
 from deployment.api.db.init_db import init_db
 from deployment.api.db.session import SessionLocal, get_db
 from deployment.api.persistence.models import (
+    ChatMessage,
     ModelCheckpoint,
     Product,
     ProductDupe,
     RecommendationLog,
+    UserFeedbackEvent,
     UserModelState,
     UserProductEvent,
     UserProfileState,
@@ -813,6 +815,16 @@ def _save_feedback_to_db(db: Session, payload: FeedbackRequest) -> None:
             skipped_questionnaire=not payload.has_tried,
         )
     )
+    db.add(
+        UserFeedbackEvent(
+            user_id=payload.user_id,
+            product_id=payload.product_id,
+            has_tried=payload.has_tried,
+            reaction=payload.reaction,
+            reason_tags=payload.reason_tags,
+            free_text=payload.free_text or "",
+        )
+    )
 
 
 def _load_user_state_from_db(db: Session, user_id: str) -> UserState:
@@ -1404,14 +1416,33 @@ def get_product_score(
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-def chat(request: ChatRequest) -> ChatResponse:
+def chat(request: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
     try:
         handle_chat = _get_chat_handler()
         response_text, _ = handle_chat(
             request.message, profile=request.profile
         )  # ← unpack tuple
+        normalized_user_id = _normalize_optional_user_id(request.user_id)
+        if normalized_user_id:
+            _ensure_user_exists(db, normalized_user_id)
+        db.add(
+            ChatMessage(
+                user_id=normalized_user_id,
+                role="user",
+                content=request.message,
+            )
+        )
+        db.add(
+            ChatMessage(
+                user_id=normalized_user_id,
+                role="assistant",
+                content=response_text,
+            )
+        )
+        db.commit()
         return ChatResponse(response=response_text)
     except Exception as e:
+        db.rollback()
         print(f"Chat error: {e}")
         return ChatResponse(response="Sorry, I encountered an error. Please try again.")
 

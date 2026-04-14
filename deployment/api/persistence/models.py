@@ -102,6 +102,21 @@ class UserProductEvent(Base):
     )
 
 
+class UserFeedbackEvent(Base):
+    __tablename__ = "user_feedback_events"
+
+    id = Column(AutoPKType, primary_key=True, autoincrement=True, index=True)
+    user_id = Column(String, index=True, nullable=False)
+    product_id = Column(Integer, nullable=False)
+    has_tried = Column(Boolean, nullable=False)
+    reaction = Column(Text, nullable=True)
+    reason_tags = Column(JSON, nullable=False, default=list)
+    free_text = Column(Text, nullable=False, default="")
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class UserModelState(Base):
     __tablename__ = "user_model_state"
 

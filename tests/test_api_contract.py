@@ -171,7 +171,7 @@ def test_feedback_requires_reaction_when_has_tried_true() -> None:
         "password": "apitestpass2",
         "email": "apitestuser2@example.com"
     }
-    reg_resp = client.post("/api/auth/register", json=login_payload)
+    client.post("/api/auth/register", json=login_payload)
     login_resp = client.post("/api/auth/login", json=login_payload)
     assert login_resp.status_code == 200, login_resp.text
     token = login_resp.json()["access_token"]

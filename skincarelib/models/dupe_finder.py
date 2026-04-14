@@ -7,7 +7,11 @@ import logging
 
 import numpy as np
 import pandas as pd
-import faiss
+
+try:
+    import faiss
+except ImportError:
+    faiss = None
 from .dupe_scorer import DupeScorer
 from .dupe_explainer import explain_dupe
 
@@ -79,6 +83,9 @@ def _ensure_core_artifacts() -> None:
 
 
 def _build_faiss_index(vectors: np.ndarray):
+    if faiss is None:
+        raise RuntimeError("faiss is not installed")
+
     normalized = vectors.copy().astype(np.float32)
     faiss.normalize_L2(normalized)
 
@@ -92,6 +99,9 @@ def _build_faiss_index(vectors: np.ndarray):
 
 
 def _load_or_rebuild_faiss_index(vectors: np.ndarray):
+    if faiss is None:
+        raise RuntimeError("faiss is not installed")
+
     if FAISS_INDEX_PATH.exists():
         try:
             return faiss.read_index(str(FAISS_INDEX_PATH))
@@ -372,7 +382,11 @@ def load_artifacts():
     metadata = metadata[metadata["product_id"].isin(product_index)].copy()
     metadata = metadata.reset_index(drop=True)
 
-    faiss_index = _load_or_rebuild_faiss_index(vectors)
+    if faiss is None:
+        faiss_index = None
+        _notify("FAISS is not installed; using brute-force dupe candidate retrieval.")
+    else:
+        faiss_index = _load_or_rebuild_faiss_index(vectors)
 
     return vectors, product_index, feature_schema, metadata, faiss_index
 
@@ -426,11 +440,34 @@ def _faiss_candidates(source_id: str, k: int = FAISS_RETRIEVAL_K) -> list:
     ]
 
 
+def _bruteforce_candidates(source_id: str, k: int = FAISS_RETRIEVAL_K) -> list:
+    """Return up to k nearest product IDs via cosine similarity without FAISS."""
+    source_idx = PRODUCT_INDEX[source_id]
+    source_vec = VECTORS[source_idx].astype(np.float32)
+    all_vecs = VECTORS.astype(np.float32)
+
+    source_norm = float(np.linalg.norm(source_vec)) + 1e-9
+    all_norms = np.linalg.norm(all_vecs, axis=1) + 1e-9
+    sims = (all_vecs @ source_vec) / (all_norms * source_norm)
+
+    ranked_indices = np.argsort(sims)[::-1]
+    candidate_ids = []
+    for idx in ranked_indices:
+        product_id = INDEX_TO_ID.get(int(idx))
+        if product_id is None or product_id == source_id:
+            continue
+        candidate_ids.append(product_id)
+        if len(candidate_ids) >= k:
+            break
+
+    return candidate_ids
+
+
 # ---------------------------
 # Main dupe finder
 # ---------------------------
 def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
-    if SCORER is None or FAISS_INDEX is None:
+    if SCORER is None:
         raise RuntimeError(
             "DupeScorer not initialized — artifacts failed to load at import time.\n"
             f"Expected files:\n"
@@ -451,8 +488,11 @@ def find_dupes(product_id, top_n=5, max_price=None, weights=None, explain=True):
     source_price = source_row["price"]
     source_subtype = infer_product_subtype(source_row["product_name"], source_category)
 
-    # --- Retrieval: FAISS ANN instead of full dataframe scan ---
-    candidate_ids = _faiss_candidates(product_id, k=FAISS_RETRIEVAL_K)
+    # --- Retrieval: FAISS ANN when available, brute-force cosine otherwise ---
+    if FAISS_INDEX is not None:
+        candidate_ids = _faiss_candidates(product_id, k=FAISS_RETRIEVAL_K)
+    else:
+        candidate_ids = _bruteforce_candidates(product_id, k=FAISS_RETRIEVAL_K)
 
     # --- Filtering ---
     candidates = METADATA[METADATA["product_id"].isin(candidate_ids)].copy()

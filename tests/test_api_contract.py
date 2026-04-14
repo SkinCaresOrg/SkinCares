@@ -47,6 +47,22 @@ def _pick_existing_product_id() -> int:
 
 
 def test_api_contract_endpoints_smoke() -> None:
+
+    # Register or login a test user to get a token
+    login_payload = {
+        "username": "apitestuser",
+        "password": "apitestpass",
+        "email": "apitestuser@example.com"
+    }
+    # Try register first (ignore if already exists)
+    reg_resp = client.post("/api/auth/register", json=login_payload)
+    if reg_resp.status_code not in (200, 409):
+        assert False, f"Registration failed: {reg_resp.text}"
+    login_resp = client.post("/api/auth/login", json=login_payload)
+    assert login_resp.status_code == 200, login_resp.text
+    token = login_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
     onboarding_payload = {
         "skin_type": "oily",
         "concerns": ["acne", "dark_spots"],
@@ -57,8 +73,8 @@ def test_api_contract_endpoints_smoke() -> None:
         "product_interests": ["cleanser", "treatment", "sunscreen"],
     }
 
-    response = client.post("/api/onboarding", json=onboarding_payload)
-    assert response.status_code == 200
+    response = client.post("/api/onboarding", json=onboarding_payload, headers=headers)
+    assert response.status_code == 200, response.text
     body = response.json()
     assert "user_id" in body
     user_id = body["user_id"]

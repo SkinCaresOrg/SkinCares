@@ -78,14 +78,9 @@ const AppContent = () => {
   );
 };
 
-const App = () => {
-  const { hydrateUserState, logout, loading } = useUserState();
 
-  // Hydrate user state on mount (and on login changes inside the hook)
-  useEffect(() => {
-    hydrateUserState();
-    // eslint-disable-next-line
-  }, []);
+const App = () => {
+  useUserState(); // Only call the hook, let it manage hydration internally
 
   return (
     <QueryClientProvider client={queryClient}>

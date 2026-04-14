@@ -8,9 +8,12 @@ import re
 from typing import Dict, List, Literal, Optional
 from uuid import UUID as UUIDValue, uuid4
 
+
+from dotenv import load_dotenv
+load_dotenv()
+
 import numpy as np
 import pandas as pd
-from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
@@ -33,6 +36,7 @@ from deployment.api.persistence.models import (
     UserProfileState,
     UserWishlist,
 )
+from deployment.api.auth.dependencies import get_current_user
 
 from skincarelib.ml_system.ml_feedback_model import (
     LogisticRegressionFeedback,
@@ -1007,8 +1011,7 @@ def _seed_user_model_from_onboarding(
 
 
 
-# Secure onboarding: require authentication, use authenticated user
-from deployment.api.auth.dependencies import get_current_user
+
 
 @app.post("/api/onboarding", response_model=OnboardingResponse)
 def submit_onboarding(
@@ -1280,8 +1283,7 @@ def submit_feedback(
 
 
 
-# Secure wishlist endpoint: require authentication, use authenticated user
-from deployment.api.auth.dependencies import get_current_user
+
 
 @app.get("/api/wishlist", response_model=WishlistResponse)
 def get_wishlist(
@@ -1298,31 +1300,39 @@ def get_wishlist(
     return WishlistResponse(products=products)
 
 
+
+# Secure add to wishlist: require authentication, use authenticated user
 @app.post("/api/wishlist", response_model=FeedbackResponse)
 def add_to_wishlist(
-    payload: WishlistRequest, db: Session = Depends(get_db)
+    payload: WishlistRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> FeedbackResponse:
+    user_id = str(current_user.id)
     if payload.product_id not in PRODUCTS:
         raise HTTPException(status_code=404, detail="Product not found")
 
     existing = (
         db.query(UserWishlist)
-        .filter(UserWishlist.user_id == payload.user_id)
+        .filter(UserWishlist.user_id == user_id)
         .filter(UserWishlist.product_id == payload.product_id)
         .first()
     )
     if existing is None:
-        db.add(UserWishlist(user_id=payload.user_id, product_id=payload.product_id))
+        db.add(UserWishlist(user_id=user_id, product_id=payload.product_id))
         db.commit()
     return FeedbackResponse(success=True, message="Wishlist updated")
 
 
-@app.delete("/api/wishlist/{user_id}/{product_id}", response_model=FeedbackResponse)
+
+# Secure remove from wishlist: require authentication, use authenticated user
+@app.delete("/api/wishlist/{product_id}", response_model=FeedbackResponse)
 def remove_from_wishlist(
-    user_id: str,
     product_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> FeedbackResponse:
+    user_id = str(current_user.id)
     row = (
         db.query(UserWishlist)
         .filter(UserWishlist.user_id == user_id)
@@ -1333,6 +1343,17 @@ def remove_from_wishlist(
         db.delete(row)
         db.commit()
     return FeedbackResponse(success=True, message="Wishlist updated")
+# Add GET /api/onboarding/profile endpoint for frontend hydration
+@app.get("/api/onboarding/profile", response_model=OnboardingResponse)
+def get_onboarding_profile(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> OnboardingResponse:
+    user_id = str(current_user.id)
+    db_profile = _load_profile_from_db(db, user_id)
+    if db_profile is None:
+        raise HTTPException(status_code=404, detail="Onboarding profile not found")
+    return OnboardingResponse(user_id=user_id, profile=db_profile)
 
 
 @app.get("/api/debug/user-state/{user_id}")

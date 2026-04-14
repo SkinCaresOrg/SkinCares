@@ -10,6 +10,7 @@ class ChatRequest(BaseModel):
     message: str
 
 
+
 @router.post("/chat")
 def chat_endpoint(req: ChatRequest):
     response = handle_chat(req.message)

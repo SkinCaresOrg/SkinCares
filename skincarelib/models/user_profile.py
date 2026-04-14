@@ -203,6 +203,8 @@ def build_user_vector(
     else:
         base_vector = np.zeros(TOTAL_DIMS, dtype=np.float32)
 
+    n_dims = len(base_vector)  # guard: schema dims may exceed test fixture sizes
+
     # --- Step 2a: Skin type -> ingredient group dim boost/suppress ---
     skin_type = (explicit_prefs.get("skin_type") or "").lower().strip()
     if skin_type in SKIN_TYPE_PREFS:
@@ -215,11 +217,13 @@ def build_user_vector(
             if grp not in _group_dim:
                 continue
             dim = _group_dim[grp]
+            if dim >= n_dims:
+                continue
             group_offset = dim - GROUPS_START
             delta = float(catalog_group_mean[group_offset]) * _GROUP_BOOST_FACTOR
             base_vector[dim] += delta
         for grp in suppress_groups:
-            if grp not in _group_dim:
+            if grp not in _group_dim or _group_dim[grp] >= n_dims:
                 continue
             base_vector[_group_dim[grp]] *= _GROUP_SUPPRESS_FACTOR
 
@@ -227,10 +231,10 @@ def build_user_vector(
     if skin_type in SKIN_TYPE_SIGNAL_PREFS and _signal_dim:
         boost_sigs, suppress_sigs = SKIN_TYPE_SIGNAL_PREFS[skin_type]
         for sig in boost_sigs:
-            if sig in _signal_dim:
+            if sig in _signal_dim and _signal_dim[sig] < n_dims:
                 base_vector[_signal_dim[sig]] += _SIGNAL_BOOST
         for sig in suppress_sigs:
-            if sig in _signal_dim:
+            if sig in _signal_dim and _signal_dim[sig] < n_dims:
                 base_vector[_signal_dim[sig]] *= _SIGNAL_SUPPRESS
 
     # --- Step 2c: Skin concerns -> signal dim boost/suppress ---
@@ -240,17 +244,19 @@ def build_user_vector(
             if concern in CONCERN_SIGNAL_PREFS:
                 boost_sigs, suppress_sigs = CONCERN_SIGNAL_PREFS[concern]
                 for sig in boost_sigs:
-                    if sig in _signal_dim:
+                    if sig in _signal_dim and _signal_dim[sig] < n_dims:
                         base_vector[_signal_dim[sig]] += _CONCERN_BOOST
                 for sig in suppress_sigs:
-                    if sig in _signal_dim:
+                    if sig in _signal_dim and _signal_dim[sig] < n_dims:
                         base_vector[_signal_dim[sig]] *= _CONCERN_SUPPRESS
 
     # --- Step 2d: Sensitivity level -> irritation_risk suppression ---
     sensitivity = (explicit_prefs.get("sensitivity_level") or "not_sure").lower()
     if _signal_dim and "irritation_risk" in _signal_dim:
-        factor = SENSITIVITY_SUPPRESS.get(sensitivity, 0.7)
-        base_vector[_signal_dim["irritation_risk"]] *= factor
+        ir_dim = _signal_dim["irritation_risk"]
+        if ir_dim < n_dims:
+            factor = SENSITIVITY_SUPPRESS.get(sensitivity, 0.7)
+            base_vector[ir_dim] *= factor
 
     # --- Step 3: Preferred ingredients -> TF-IDF dim boost ---
     preferred_ingredients = explicit_prefs.get("preferred_ingredients") or []
@@ -258,19 +264,24 @@ def build_user_vector(
         _load_tfidf_vocab()
         for ing in preferred_ingredients:
             token = ing.lower().strip()
-            if token in _tfidf_vocab:
+            if token in _tfidf_vocab and _tfidf_vocab[token] < n_dims:
                 base_vector[_tfidf_vocab[token]] += _INGREDIENT_BOOST
 
     # --- Step 4: Preferred categories -> category dim boost ---
     preferred_categories = explicit_prefs.get("preferred_categories") or []
     for cat in preferred_categories:
-        if cat in _cat_dim:
+        if cat in _cat_dim and _cat_dim[cat] < n_dims:
             base_vector[_cat_dim[cat]] += _CATEGORY_BOOST
 
     # --- Step 5: budget -> price dim (cold start only) ---
     budget = explicit_prefs.get("budget")
     price_dim = PRICE_DIM
-    if budget is not None and not valid_ids:
+    if (
+        budget is not None
+        and not valid_ids
+        and price_dim is not None
+        and price_dim < n_dims
+    ):
         budget = float(budget)
         if budget <= 20:
             base_vector[price_dim] = 0.15

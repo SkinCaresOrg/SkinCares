@@ -12,9 +12,9 @@ import {
   Loader2
 } from "lucide-react";
 import Navigation from "@/components/Navigation";
-import { getUserProfile, getWishlist } from "@/lib/wishlist";
-import { getProductDetail, submitOnboarding } from "@/lib/api";
-import { saveOnboardingForCurrentUser } from "@/lib/session";
+import { getUserProfile, getWishlist, setUserProfile } from "@/lib/wishlist";
+import { getProductDetail, submitOnboarding, fetchApi } from "@/lib/api";
+import { saveOnboardingForCurrentUser, getAuthToken } from "@/lib/session";
 import { 
   OnboardingProfile, 
   Product, 
@@ -42,56 +42,63 @@ import { useToast } from "@/hooks/use-toast";
 const Profile = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"preferences" | "wishlist">("preferences");
-  const [profile, setProfile] = useState<OnboardingProfile | null>(getUserProfile());
+  const [profile, setProfile] = useState<OnboardingProfile | null>(null);
   const [wishlistItems, setWishlistItems] = useState<Product[]>([]);
   const [loadingWishlist, setLoadingWishlist] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const { toast } = useToast();
 
+
+  // Always fetch profile from backend on mount
   useEffect(() => {
-    if (!profile) {
-      navigate("/onboarding");
-    }
-  }, [profile, navigate]);
+    const fetchProfile = async () => {
+      try {
+        const token = getAuthToken();
+        if (!token) {
+          navigate("/login");
+          return;
+        }
+        // Try to fetch from backend
+        const res = await fetchApi<OnboardingProfile>("/onboarding/profile");
+        setProfile(res);
+        setUserProfile(res); // hydrate localStorage for compatibility
+      } catch (err: any) {
+        if (err?.status === 404) {
+          // Profile not found, clear local and redirect to onboarding
+          setProfile(null);
+          setUserProfile(null as any);
+          navigate("/onboarding");
+        }
+      }
+    };
+    fetchProfile();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (activeTab === "wishlist") {
       fetchWishlist();
     }
-  }, [activeTab]);
-
-  useEffect(() => {
-    const handleSync = () => {
-      if (activeTab === "wishlist") {
-        fetchWishlist();
-      }
-    };
-    window.addEventListener("storage", handleSync);
-    window.addEventListener("skincares-wishlist-updated", handleSync);
-    return () => {
-      window.removeEventListener("storage", handleSync);
-      window.removeEventListener("skincares-wishlist-updated", handleSync);
-    };
+    // eslint-disable-next-line
   }, [activeTab]);
 
   const fetchWishlist = async () => {
-    const ids = getWishlist();
     setLoadingWishlist(true);
-    
-    if (ids.length === 0) {
-      setWishlistItems([]);
-      setLoadingWishlist(false);
-      return;
-    }
-    
     try {
+      const ids = await getWishlist();
+      if (!ids || ids.length === 0) {
+        setWishlistItems([]);
+        setLoadingWishlist(false);
+        return;
+      }
       const products = await Promise.all(
         ids.map((id) => getProductDetail(id).catch(() => null))
       );
       setWishlistItems(products.filter((p): p is Product => p !== null));
     } catch (error) {
       console.error("Failed to fetch wishlist items", error);
+      setWishlistItems([]);
     } finally {
       setLoadingWishlist(false);
     }
@@ -143,7 +150,9 @@ const Profile = () => {
     }
   };
 
+
   if (!profile) {
+    // Show loading spinner while fetching, but don't flash if redirecting
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

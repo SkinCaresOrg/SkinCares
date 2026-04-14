@@ -18,6 +18,11 @@ def register_user(payload: schemas.UserCreate, db: Session = Depends(get_db)):
         user = service.create_user(db, payload.email, payload.password)
         return user
     except ValueError as e:
+        if "already exists" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(e),
+            )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),

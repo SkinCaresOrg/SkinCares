@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Suspense, lazy } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { useUserState } from "@/hooks/useUserState";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -52,8 +53,6 @@ const PublicOnly = ({ children }: { children: JSX.Element }) => {
   return children;
 };
 
-import { useLocation } from "react-router-dom";
-
 const AppContent = () => {
   const location = useLocation();
   const hideChat = ["/", "/login", "/register"].includes(location.pathname);
@@ -71,24 +70,27 @@ const AppContent = () => {
         <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
-
-      {/* ✅ THIS is the only logic you need */}
       {!hideChat && <FloatingChat />}
     </>
   );
 };
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Suspense fallback={null}>
-          <AppContent />
-        </Suspense>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
-);
+
+const App = () => {
+  useUserState(); // Only call the hook, let it manage hydration internally
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Suspense fallback={null}>
+            <AppContent />
+          </Suspense>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+};
 
 export default App;

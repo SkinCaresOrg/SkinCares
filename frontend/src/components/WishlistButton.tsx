@@ -9,16 +9,28 @@ interface WishlistButtonProps {
 }
 
 const WishlistButton = ({ productId, className }: WishlistButtonProps) => {
+
   const [wishlisted, setWishlisted] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setWishlisted(isInWishlist(productId));
+    let mounted = true;
+    setLoading(true);
+    isInWishlist(productId).then((res) => {
+      if (mounted) {
+        setWishlisted(res);
+        setLoading(false);
+      }
+    });
+    return () => { mounted = false; };
   }, [productId]);
 
-  const handleToggle = (e: React.MouseEvent) => {
+  const handleToggle = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    toggleWishlist(productId);
-    setWishlisted(!wishlisted);
+    setLoading(true);
+    const updated = await toggleWishlist(productId);
+    setWishlisted(updated.includes(productId));
+    setLoading(false);
   };
 
   return (
@@ -29,9 +41,11 @@ const WishlistButton = ({ productId, className }: WishlistButtonProps) => {
         wishlisted
           ? "bg-primary/10 text-primary hover:bg-primary/20"
           : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
+        loading && "opacity-60 cursor-wait",
         className
       )}
       aria-label={wishlisted ? "Remove from wishlist" : "Add to wishlist"}
+      disabled={loading}
     >
       <Heart className={cn("h-4 w-4 transition-all", wishlisted && "fill-current")} />
     </button>

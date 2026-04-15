@@ -37,8 +37,11 @@ from deployment.api.persistence.models import (
 from skincarelib.ml_system.ml_feedback_model import (
     LogisticRegressionFeedback,
     RandomForestFeedback,
+    LightGBMFeedback,
+    XLearnFeedback,
     ContextualBanditFeedback,
     UserState,
+    XLEARN_AVAILABLE,
 )
 from skincarelib.ml_system.feedback_update import compute_user_vector_with_decay
 from skincarelib.ml_system.swipe_session import SwipeSession
@@ -290,7 +293,9 @@ app.add_middleware(
 # These were validated on test users but not A/B tested yet.
 # TODO: Fine-tune these based on production metrics.
 EARLY_STAGE_THRESHOLD = 5  # Minimum interactions to start using complex models
-MID_STAGE_THRESHOLD = 20  # Minimum interactions to use online learning
+MID_STAGE_THRESHOLD = 20  # Minimum interactions to use gradient boosting
+LIGHTGBM_STAGE_THRESHOLD = 50  # Minimum interactions to use factorization machines
+XLEARN_STAGE_THRESHOLD = 100  # Minimum interactions to use online learning
 MAX_ONBOARDING_SEED_LIKES = 40
 MAX_ONBOARDING_SEED_DISLIKES = 40
 
@@ -867,7 +872,11 @@ def get_best_model(user_state: UserState):
     Strategy:
     - Early stage (< 5 interactions): LogisticRegression (fast, lightweight)
     - Mid stage (5-20 interactions): RandomForest (captures complex patterns)
-    - Experienced (20+ interactions): ContextualBandit (online learning, exploration)
+    - Advanced stage (20-50 interactions): LightGBM (gradient boosting, better generalization)
+    - Expert stage (50-100 interactions): XLearn FM (factorization machines for complex interactions)
+    - Experienced (100+ interactions): ContextualBandit (online learning, exploration)
+    
+    Note: XLearn requires the xlearn package. If unavailable, falls back to ContextualBandit.
     """
     interactions = user_state.interactions
 
@@ -877,6 +886,12 @@ def get_best_model(user_state: UserState):
     elif interactions < MID_STAGE_THRESHOLD:
         # Mid stage: more data available, can handle complexity (5-20 interactions)
         return RandomForestFeedback(), "RandomForest (Mid Stage)"
+    elif interactions < LIGHTGBM_STAGE_THRESHOLD:
+        # Advanced stage: gradient boosting for better generalization (20-50 interactions)
+        return LightGBMFeedback(), "LightGBM (Advanced Stage)"
+    elif interactions < XLEARN_STAGE_THRESHOLD and XLEARN_AVAILABLE:
+        # Expert stage: factorization machines for feature interactions (50-100 interactions)
+        return XLearnFeedback(model_type="fm"), "XLearn FM (Expert Stage)"
     else:
         # Experienced user: use online learning with exploration
         return ContextualBanditFeedback(

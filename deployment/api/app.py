@@ -41,7 +41,12 @@ from skincarelib.ml_system.ml_feedback_model import (
     UserState,
 )
 from skincarelib.ml_system.feedback_update import compute_user_vector_with_decay
+from skincarelib.ml_system.reranker import (
+    build_diverse_candidate_pool,
+    rerank_candidates,
+)
 from skincarelib.ml_system.swipe_session import SwipeSession
+from skincarelib.models.user_profile import build_user_vector
 
 logger = logging.getLogger(__name__)
 REMOTE_ASSET_MODE = bool(os.getenv("SUPABASE_URL", "").strip())
@@ -501,9 +506,82 @@ def _ensure_product_vectors_shape() -> None:
         PRODUCT_VECTORS = np.random.randn(product_count, vector_dim).astype(np.float32)
 
 
-# User sessions for online learning
+# ── Cold-start candidate pool diversifier ─────────────────────────────────────
+# MiniBatchKMeans clusters the catalog once at startup. At cold-start time,
+# build_diverse_candidate_pool samples proportionally from the closest clusters
+# instead of always pulling the globally-nearest N products (popularity bias).
+_COLD_START_KMEANS = None
+_COLD_START_CLUSTER_TO_IDS: Dict[int, list] = {}
+_COLD_START_N_CLUSTERS = 20
+
+
+def _fit_cold_start_kmeans() -> None:
+    """Fit MiniBatchKMeans on the product vectors at startup.
+
+    Populates _COLD_START_KMEANS and _COLD_START_CLUSTER_TO_IDS.
+    Falls back silently if sklearn is unavailable or vectors are empty.
+    """
+    global _COLD_START_KMEANS, _COLD_START_CLUSTER_TO_IDS
+    try:
+        from sklearn.cluster import MiniBatchKMeans
+
+        kmeans = MiniBatchKMeans(
+            n_clusters=_COLD_START_N_CLUSTERS,
+            random_state=42,
+            n_init=3,
+            batch_size=2048,
+        )
+        labels = kmeans.fit_predict(PRODUCT_VECTORS)
+
+        # Build row-index → product_id lookup (mirrors the order in PRODUCTS)
+        idx_to_id = {i: str(p.product_id) for i, p in enumerate(PRODUCTS.values())}
+
+        cluster_to_ids: Dict[int, list] = {}
+        for vector_idx, cluster_id in enumerate(labels):
+            pid = idx_to_id.get(vector_idx)
+            if pid is not None:
+                cluster_to_ids.setdefault(int(cluster_id), []).append(pid)
+
+        _COLD_START_KMEANS = kmeans
+        _COLD_START_CLUSTER_TO_IDS = cluster_to_ids
+        logger.info(
+            "Cold-start clusterer fit on %d products (%d clusters).",
+            PRODUCT_VECTORS.shape[0],
+            _COLD_START_N_CLUSTERS,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Cold-start clusterer fit failed, will fall back to top-k cosine: %s", exc
+        )
+
+
+_fit_cold_start_kmeans()
+
+# Price range from onboarding → float budget for build_user_vector
+_PRICE_RANGE_TO_BUDGET: Dict[str, Optional[float]] = {
+    "budget": 25.0,
+    "affordable": 50.0,
+    "mid_range": 100.0,
+    "premium": 200.0,
+    "no_preference": None,
+}
+
+
+def _profile_to_explicit_prefs(profile: OnboardingRequest) -> dict:
+    """Convert all onboarding answers into the explicit_prefs dict for build_user_vector."""
+    return {
+        "skin_type": profile.skin_type,
+        "budget": _PRICE_RANGE_TO_BUDGET.get(profile.price_range),
+        "preferred_categories": [str(c) for c in (profile.product_interests or [])],
+        "preferred_ingredients": [],
+        "banned_ingredients": list(profile.ingredient_exclusions or []),
+        "concerns": [str(c) for c in (profile.concerns or [])],
+        "sensitivity_level": profile.sensitivity_level,
+    }
+
+
+# ── User sessions / state ──────────────────────────────────────────────────────
 USER_SESSIONS: Dict[str, SwipeSession] = {}
-# User ML model states for generating recommendations
 USER_STATES: Dict[str, UserState] = {}
 USER_PROFILES: Dict[str, OnboardingRequest] = {}
 USER_FEEDBACK = deque(maxlen=MAX_FEEDBACK_EVENTS_IN_MEMORY)
@@ -976,10 +1054,13 @@ def _seed_user_model_from_onboarding(
             if vec is not None:
                 user_state.add_disliked(vec)
 
-    print(
-        f"[Onboarding Seeding] user={user_id} skin_type={skin_type} "
-        f"concerns={skin_concerns} suited={len(suited_products)} "
-        f"unseeded by={len(unsuited_products)}"
+    logger.info(
+        "Onboarding seeding: user=%s skin_type=%s concerns=%s suited=%d unseeded=%d",
+        user_id,
+        skin_type,
+        skin_concerns,
+        len(suited_products),
+        len(unsuited_products),
     )
 
 
@@ -1088,7 +1169,7 @@ def get_recommendations(
         USER_PROFILES[user_id] = db_profile
 
     user_state = USER_STATES.get(user_id) or _load_user_state_from_db(db, user_id)
-    candidates = [product for product in PRODUCTS.values()]
+    candidates = list(PRODUCTS.values())
     if category is not None:
         candidates = [product for product in candidates if product.category == category]
 
@@ -1155,7 +1236,58 @@ def get_recommendations(
             )
             scores = [0.5] * len(candidates)
     else:
-        scores = [0.5] * len(candidates)
+        # Cold start — no real interactions yet. Build preference vector from
+        # onboarding answers (skin type, concerns, sensitivity, budget, categories)
+        # then use cluster-sampled candidate pool to avoid popularity bias.
+        profile = USER_PROFILES.get(user_id)
+        try:
+            if profile is not None:
+                explicit_prefs = _profile_to_explicit_prefs(profile)
+                cold_product_index = _build_product_index()
+                user_vec = build_user_vector(
+                    liked_product_ids=[],
+                    explicit_prefs=explicit_prefs,
+                    product_vectors=PRODUCT_VECTORS,
+                    product_index=cold_product_index,
+                )
+                # Build diverse candidate pool (cluster-sampled to avoid popularity bias)
+                if _COLD_START_KMEANS is not None:
+                    pool = build_diverse_candidate_pool(
+                        user_vector=user_vec,
+                        kmeans=_COLD_START_KMEANS,
+                        cluster_to_ids=_COLD_START_CLUSTER_TO_IDS,
+                        product_vectors=PRODUCT_VECTORS,
+                        product_index=cold_product_index,
+                        pool_size=200,
+                    )
+                else:
+                    # Fallback: top-200 by dot product if clusterer unavailable
+                    norms = np.linalg.norm(PRODUCT_VECTORS, axis=1) + 1e-9
+                    sims = PRODUCT_VECTORS @ user_vec / norms
+                    top_idx = np.argpartition(sims, -200)[-200:]
+                    id_map = {
+                        i: str(p.product_id) for i, p in enumerate(PRODUCTS.values())
+                    }
+                    pool = [id_map[i] for i in top_idx if i in id_map]
+
+                ranked_ids = rerank_candidates(
+                    user_vector=user_vec,
+                    candidate_ids=pool,
+                    product_vectors=PRODUCT_VECTORS,
+                    product_index=cold_product_index,
+                    top_n=limit,
+                )
+                id_to_rank = {pid: i for i, pid in enumerate(ranked_ids)}
+                n = max(len(ranked_ids), 1)
+                for product in candidates:
+                    pid = str(product.product_id)
+                    rank = id_to_rank.get(pid)
+                    scores.append(1.0 - rank / n if rank is not None else 0.0)
+            else:
+                scores = [0.5] * len(candidates)
+        except Exception as e:
+            logger.warning("Cold start scoring failed for user_id=%s: %s", user_id, e)
+            scores = [0.5] * len(candidates)
 
     # Sort by score (highest first)
     ranked = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)

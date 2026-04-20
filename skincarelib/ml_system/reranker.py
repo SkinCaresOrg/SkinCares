@@ -42,7 +42,6 @@ def rerank_candidates(
 
     while len(selected) < min(top_n, len(valid_ids)):
         if not selected:
-            # First pick: no selected set yet, just take most relevant
             best = max(remaining, key=lambda i: relevance[i])
         else:
             best, best_score = None, -np.inf
@@ -56,6 +55,59 @@ def rerank_candidates(
         remaining.remove(best)
 
     return [valid_ids[i] for i in selected]
+
+
+def build_diverse_candidate_pool(
+    user_vector: np.ndarray,
+    kmeans,
+    cluster_to_ids: Dict[int, List[str]],
+    product_vectors: np.ndarray,
+    product_index: Dict[str, int],
+    pool_size: int = 200,
+    top_clusters: int = 8,
+) -> List[str]:
+    """
+    Build a diverse candidate pool by sampling from multiple clusters proportionally.
+
+    The problem with top-k cosine as a pre-filter: it always pulls from the same
+    high-norm products that have large dot products with almost any user vector,
+    which causes catalog coverage to flatline even as user diversity increases.
+
+    This function instead:
+    1. Scores all cluster centroids against the user vector (O(K), very cheap)
+    2. Takes the top_clusters closest clusters
+    3. Allocates pool slots proportionally to centroid similarity
+       (closer cluster gets more slots, but every cluster gets at least some)
+    4. Within each cluster, picks the best candidates by cosine similarity
+
+    The resulting pool is passed to rerank_candidates for final MMR reranking.
+    """
+    centroid_sims = cosine_similarity(
+        user_vector.reshape(1, -1), kmeans.cluster_centers_
+    ).flatten()
+    best_clusters = np.argsort(centroid_sims)[::-1][:top_clusters]
+
+    # Proportional slot allocation — weight by centroid similarity, floor at 1
+    best_sims = np.maximum(centroid_sims[best_clusters], 0.0)
+    total = best_sims.sum()
+    if total < 1e-9:
+        allocations = [pool_size // top_clusters] * top_clusters
+    else:
+        allocations = [max(1, int(pool_size * s / total)) for s in best_sims]
+
+    pool: List[str] = []
+    for cid, alloc in zip(best_clusters, allocations):
+        cluster_pids = [
+            p for p in cluster_to_ids.get(int(cid), []) if p in product_index
+        ]
+        if not cluster_pids:
+            continue
+        cvecs = product_vectors[[product_index[p] for p in cluster_pids]]
+        sims = cosine_similarity(user_vector.reshape(1, -1), cvecs).flatten()
+        top_in = np.argsort(sims)[::-1][:alloc]
+        pool.extend(cluster_pids[i] for i in top_in)
+
+    return pool
 
 
 def mock_candidates_similarity_seed(

@@ -9,11 +9,11 @@ def explain_dupe(source_row, candidate_row) -> str:
     data points. Avoids exposing internal metrics (cosine scores, group
     counts) that are meaningful to engineers but not to end users.
     """
-    source_name  = _short_name(source_row)
+    source_name = _short_name(source_row)
     source_price = float(source_row.get("price", 0.0))
-    cand_price   = float(candidate_row.get("price", 0.0))
-    cosine       = float(candidate_row.get("cosine_sim", 0.0))
-    ig_score     = float(candidate_row.get("ingredient_group_score", 0.0))
+    cand_price = float(candidate_row.get("price", 0.0))
+    cosine = float(candidate_row.get("cosine_sim", 0.0))
+    ig_score = float(candidate_row.get("ingredient_group_score", 0.0))
 
     # --- ingredient similarity phrase ---
     if cosine >= 0.90:
@@ -52,25 +52,19 @@ def explain_dupe(source_row, candidate_row) -> str:
                 f"(${cand_price:.2f} vs ${source_price:.2f})"
             )
         elif savings_pct >= 0.10:
-            price_phrase = (
-                f" for less "
-                f"(${cand_price:.2f} vs ${source_price:.2f})"
-            )
+            price_phrase = f" for less (${cand_price:.2f} vs ${source_price:.2f})"
 
-    return (
-        f"Has a {similarity} {source_name}, "
-        f"{function_phrase}{price_phrase}."
-    )
+    return f"Has a {similarity} {source_name}, {function_phrase}{price_phrase}."
 
 
 def _short_name(row) -> str:
     """Return a concise product identifier: 'Brand ProductName'."""
-    name  = str(row.get("product_name", row.get("name", "the original"))).strip()
+    name = str(row.get("product_name", row.get("name", "the original"))).strip()
     brand = str(row.get("brand", "")).strip()
 
     # strip brand prefix if already present in name
     if brand and name.lower().startswith(brand.lower()):
-        name = name[len(brand):].strip()
+        name = name[len(brand) :].strip()
 
     # trim at first comma to remove size/variant suffixes
     if "," in name:

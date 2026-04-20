@@ -1,5 +1,5 @@
-from typing import List, Dict
 
+from typing import Dict, List
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 

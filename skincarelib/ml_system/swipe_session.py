@@ -16,14 +16,14 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from skincarelib.ml_system.online_learning import (
-    OnlineLearner,
-    ContextualBanditStrategy,
-)
 from skincarelib.ml_system.feedback_structures import (
     DetailedFeedbackCollector,
-    InitialUserQuestionnaire,
     IngredientPreferenceTracker,
+    InitialUserQuestionnaire,
+)
+from skincarelib.ml_system.online_learning import (
+    ContextualBanditStrategy,
+    OnlineLearner,
 )
 
 

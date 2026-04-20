@@ -2,23 +2,42 @@
 ML-based feedback models for user preference learning.
 
 Replaces simple weighted average with proper machine learning:
-- Logistic Regression
-- Random Forest Classifier
-- Gradient Boosting Classifier
+- Logistic Regression (early stage)
+- Random Forest Classifier (mid stage)
+- Gradient Boosting Classifier (advanced)
+- LightGBM (fast gradient boosting)
+- XLearn (linear + factorization machine)
 - Contextual Bandit (online learning)
 """
 
 from __future__ import annotations
 
+import logging
 import pickle
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn import config_context
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
+
+try:
+    import lightgbm as lgb
+
+    LIGHTGBM_AVAILABLE = True
+except ImportError:
+    LIGHTGBM_AVAILABLE = False
+
+try:
+    import xlearn as xl
+
+    XLEARN_AVAILABLE = True
+except ImportError:
+    XLEARN_AVAILABLE = False
 
 try:
     import vowpalwabbit as vw
@@ -28,23 +47,45 @@ except ImportError:
     VW_AVAILABLE = False
 
 
+logger = logging.getLogger(__name__)
+
+
 class UserState:
-    """Enhanced UserState tracking for ML models."""
+    """Enhanced UserState tracking for ML models with reason tags."""
+
+    # Common reason tags from feedback questionnaire - used as features
+    REASON_TAGS_VOCAB = {
+        "hydrated_well": 0,
+        "absorbed_quickly": 1,
+        "non_irritating": 2,
+        "affordable": 3,
+        "good_value": 4,
+        "broke_me_out": 5,
+        "irritating": 6,
+        "too_expensive": 7,
+        "strong_scent": 8,
+        "greasy_feeling": 9,
+    }
 
     def __init__(self, dim: int):
         self.dim = dim
 
-        # Raw interactions
+        # Raw interactions with per-interaction reason tags
         self.liked_vectors: List[np.ndarray] = []
         self.disliked_vectors: List[np.ndarray] = []
         self.irritation_vectors: List[np.ndarray] = []
+
+        # Reason tags per interaction (parallel to vectors)
+        self.liked_reasons_per_interaction: List[List[str]] = []
+        self.disliked_reasons_per_interaction: List[List[str]] = []
+        self.irritation_reasons_per_interaction: List[List[str]] = []
 
         # Timestamps for temporal decay
         self.liked_timestamps: List[datetime] = []
         self.disliked_timestamps: List[datetime] = []
         self.irritation_timestamps: List[datetime] = []
 
-        # Metadata for explanations
+        # Metadata for explanations (aggregated)
         self.liked_reasons: List[str] = []
         self.disliked_reasons: List[str] = []
         self.irritation_reasons: List[str] = []
@@ -65,6 +106,9 @@ class UserState:
         self.liked_timestamps.append(timestamp or datetime.now(timezone.utc))
         if reasons:
             self.liked_reasons.extend(reasons)
+            self.liked_reasons_per_interaction.append(list(reasons))
+        else:
+            self.liked_reasons_per_interaction.append([])
         self.interactions += 1
         self.liked_count += 1
 
@@ -78,6 +122,9 @@ class UserState:
         self.disliked_timestamps.append(timestamp or datetime.now(timezone.utc))
         if reasons:
             self.disliked_reasons.extend(reasons)
+            self.disliked_reasons_per_interaction.append(list(reasons))
+        else:
+            self.disliked_reasons_per_interaction.append([])
         self.interactions += 1
         self.disliked_count += 1
 
@@ -91,16 +138,43 @@ class UserState:
         self.irritation_timestamps.append(timestamp or datetime.now(timezone.utc))
         if reasons:
             self.irritation_reasons.extend(reasons)
+            self.irritation_reasons_per_interaction.append(reasons)
+        else:
+            self.irritation_reasons_per_interaction.append([])
         self.interactions += 1
         self.irritation_count += 1
 
-    def get_training_data(self) -> Tuple[np.ndarray, np.ndarray] | None:
+    def _encode_reason_tags(self, tags: List[str]) -> np.ndarray:
         """
-        Prepare training data for ML models.
+        Encode reason tags as binary feature vector.
+
+        Args:
+            tags: List of reason tag strings
 
         Returns:
-            (X, y) where X is feature matrix and y is binary preference labels
-            None if insufficient data
+            Binary feature vector (1 if tag present, 0 otherwise)
+        """
+        features = np.zeros(len(self.REASON_TAGS_VOCAB), dtype=np.float32)
+        for tag in tags:
+            # Normalize tag (handle underscores, case)
+            normalized_tag = tag.lower().replace(" ", "_")
+            if normalized_tag in self.REASON_TAGS_VOCAB:
+                idx = self.REASON_TAGS_VOCAB[normalized_tag]
+                features[idx] = 1.0
+        return features
+
+    def get_training_data(self) -> Tuple[np.ndarray, np.ndarray] | None:
+        """
+        Prepare augmented training data with reason tags.
+
+        Returns:
+            (X, y) where X is an augmented feature matrix
+            ``[product_vector | reason_tag_features]`` and y is binary
+            preference labels. None if insufficient data.
+
+        Feature vector structure:
+            [product_vector_{self.dim}_dims |
+             reason_tag_features_{len(self.REASON_TAGS_VOCAB)}_dims]
         """
         if (
             not self.liked_vectors
@@ -112,19 +186,31 @@ class UserState:
         X_list = []
         y_list = []
 
-        # Liked samples (label=1)
-        for vec in self.liked_vectors:
-            X_list.append(vec)
+        # Liked samples (label=1) - augment with reason tags
+        for vec, reasons in zip(
+            self.liked_vectors, self.liked_reasons_per_interaction
+        ):
+            reason_features = self._encode_reason_tags(reasons)
+            augmented_vec = np.concatenate([vec, reason_features])
+            X_list.append(augmented_vec)
             y_list.append(1)
 
-        # Disliked samples (label=0)
-        for vec in self.disliked_vectors:
-            X_list.append(vec)
+        # Disliked samples (label=0) - augment with reason tags
+        for vec, reasons in zip(
+            self.disliked_vectors, self.disliked_reasons_per_interaction
+        ):
+            reason_features = self._encode_reason_tags(reasons)
+            augmented_vec = np.concatenate([vec, reason_features])
+            X_list.append(augmented_vec)
             y_list.append(0)
 
-        # Irritation samples are also treated as disliked (label=0)
-        for vec in self.irritation_vectors:
-            X_list.append(vec)
+        # Irritation samples (label=0) - augment with reason tags
+        for vec, reasons in zip(
+            self.irritation_vectors, self.irritation_reasons_per_interaction
+        ):
+            reason_features = self._encode_reason_tags(reasons)
+            augmented_vec = np.concatenate([vec, reason_features])
+            X_list.append(augmented_vec)
             y_list.append(0)
 
         X = np.array(X_list, dtype=np.float32)
@@ -134,6 +220,29 @@ class UserState:
             return None
 
         return X, y
+
+
+def _augment_product_vector(product_vec: np.ndarray) -> np.ndarray:
+    """
+    Augment product vector with empty reason tags for prediction.
+    
+    Args:
+        product_vec: Product vector (256 dims or Nx256)
+        
+    Returns:
+        Augmented vector with zeros for reason tags (266 dims or Nx266)
+    """
+    reason_tag_width = len(UserState.REASON_TAGS_VOCAB)
+
+    if product_vec.ndim == 1:
+        # Single vector: (256,) -> (256 + reason_tag_width,)
+        reason_tags = np.zeros(reason_tag_width, dtype=np.float32)
+        return np.concatenate([product_vec, reason_tags])
+    else:
+        # Multiple vectors: (N, 256) -> (N, 256 + reason_tag_width)
+        n_samples = product_vec.shape[0]
+        reason_tags = np.zeros((n_samples, reason_tag_width), dtype=np.float32)
+        return np.concatenate([product_vec, reason_tags], axis=1)
 
 
 class LogisticRegressionFeedback:
@@ -172,6 +281,7 @@ class LogisticRegressionFeedback:
             return 0.5
 
         X = product_vector.reshape(1, -1).astype(np.float32)
+        X = _augment_product_vector(X)
         X_scaled = self.scaler.transform(X)
         return float(self.model.predict_proba(X_scaled)[0, 1])
 
@@ -188,7 +298,9 @@ class LogisticRegressionFeedback:
         if not self.is_trained:
             return np.ones(len(product_vectors)) * 0.5
 
-        X_scaled = self.scaler.transform(product_vectors.astype(np.float32))
+        X = product_vectors.astype(np.float32)
+        X = _augment_product_vector(X)
+        X_scaled = self.scaler.transform(X)
         return self.model.predict_proba(X_scaled)[:, 1].astype(np.float32)
 
     def save(self, path: Path):
@@ -234,6 +346,7 @@ class RandomForestFeedback:
             return 0.5
 
         X = product_vector.reshape(1, -1).astype(np.float32)
+        X = _augment_product_vector(X)
         X_scaled = self.scaler.transform(X)
         return float(self.model.predict_proba(X_scaled)[0, 1])
 
@@ -242,7 +355,9 @@ class RandomForestFeedback:
         if not self.is_trained:
             return np.ones(len(product_vectors)) * 0.5
 
-        X_scaled = self.scaler.transform(product_vectors.astype(np.float32))
+        X = product_vectors.astype(np.float32)
+        X = _augment_product_vector(X)
+        X_scaled = self.scaler.transform(X)
         return self.model.predict_proba(X_scaled)[:, 1].astype(np.float32)
 
     def get_feature_importance(self) -> np.ndarray:
@@ -299,6 +414,7 @@ class GradientBoostingFeedback:
             return 0.5
 
         X = product_vector.reshape(1, -1).astype(np.float32)
+        X = _augment_product_vector(X)
         X_scaled = self.scaler.transform(X)
         return float(self.model.predict_proba(X_scaled)[0, 1])
 
@@ -307,7 +423,9 @@ class GradientBoostingFeedback:
         if not self.is_trained:
             return np.ones(len(product_vectors)) * 0.5
 
-        X_scaled = self.scaler.transform(product_vectors.astype(np.float32))
+        X = product_vectors.astype(np.float32)
+        X = _augment_product_vector(X)
+        X_scaled = self.scaler.transform(X)
         return self.model.predict_proba(X_scaled)[:, 1].astype(np.float32)
 
     def get_feature_importance(self) -> np.ndarray:
@@ -329,6 +447,262 @@ class GradientBoostingFeedback:
             self.model = data["model"]
             self.scaler = data["scaler"]
             self.is_trained = True
+
+
+class LightGBMFeedback:
+    """LightGBM model for fast and efficient user preference prediction."""
+
+    def __init__(self, n_estimators: int = 100, learning_rate: float = 0.1, max_depth: int = 7):
+        if not LIGHTGBM_AVAILABLE:
+            raise ImportError(
+                "lightgbm is required for LightGBMFeedback. Install with: pip install lightgbm"
+            )
+
+        self.model = lgb.LGBMClassifier(
+            n_estimators=n_estimators,
+            learning_rate=learning_rate,
+            max_depth=max_depth,
+            random_state=42,
+            n_jobs=-1,
+            verbose=-1,
+        )
+        self.scaler = StandardScaler()
+        self.is_trained = False
+        self.feature_names = None
+
+    def fit(self, user_state: UserState):
+        """Train LightGBM on user interactions."""
+        data = user_state.get_training_data()
+        if data is None:
+            return False
+
+        X, y = data
+        X_scaled = self.scaler.fit_transform(X)
+        # Store feature names to avoid sklearn warnings about feature names
+        self.feature_names = [f"feature_{i}" for i in range(X_scaled.shape[1])]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            self.model.fit(X_scaled, y)
+        self.is_trained = True
+        return True
+
+    def predict_preference(self, product_vector: np.ndarray) -> float:
+        """Predict preference for a product (0.0 to 1.0)."""
+        if not self.is_trained:
+            return 0.5
+
+        X = product_vector.reshape(1, -1).astype(np.float32)
+        X = _augment_product_vector(X)
+        X_scaled = self.scaler.transform(X)
+        # Use config_context to suppress feature names validation warning
+        with config_context(assume_finite=True):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return float(self.model.predict_proba(X_scaled)[0, 1])
+
+    def score_products(self, product_vectors: np.ndarray) -> np.ndarray:
+        """Score multiple products efficiently."""
+        if not self.is_trained:
+            return np.ones(len(product_vectors)) * 0.5
+
+        X = product_vectors.astype(np.float32)
+        X = _augment_product_vector(X)
+        X_scaled = self.scaler.transform(X)
+        # Use config_context to suppress feature names validation warning
+        with config_context(assume_finite=True):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return self.model.predict_proba(X_scaled)[:, 1].astype(np.float32)
+
+    def get_feature_importance(self) -> np.ndarray:
+        """Get feature importance scores."""
+        if not self.is_trained:
+            return np.array([])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return self.model.feature_importances_.astype(np.float32)
+
+    def save(self, path: Path):
+        """Save model to disk."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "wb") as f:
+            pickle.dump({"model": self.model, "scaler": self.scaler}, f)
+
+    def load(self, path: Path):
+        """Load model from disk."""
+        with open(path, "rb") as f:
+            data = pickle.load(f)
+            self.model = data["model"]
+            self.scaler = data["scaler"]
+            self.is_trained = True
+
+
+class XLearnFeedback:
+    """XLearn model for linear and factorization machine models."""
+
+    def __init__(self, model_type: str = "linear", learning_rate: float = 0.01):
+        """
+        Initialize XLearn model.
+
+        Args:
+            model_type: 'linear' for linear model, 'fm' for factorization machine
+            learning_rate: Learning rate for SGD
+        """
+        if not XLEARN_AVAILABLE:
+            raise ImportError(
+                "xlearn is required for XLearnFeedback. Install with: pip install xlearn"
+            )
+
+        self.model_type = model_type
+        self.learning_rate = learning_rate
+        self.scaler = StandardScaler()
+        self.is_trained = False
+        self._initialize_model()
+
+    def _initialize_model(self):
+        """Initialize XLearn model based on type."""
+        if self.model_type == "linear":
+            self.model = xl.LR()
+        elif self.model_type == "fm":
+            self.model = xl.FM()
+        else:
+            self.model = xl.LR()  # Default to linear
+
+        # Configure learning rate
+        self.model.setLearningRate(self.learning_rate)
+        self.model.disableNorm()  # We handle normalization with scaler
+
+    def _cleanup_temp_model_dir(self):
+        """Clean up any instance-owned temporary model directory."""
+        temp_dir = getattr(self, "_model_temp_dir", None)
+        if temp_dir is not None:
+            temp_dir.cleanup()
+            self._model_temp_dir = None
+            self._model_path = None
+
+    def close(self):
+        """Release temporary filesystem resources owned by this model."""
+        self._cleanup_temp_model_dir()
+
+    def __del__(self):
+        """Best-effort cleanup for temporary model artifacts."""
+        try:
+            self._cleanup_temp_model_dir()
+        except Exception:
+            pass
+
+    def fit(self, user_state: UserState):
+        """Train XLearn model on user interactions."""
+        data = user_state.get_training_data()
+        if data is None:
+            return False
+
+        X, y = data
+        X_scaled = self.scaler.fit_transform(X)
+
+        # Convert to binary labels (0, 1)
+        y_binary = (y > 0).astype(np.int32) * 2 - 1  # Convert to {-1, 1} for XLearn
+
+        temp_model_dir = None
+        try:
+            import tempfile
+
+            explicit_model_path = getattr(self, "model_output_path", None)
+            if explicit_model_path:
+                model_path = str(explicit_model_path)
+            else:
+                self._cleanup_temp_model_dir()
+                temp_model_dir = tempfile.TemporaryDirectory(prefix="xlearnfeedback-")
+                self._model_temp_dir = temp_model_dir
+                self._model_path = str(Path(temp_model_dir.name) / f"{self.model_type}_model.bin")
+                model_path = self._model_path
+
+            # Save training data to a unique temporary file for XLearn
+            with tempfile.TemporaryDirectory(prefix="xlearnfeedback-train-") as train_dir:
+                temp_file = str(Path(train_dir) / "training_data.txt")
+                with open(temp_file, "w", encoding="utf-8") as f:
+                    for label, features in zip(y_binary, X_scaled):
+                        feature_str = " ".join(f"{i}:{v:.6f}" for i, v in enumerate(features) if v != 0)
+                        f.write(f"{label} {feature_str}\n")
+
+                # Train model
+                self.model.fit(temp_file, model_path)
+
+            self.is_trained = True
+            return True
+        except Exception as e:
+            if temp_model_dir is not None:
+                self._cleanup_temp_model_dir()
+            logger.warning(f"XLearn training failed: {e}. Fallback to simple averaging.")
+            return False
+
+    def predict_preference(self, product_vector: np.ndarray) -> float:
+        """Predict preference for a product (0.0 to 1.0)."""
+        if not self.is_trained:
+            return 0.5
+
+        X = product_vector.reshape(1, -1).astype(np.float32)
+        X = _augment_product_vector(X)
+        X_scaled = self.scaler.transform(X)
+
+        try:
+            # XLearn returns raw predictions; convert to probability
+            pred = self.model.predict(X_scaled)
+            # Map from [-1, 1] to [0, 1]
+            prob = (pred[0] + 1.0) / 2.0
+            return float(np.clip(prob, 0.0, 1.0))
+        except Exception:
+            return 0.5
+
+    def score_products(self, product_vectors: np.ndarray) -> np.ndarray:
+        """Score multiple products."""
+        if not self.is_trained:
+            return np.ones(len(product_vectors)) * 0.5
+
+        X = product_vectors.astype(np.float32)
+        X = _augment_product_vector(X)
+        X_scaled = self.scaler.transform(X)
+
+        try:
+            predictions = self.model.predict(X_scaled)
+            # Map from [-1, 1] to [0, 1]
+            probs = (predictions + 1.0) / 2.0
+            return np.clip(probs, 0.0, 1.0).astype(np.float32)
+        except Exception:
+            return np.ones(len(product_vectors)) * 0.5
+
+    def save(self, path: Path):
+        """Save model to disk."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # XLearn saves its binary model separately
+        model_file = path.with_suffix(".bin")
+        try:
+            import shutil
+
+            if Path(self.model_type + "_model.bin").exists():
+                shutil.copy(self.model_type + "_model.bin", model_file)
+        except Exception:
+            pass
+
+        # Save scaler
+        with open(path, "wb") as f:
+            pickle.dump(self.scaler, f)
+
+    def load(self, path: Path):
+        """Load model from disk."""
+        try:
+            # Load scaler
+            with open(path, "rb") as f:
+                self.scaler = pickle.load(f)
+
+            # Reinitialize model and load binary
+            model_file = path.with_suffix(".bin")
+            if model_file.exists():
+                self._initialize_model()
+                self.model.load(str(model_file))
+                self.is_trained = True
+        except Exception:
+            logger.warning("Failed to load XLearn model")
 
 
 class ContextualBanditFeedback:
@@ -368,8 +742,9 @@ class ContextualBanditFeedback:
 
     def predict_preference(self, product_vector: np.ndarray) -> float:
         """Predict preference probability using VW."""
+        vec = _augment_product_vector(product_vector)
         example = " | " + " ".join(
-            f"{i}:{v}" for i, v in enumerate(product_vector) if v != 0
+            f"{i}:{v}" for i, v in enumerate(vec) if v != 0
         )
         return self.vw.predict(example)
 
@@ -377,6 +752,7 @@ class ContextualBanditFeedback:
         """Score multiple products using VW, with optional exploration noise."""
         scores = []
         for vec in product_vectors:
+            vec = _augment_product_vector(vec.reshape(1, -1))[0]  # Augment single vector
             example = " | " + " ".join(f"{i}:{v}" for i, v in enumerate(vec) if v != 0)
             score = self.vw.predict(example)
             scores.append(score)
